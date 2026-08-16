@@ -1,0 +1,10 @@
+{
+  "llama_server_exe": "C:/path/to/llama-server.exe",
+  "models_root": "C:/path/to/models",
+  "default_server_port": 8080,
+  "panel": {
+    "host": "0.0.0.0",
+    "port": 8000
+  },
+  "active_preset_id": ""
+}

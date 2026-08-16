@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>llama-monitor</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">llama-monitor</div>
+  <div class="status-group">
+    <span id="status-badge" class="badge badge-stopped">stopped</span>
+    <span id="error-label" class="muted small error-label"></span>
+    <span id="version-label" class="muted small"></span>
+  </div>
+  <div class="actions">
+    <button id="btn-start" class="btn btn-primary">Start</button>
+    <button id="btn-stop" class="btn">Stop</button>
+    <button id="btn-restart" class="btn">Restart</button>
+  </div>
+</header>
+
+<main>
+  <section class="card">
+    <details>
+      <summary class="card-summary">Launch arguments</summary>
+      <p class="muted small">Passed to <code>llama-server</code> as-is. Example:
+        <code>-m "my-model.gguf" -ngl 99 --port 8080</code></p>
+      <textarea id="launch-args" rows="3" spellcheck="false"
+        placeholder='-m "models/my-model.gguf" -ngl 99 --port 8080'></textarea>
+    </details>
+  </section>
+
+  <section class="card log-card">
+    <div class="card-head">
+      <h2>Server log</h2>
+      <label class="check"><input type="checkbox" id="autoscroll" checked><span>auto-scroll</span></label>
+    </div>
+    <pre id="log" class="log" aria-live="polite"></pre>
+  </section>
+</main>
+
+<script src="js/api.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
