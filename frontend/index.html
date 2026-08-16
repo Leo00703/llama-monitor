@@ -50,10 +50,60 @@
         <pre id="flag-preview" class="log hidden"></pre>
       </section>
 
+      <section class="metrics-grid" id="metrics-grid">
+        <div class="card metric-card">
+          <div class="card-head">
+            <h2>CPU</h2>
+            <span id="cpu-total" class="metric-value">—</span>
+          </div>
+          <canvas id="cpu-spark" class="spark"></canvas>
+          <div id="cpu-cores" class="core-bars"></div>
+        </div>
+
+        <div class="card metric-card">
+          <div class="card-head">
+            <h2>RAM</h2>
+            <span id="ram-value" class="metric-value">—</span>
+          </div>
+          <canvas id="ram-spark" class="spark"></canvas>
+          <div id="ram-detail" class="muted small"></div>
+        </div>
+
+        <div id="gpu-cards" class="gpu-cards"></div>
+
+        <div class="card metric-card">
+          <div class="card-head">
+            <h2>Inference</h2>
+            <span id="infer-state" class="muted small">no server</span>
+          </div>
+          <div class="infer-grid">
+            <div class="infer-cell">
+              <span class="muted small">prompt tok/s</span>
+              <div class="infer-line">
+                <span id="prompt-tps" class="metric-value">—</span>
+                <canvas id="prompt-spark" class="spark spark-small"></canvas>
+              </div>
+            </div>
+            <div class="infer-cell">
+              <span class="muted small">generation tok/s</span>
+              <div class="infer-line">
+                <span id="gen-tps" class="metric-value">—</span>
+                <canvas id="gen-spark" class="spark spark-small"></canvas>
+              </div>
+            </div>
+          </div>
+          <div id="ctx-detail" class="muted small"></div>
+          <div id="slot-list" class="slot-list"></div>
+        </div>
+      </section>
+
       <section class="card log-card">
         <div class="card-head">
           <h2>Server log</h2>
-          <label class="check"><input type="checkbox" id="autoscroll" checked><span>auto-scroll</span></label>
+          <div class="row">
+            <label class="check"><input type="checkbox" id="autoscroll" checked><span>auto-scroll</span></label>
+            <button id="btn-toggle-log" class="btn btn-small" type="button">Hide</button>
+          </div>
         </div>
         <pre id="log" class="log" aria-live="polite"></pre>
       </section>
@@ -217,6 +267,7 @@
 
 <script src="js/api.js"></script>
 <script src="js/ui.js"></script>
+<script src="js/metrics.js"></script>
 <script src="js/pages/dashboard.js"></script>
 <script src="js/pages/presets.js"></script>
 <script src="js/pages/settings.js"></script>

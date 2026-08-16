@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -13,6 +14,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from .config import PRESETS_DIR, AppConfig, load_config, save_config
 from .flags import build_args, parse_supported_flags, validate_settings
+from .metrics import MetricsCollector
 from .process import LlamaServerManager
 from .presets import PresetStore
 from .schema import LaunchSettings, Preset
@@ -21,6 +23,19 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-7s %(na
 log = logging.getLogger("llama-monitor")
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
+METRICS_INTERVAL = 1.5
+
+
+async def _metrics_loop(collector: MetricsCollector, manager: LlamaServerManager) -> None:
+    """Poll system + inference metrics and push them to WebSocket listeners."""
+    while True:
+        await asyncio.sleep(METRICS_INTERVAL)
+        try:
+            data = await collector.snapshot(manager.current_port())
+        except Exception:  # metrics must never take the panel down
+            log.exception("metrics collection failed")
+            continue
+        manager.broadcast({"type": "metrics", "data": data})
 
 
 class StartRequest(BaseModel):
@@ -38,16 +53,19 @@ def create_app() -> FastAPI:
     config: AppConfig = load_config()
     manager = LlamaServerManager(lambda: config)
     store = PresetStore(PRESETS_DIR)
+    collector = MetricsCollector()
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
         log.info("llama-monitor panel starting")
         await manager.on_startup()
         log.info("panel ready (state=%s)", manager.snapshot()["state"])
+        task = asyncio.create_task(_metrics_loop(collector, manager))
         yield
+        task.cancel()
         await manager.shutdown()
 
-    app = FastAPI(title="llama-monitor", version="0.2.0", lifespan=lifespan)
+    app = FastAPI(title="llama-monitor", version="0.3.0", lifespan=lifespan)
 
     # ------------------------------------------------------------------
     # launch preparation (presets -> validated, version-checked flags)

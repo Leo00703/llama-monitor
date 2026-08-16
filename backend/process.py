@@ -52,6 +52,7 @@ class LlamaServerManager:
         self._lock = asyncio.Lock()
         self._launch_args: list[str] = []
         self._stop_requested = False
+        self._port: Optional[int] = None
 
     # ------------------------------------------------------------------
     # lifecycle
@@ -109,6 +110,7 @@ class LlamaServerManager:
                 return {"ok": False, "error": msg}
 
             self._launch_args = args
+            self._port = port
             pid = self._proc.pid
             asyncio.create_task(self._read_output(self._proc))
             asyncio.create_task(self._run_monitor(self._proc, port))
@@ -129,6 +131,7 @@ class LlamaServerManager:
                     with contextlib.suppress(Exception):
                         await asyncio.wait_for(proc.wait(), timeout=KILL_TIMEOUT)
                 self._proc = None
+                self._port = None
                 self._state = ServerState.STOPPED
                 self._error = ""
                 self._publish_log("[panel] server stopped")
@@ -151,12 +154,14 @@ class LlamaServerManager:
                             psutil.Process(pid).kill()
                 except psutil.Error:
                     pass
+                self._port = None
                 self._state = ServerState.STOPPED
                 self._error = ""
                 self._publish_log("[panel] external server stopped")
                 self._publish_state()
                 return {"ok": True, "state": self._state.value}
 
+            self._port = None
             self._state = ServerState.STOPPED
             self._error = ""
             self._publish_state()
@@ -182,6 +187,14 @@ class LlamaServerManager:
             "error": self._error,
         }
 
+    def current_port(self) -> Optional[int]:
+        """Port of the active server (panel-started or external), or None."""
+        if self._port is not None:
+            return self._port
+        if self._state == ServerState.EXTERNAL:
+            return self._get_config().default_server_port
+        return None
+
     def log_history(self) -> list[str]:
         return list(self._log)
 
@@ -204,10 +217,13 @@ class LlamaServerManager:
     def _publish_state(self) -> None:
         self._broadcast({"type": "state", **self.snapshot()})
 
-    def _broadcast(self, event: dict) -> None:
+    def broadcast(self, event: dict) -> None:
+        """Send an event to every WebSocket listener (public entry point)."""
         for queue in list(self._listeners):
             with contextlib.suppress(asyncio.QueueFull):
                 queue.put_nowait(event)
+
+    _broadcast = broadcast
 
     def _set_error_state(self, message: str) -> None:
         self._state = ServerState.ERROR
@@ -221,6 +237,7 @@ class LlamaServerManager:
         pid = self._pid_on_port(port)
         if pid is not None and (self._proc is None or self._proc.returncode is not None):
             self._state = ServerState.EXTERNAL
+            self._port = port
             self._error = f"port {port} is occupied by pid {pid} (not started by this panel)"
             self._publish_log(f"[panel] detected external server on port {port} (pid {pid})")
 
@@ -247,6 +264,7 @@ class LlamaServerManager:
             self._publish_log("[panel] server is up and accepting connections")
             self._publish_state()
         code = await proc.wait()
+        self._port = None
         if self._stop_requested or code in (0, None):
             if self._state not in (ServerState.STOPPED,):
                 self._state = ServerState.STOPPED

@@ -184,6 +184,8 @@ API.connect("/ws/logs", (event) => {
     appendLogLine(event.line);
   } else if (event.type === "state") {
     applyState(event);
+  } else if (event.type === "metrics") {
+    Metrics.update(event.data);
   }
 });
 
@@ -195,9 +197,16 @@ btnStart.addEventListener("click", doStart);
 btnStop.addEventListener("click", doStop);
 btnRestart.addEventListener("click", doRestart);
 
+$("btn-toggle-log").addEventListener("click", () => {
+  const card = $("btn-toggle-log").closest(".log-card");
+  const collapsed = card.classList.toggle("collapsed");
+  $("btn-toggle-log").textContent = collapsed ? "Show" : "Hide";
+});
+
 Dashboard.init();
 Presets.init();
 Settings.init();
+Metrics.init();
 
 refreshState();
 setInterval(refreshState, 10000);
