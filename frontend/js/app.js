@@ -1,6 +1,6 @@
 "use strict";
 
-/* llama-monitor — Phase 1 app: server control + live log */
+/* llama-monitor — app shell: routing, topbar state, WebSocket log stream */
 
 const $ = (id) => document.getElementById(id);
 
@@ -9,7 +9,6 @@ const errorLabel = $("error-label");
 const versionLabel = $("version-label");
 const logEl = $("log");
 const autoscrollEl = $("autoscroll");
-const launchArgsEl = $("launch-args");
 const btnStart = $("btn-start");
 const btnStop = $("btn-stop");
 const btnRestart = $("btn-restart");
@@ -27,6 +26,25 @@ const STATE_LABELS = {
   error: "error",
   external: "external",
 };
+
+/* ---------------------------------------------------------------- */
+/* routing                                                           */
+/* ---------------------------------------------------------------- */
+
+const PAGES = ["dashboard", "presets", "settings"];
+
+function showPage(name) {
+  for (const p of PAGES) {
+    $(`page-${p}`).classList.toggle("hidden", p !== name);
+  }
+  document.querySelectorAll(".nav-item").forEach((el) => {
+    el.classList.toggle("active", el.dataset.page === name);
+  });
+}
+
+document.querySelectorAll(".nav-item").forEach((el) => {
+  el.addEventListener("click", () => showPage(el.dataset.page));
+});
 
 /* ---------------------------------------------------------------- */
 /* log rendering                                                     */
@@ -85,39 +103,41 @@ function setBusy(b) {
 }
 
 /* ---------------------------------------------------------------- */
-/* actions                                                           */
+/* actions (preset-driven)                                           */
 /* ---------------------------------------------------------------- */
 
-function parseArgs() {
-  const raw = launchArgsEl.value.trim();
-  if (!raw) return [];
-  const args = [];
-  const re = /(?:[^\s"']+|"[^"]*"|'[^']*')+/g;
-  let m;
-  while ((m = re.exec(raw)) !== null) {
-    let token = m[0];
-    if ((token.startsWith('"') && token.endsWith('"')) ||
-        (token.startsWith("'") && token.endsWith("'"))) {
-      token = token.slice(1, -1);
-    }
-    args.push(token);
+function selectedPresetId() {
+  return Dashboard.selectedId;
+}
+
+function requirePreset() {
+  if (!selectedPresetId()) {
+    UI.toast("create a preset first (Presets page)", "err");
+    showPage("presets");
+    return false;
   }
-  return args;
+  return true;
 }
 
 async function doStart() {
+  if (!requirePreset()) return;
   setBusy(true);
   try {
-    const res = await API.post("/api/server/start", { args: parseArgs() });
+    const res = await API.post("/api/server/start", { preset_id: selectedPresetId() });
+    if (res.warnings && res.warnings.length) {
+      showPage("dashboard");
+      Dashboard.showLaunchResult(res);
+    }
     if (!res.ok) {
-      appendLogLine(`[panel] start failed: ${res.error}`);
-      applyState({ state: "error", error: res.error, version: versionLabel.textContent });
+      appendLogLine(`[panel] start failed: ${res.errors ? res.errors.join("; ") : res.error}`);
+      applyState({ state: "error", error: res.error || (res.errors || []).join("; "), version: versionLabel.textContent });
     }
   } catch (e) {
     appendLogLine(`[panel] start failed: ${e}`);
   } finally {
     setBusy(false);
     refreshState();
+    Dashboard.refreshPresets();
   }
 }
 
@@ -134,15 +154,21 @@ async function doStop() {
 }
 
 async function doRestart() {
+  if (!requirePreset()) return;
   setBusy(true);
   try {
-    const res = await API.post("/api/server/restart", { args: parseArgs() });
-    if (!res.ok) appendLogLine(`[panel] restart failed: ${res.error}`);
+    const res = await API.post("/api/server/restart", { preset_id: selectedPresetId() });
+    if (res.warnings && res.warnings.length) {
+      showPage("dashboard");
+      Dashboard.showLaunchResult(res);
+    }
+    if (!res.ok) appendLogLine(`[panel] restart failed: ${res.error || (res.errors || []).join("; ")}`);
   } catch (e) {
     appendLogLine(`[panel] restart failed: ${e}`);
   } finally {
     setBusy(false);
     refreshState();
+    Dashboard.refreshPresets();
   }
 }
 
@@ -168,6 +194,10 @@ API.connect("/ws/logs", (event) => {
 btnStart.addEventListener("click", doStart);
 btnStop.addEventListener("click", doStop);
 btnRestart.addEventListener("click", doRestart);
+
+Dashboard.init();
+Presets.init();
+Settings.init();
 
 refreshState();
 setInterval(refreshState, 10000);

@@ -144,15 +144,61 @@ body {
 
 /* ---------- layout ---------- */
 
+.layout {
+  display: flex;
+  align-items: flex-start;
+  max-width: 1600px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.sidebar {
+  position: sticky;
+  top: 57px;
+  flex: 0 0 190px;
+  width: 190px;
+  padding: 16px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-right: 1px solid var(--border);
+  min-height: calc(100vh - 57px);
+}
+
+.nav-item {
+  appearance: none;
+  text-align: left;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 550;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  padding: 9px 14px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.nav-item:hover { background: var(--panel); color: var(--text); }
+
+.nav-item.active {
+  background: rgba(91, 140, 255, 0.14);
+  border-color: rgba(91, 140, 255, 0.35);
+  color: #cdd9ff;
+}
+
 main {
   display: flex;
   flex-direction: column;
   gap: 16px;
   padding: 20px;
-  max-width: 1400px;
-  margin: 0 auto;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
 }
+
+.page { display: flex; flex-direction: column; gap: 16px; }
+.hidden { display: none !important; }
 
 .card {
   background: var(--panel);
@@ -290,6 +336,110 @@ label.field-label {
   color: var(--muted);
   margin: 0 0 5px 1px;
 }
+
+/* ---------- forms ---------- */
+
+.field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+
+@media (max-width: 900px) {
+  .grid2, .grid3 { grid-template-columns: 1fr; }
+  .sidebar { display: none; }
+}
+
+fieldset.fieldset {
+  margin: 18px 0 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: rgba(0, 0, 0, 0.18);
+}
+
+fieldset.fieldset legend {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  color: var(--muted);
+  padding: 0 8px;
+}
+
+.checkrow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 24px;
+  margin-top: 14px;
+}
+
+.form-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.form-head h2 { margin: 0; font-size: 16px; font-weight: 600; }
+
+.card-actions { margin-top: 14px; }
+
+.row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+/* ---------- table ---------- */
+
+.table-wrap { overflow-x: auto; }
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+
+.table th {
+  text-align: left;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-strong);
+  white-space: nowrap;
+}
+
+.table td {
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.table tr:last-child td { border-bottom: none; }
+.table tr:hover td { background: rgba(255, 255, 255, 0.025); }
+
+.table .cell-actions { display: flex; gap: 6px; justify-content: flex-end; }
+
+.table .btn { padding: 4px 10px; font-size: 12.5px; }
+
+/* ---------- toast ---------- */
+
+.toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  padding: 10px 18px;
+  border-radius: 999px;
+  background: rgba(20, 22, 28, 0.92);
+  border: 1px solid var(--border-strong);
+  backdrop-filter: blur(12px);
+  font-size: 13.5px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
+}
+
+.toast-ok { border-color: rgba(63, 185, 80, 0.5); color: #7ee787; }
+.toast-err { border-color: rgba(248, 81, 73, 0.5); color: #ffb3ae; }
 
 /* ---------- utilities ---------- */
 

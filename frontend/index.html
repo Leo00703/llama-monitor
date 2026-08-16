@@ -21,27 +21,205 @@
   </div>
 </header>
 
-<main>
-  <section class="card">
-    <details>
-      <summary class="card-summary">Launch arguments</summary>
-      <p class="muted small">Passed to <code>llama-server</code> as-is. Example:
-        <code>-m "my-model.gguf" -ngl 99 --port 8080</code></p>
-      <textarea id="launch-args" rows="3" spellcheck="false"
-        placeholder='-m "models/my-model.gguf" -ngl 99 --port 8080'></textarea>
-    </details>
-  </section>
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <nav>
+      <button class="nav-item active" data-page="dashboard">Dashboard</button>
+      <button class="nav-item" data-page="presets">Presets</button>
+      <button class="nav-item" data-page="settings">Settings</button>
+    </nav>
+  </aside>
 
-  <section class="card log-card">
-    <div class="card-head">
-      <h2>Server log</h2>
-      <label class="check"><input type="checkbox" id="autoscroll" checked><span>auto-scroll</span></label>
-    </div>
-    <pre id="log" class="log" aria-live="polite"></pre>
-  </section>
-</main>
+  <main>
+    <!-- ============================ DASHBOARD ============================ -->
+    <section id="page-dashboard" class="page">
+      <div id="launch-banner"></div>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>Server</h2>
+          <div class="row">
+            <label class="field-label" for="preset-select">Preset</label>
+            <select id="preset-select" style="width:260px"></select>
+          </div>
+        </div>
+        <div id="preset-summary" class="muted small"></div>
+        <div class="card-actions">
+          <button id="btn-preview" class="btn">Preview launch command</button>
+        </div>
+        <pre id="flag-preview" class="log hidden"></pre>
+      </section>
+
+      <section class="card log-card">
+        <div class="card-head">
+          <h2>Server log</h2>
+          <label class="check"><input type="checkbox" id="autoscroll" checked><span>auto-scroll</span></label>
+        </div>
+        <pre id="log" class="log" aria-live="polite"></pre>
+      </section>
+    </section>
+
+    <!-- ============================= PRESETS ============================= -->
+    <section id="page-presets" class="page hidden">
+      <div id="presets-list-view" class="card">
+        <div class="card-head">
+          <h2>Presets</h2>
+          <button id="btn-new-preset" class="btn btn-primary">New preset</button>
+        </div>
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Name</th><th>Model</th><th>Ctx</th><th>NGl</th><th>Spec</th>
+                <th>Port</th><th>Updated</th><th></th>
+              </tr>
+            </thead>
+            <tbody id="presets-tbody"></tbody>
+          </table>
+        </div>
+        <div id="presets-empty" class="muted small hidden" style="padding:12px">
+          No presets yet. Create one to configure the server launch.
+        </div>
+      </div>
+
+      <div id="presets-form-view" class="card hidden">
+        <form id="preset-form">
+          <div class="form-head">
+            <h2 id="preset-form-title">New preset</h2>
+            <div class="row">
+              <button type="button" id="btn-preset-back" class="btn">Back</button>
+              <button type="submit" class="btn btn-primary">Save</button>
+            </div>
+          </div>
+
+          <div class="field" style="max-width:420px">
+            <label class="field-label" for="pf-name">Name</label>
+            <input type="text" id="pf-name" required>
+          </div>
+
+          <fieldset class="fieldset">
+            <legend>Model &amp; memory</legend>
+            <div class="grid2">
+              <div class="field"><label class="field-label" for="pf-model">Model path (relative to models root)</label><input type="text" id="pf-model" spellcheck="false"></div>
+              <div class="field"><label class="field-label" for="pf-alias">Alias</label><input type="text" id="pf-alias"></div>
+              <div class="field"><label class="field-label" for="pf-mmproj">mmproj / vision projector (optional)</label><input type="text" id="pf-mmproj" spellcheck="false"></div>
+              <div class="field"><label class="field-label" for="pf-ctx">Context size (-c)</label><input type="number" id="pf-ctx" min="0" step="256"></div>
+              <div class="field"><label class="field-label" for="pf-ngl">GPU layers to offload (-ngl)</label><input type="number" id="pf-ngl" min="0" step="1"></div>
+              <div class="field"><label class="field-label" for="pf-ncmoe">MoE layers on CPU (--n-cpu-moe, 0 = off)</label><input type="number" id="pf-ncmoe" min="0" step="1"></div>
+              <div class="field"><label class="field-label" for="pf-override">Override tensors (--override-tensor, comma separated, e.g. experts=CPU)</label><input type="text" id="pf-override" spellcheck="false"></div>
+              <div class="field"><label class="field-label" for="pf-fa">Flash attention (-fa)</label>
+                <select id="pf-fa"><option value="auto">auto</option><option value="on">on</option><option value="off">off</option></select>
+              </div>
+              <div class="field"><label class="field-label" for="pf-ctk">KV cache type K (--cache-type-k)</label>
+                <select id="pf-ctk"><option>f16</option><option>f32</option><option>bf16</option><option>q8_0</option><option>q8_1</option><option>q4_0</option><option>q4_1</option><option>i8</option></select>
+              </div>
+              <div class="field"><label class="field-label" for="pf-ctv">KV cache type V (--cache-type-v)</label>
+                <select id="pf-ctv"><option>f16</option><option>f32</option><option>bf16</option><option>q8_0</option><option>q8_1</option><option>q4_0</option><option>q4_1</option><option>i8</option></select>
+              </div>
+              <div class="field"><label class="field-label" for="pf-load">Load mode (--load-mode)</label>
+                <select id="pf-load"><option>mmap</option><option>none</option><option>mlock</option><option>mmap+mlock</option><option>dio</option></select>
+              </div>
+            </div>
+          </fieldset>
+
+          <fieldset class="fieldset">
+            <legend>Multi-GPU</legend>
+            <div class="grid3">
+              <div class="field"><label class="field-label" for="pf-ts">Tensor split (--tensor-split, e.g. 8,16)</label><input type="text" id="pf-ts" spellcheck="false"></div>
+              <div class="field"><label class="field-label" for="pf-mg">Main GPU (--main-gpu, 0 = none)</label><input type="number" id="pf-mg" min="0" step="1"></div>
+              <div class="field"><label class="field-label" for="pf-sm">Split mode (--split-mode)</label>
+                <select id="pf-sm"><option>layer</option><option>none</option><option>row</option></select>
+              </div>
+            </div>
+          </fieldset>
+
+          <fieldset class="fieldset">
+            <legend>CPU &amp; batching</legend>
+            <div class="grid3">
+              <div class="field"><label class="field-label" for="pf-threads">Generation threads (-t, 0 = auto)</label><input type="number" id="pf-threads" min="0" step="1"></div>
+              <div class="field"><label class="field-label" for="pf-tb">Batch threads (-tb, 0 = same as -t)</label><input type="number" id="pf-tb" min="0" step="1"></div>
+              <div class="field"><label class="field-label" for="pf-b">Batch size (-b)</label><input type="number" id="pf-b" min="1" step="1"></div>
+              <div class="field"><label class="field-label" for="pf-ub">Micro-batch size (-ub)</label><input type="number" id="pf-ub" min="1" step="1"></div>
+              <div class="field"><label class="field-label" for="pf-reuse">Cache reuse (--cache-reuse, 0 = off)</label><input type="number" id="pf-reuse" min="0" step="32"></div>
+            </div>
+          </fieldset>
+
+          <fieldset class="fieldset">
+            <legend>Speculative decoding</legend>
+            <div class="grid3">
+              <div class="field"><label class="field-label" for="pf-spectype">Type (--spec-type)</label>
+                <select id="pf-spectype">
+                  <option value="none">none</option>
+                  <option value="draft-mtp">draft-mtp (built-in MTP head)</option>
+                  <option value="draft-simple">draft-simple</option>
+                  <option value="draft-eagle3">draft-eagle3</option>
+                  <option value="draft-dflash">draft-dflash</option>
+                  <option value="draft-dspark">draft-dspark</option>
+                  <option value="ngram-simple">ngram-simple</option>
+                  <option value="ngram-cache">ngram-cache</option>
+                  <option value="ngram-map-k">ngram-map-k</option>
+                  <option value="ngram-map-k4v">ngram-map-k4v</option>
+                  <option value="ngram-mod">ngram-mod</option>
+                </select>
+              </div>
+              <div class="field hidden" id="pf-draftwrap"><label class="field-label" for="pf-draft">Drafter model (--spec-draft-model)</label><input type="text" id="pf-draft" spellcheck="false"></div>
+              <div class="field"><label class="field-label" for="pf-dnmax">Max draft tokens (--spec-draft-n-max)</label><input type="number" id="pf-dnmax" min="0" step="1"></div>
+              <div class="field"><label class="field-label" for="pf-dnmin">Min draft tokens (--spec-draft-n-min)</label><input type="number" id="pf-dnmin" min="0" step="1"></div>
+              <div class="field"><label class="field-label" for="pf-slots">Parallel slots (-np)</label><input type="number" id="pf-slots" min="1" step="1"></div>
+            </div>
+          </fieldset>
+
+          <fieldset class="fieldset">
+            <legend>Network &amp; observability</legend>
+            <div class="grid3">
+              <div class="field"><label class="field-label" for="pf-host">Host (--host)</label><input type="text" id="pf-host" spellcheck="false"></div>
+              <div class="field"><label class="field-label" for="pf-port">Port (--port)</label><input type="number" id="pf-port" min="1" step="1"></div>
+              <div class="field"><label class="field-label" for="pf-apikey">API key (--api-key, optional)</label><input type="text" id="pf-apikey" spellcheck="false"></div>
+            </div>
+            <div class="checkrow">
+              <label class="check"><input type="checkbox" id="pf-jinja"><span>Jinja templates (--jinja)</span></label>
+              <label class="check"><input type="checkbox" id="pf-reasoning"><span>Preserve reasoning (--reasoning-preserve)</span></label>
+              <label class="check"><input type="checkbox" id="pf-mergeqkv"><span>Merge QKV (--merge-qkv)</span></label>
+              <label class="check"><input type="checkbox" id="pf-fit"><span>Auto fit memory (--fit)</span></label>
+            </div>
+            <div class="grid2">
+              <div class="field"><label class="field-label" for="pf-gr">Graph reuse (-gr, 0 = off)</label><input type="number" id="pf-gr" min="0" step="1"></div>
+              <div class="field"><label class="field-label" for="pf-extra">Extra flags (free form)</label><input type="text" id="pf-extra" spellcheck="false"></div>
+            </div>
+          </fieldset>
+        </form>
+      </div>
+    </section>
+
+    <!-- ============================= SETTINGS ============================= -->
+    <section id="page-settings" class="page hidden">
+      <div class="card">
+        <div class="card-head">
+          <h2>Settings</h2>
+          <button type="button" id="btn-save-settings" class="btn btn-primary">Save</button>
+        </div>
+        <form id="settings-form">
+          <div class="grid2">
+            <div class="field"><label class="field-label" for="set-exe">llama-server executable path</label><input type="text" id="set-exe" spellcheck="false" placeholder="C:\...\llama-server.exe or llama-server"></div>
+            <div class="field"><label class="field-label" for="set-root">Models root folder</label><input type="text" id="set-root" spellcheck="false" placeholder="C:\Users\you\llama-models"></div>
+            <div class="field"><label class="field-label" for="set-port">Default server port</label><input type="number" id="set-port" min="1" step="1"></div>
+            <div class="field"><label class="field-label" for="set-phost">Panel host</label><input type="text" id="set-phost"></div>
+            <div class="field"><label class="field-label" for="set-pport">Panel port</label><input type="number" id="set-pport" min="1" step="1"></div>
+          </div>
+          <p class="muted small">Panel host/port only take effect on next panel restart.</p>
+        </form>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="toast" class="toast hidden"></div>
 
 <script src="js/api.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/pages/dashboard.js"></script>
+<script src="js/pages/presets.js"></script>
+<script src="js/pages/settings.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

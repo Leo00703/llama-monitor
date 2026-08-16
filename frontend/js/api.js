@@ -15,6 +15,20 @@ const API = {
     return res.json();
   },
 
+  async put(path, body) {
+    const res = await fetch(path, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return res.json();
+  },
+
+  async del(path) {
+    const res = await fetch(path, { method: "DELETE" });
+    return res.json();
+  },
+
   /**
    * Connect to a WebSocket with automatic reconnect.
    * @param {string} path e.g. "/ws/logs"

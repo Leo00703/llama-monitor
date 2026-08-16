@@ -31,11 +31,10 @@ class AppConfig(BaseModel):
     active_preset_id: str = ""
 
     def model_root(self) -> Optional[Path]:
-        """Resolved models root directory, or None if unset/invalid."""
+        """Resolved models root directory, or None if unset."""
         if not self.models_root.strip():
             return None
-        path = Path(self.models_root).expanduser()
-        return path if path.is_dir() else None
+        return Path(self.models_root).expanduser()
 
     def resolved_exe(self) -> Optional[str]:
         """Resolve the llama-server executable path (PATH lookup supported)."""
