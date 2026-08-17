@@ -76,10 +76,19 @@ body {
 .icon-btn svg { width: 17px; height: 17px; }
 
 .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-weight: 650;
   font-size: 16px;
   letter-spacing: 0.4px;
   white-space: nowrap;
+}
+.brand-logo {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  color: var(--text);
 }
 
 .status-group {
