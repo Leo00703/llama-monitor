@@ -50,6 +50,18 @@ class AppConfig(BaseModel):
         return None
 
 
+def spawn_argv(exe: str, *args: str) -> list[str]:
+    """Build the argv used to launch the server executable.
+
+    Windows' CreateProcess cannot execute .bat/.cmd files directly
+    (it fails with WinError 5, "access denied"), so batch wrappers are
+    routed through cmd.exe. Plain executables are returned unchanged.
+    """
+    if exe.lower().endswith((".bat", ".cmd")):
+        return ["cmd.exe", "/c", exe, *args]
+    return [exe, *args]
+
+
 def load_config() -> AppConfig:
     """Load config.json, seeding it from the example file on first run."""
     if not CONFIG_PATH.exists():
@@ -58,7 +70,7 @@ def load_config() -> AppConfig:
         else:
             return AppConfig()
     try:
-        return AppConfig.model_validate(json.loads(CONFIG_PATH.read_text(encoding="utf-8")))
+        return AppConfig.model_validate(json.loads(CONFIG_PATH.read_text(encoding="utf-8-sig")))
     except (json.JSONDecodeError, ValidationError) as exc:
         raise RuntimeError(f"config.json is invalid: {exc}") from exc
 

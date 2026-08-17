@@ -16,6 +16,8 @@ from typing import Any, Callable, Optional
 
 import psutil
 
+from .config import spawn_argv
+
 log = logging.getLogger("llama-monitor.process")
 
 LOG_BUFFER_SIZE = 4000
@@ -99,13 +101,17 @@ class LlamaServerManager:
             log.info("starting: %s", cmd)
             try:
                 self._proc = await asyncio.create_subprocess_exec(
-                    exe, *args,
+                    *spawn_argv(exe, *args),
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.STDOUT,
                     **self._spawn_kwargs(),
                 )
             except OSError as exc:
                 msg = f"failed to start process: {exc}"
+                if getattr(exc, "winerror", None) == 5:
+                    msg += (" — Windows refused to run this file: check that "
+                            "llama_server_exe points to a real .exe (or .bat) "
+                            "and that antivirus is not blocking it")
                 self._publish_log(f"[panel] {msg}")
                 self._set_error_state(msg)
                 return {"ok": False, "error": msg}
@@ -310,6 +316,12 @@ class LlamaServerManager:
 
     @staticmethod
     def _kill(proc: asyncio.subprocess.Process) -> None:
+        # Kill the whole tree: when the server runs through a .bat/.cmd
+        # wrapper, the tracked pid is cmd.exe and llama-server is its child.
+        with contextlib.suppress(psutil.Error, ProcessLookupError):
+            parent = psutil.Process(proc.pid)
+            for child in parent.children(recursive=True):
+                child.kill()
         with contextlib.suppress(ProcessLookupError):
             proc.kill()
 
@@ -357,9 +369,9 @@ class LlamaServerManager:
             return ""
         try:
             proc = await asyncio.create_subprocess_exec(
-                exe, "--version",
+                *spawn_argv(exe, "--version"),
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.STDOUT,
                 **self._spawn_kwargs(),
             )
             out, _ = await asyncio.wait_for(proc.communicate(), timeout=15)

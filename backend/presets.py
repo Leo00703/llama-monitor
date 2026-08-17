@@ -37,7 +37,7 @@ class PresetStore:
         if not path.exists():
             return None
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data = json.loads(path.read_text(encoding="utf-8-sig"))
             return Preset.model_validate(data)
         except (json.JSONDecodeError, ValidationError):
             return None

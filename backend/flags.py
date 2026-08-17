@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
 
+from .config import spawn_argv
 from .schema import DRAFT_MODEL_REQUIRED_TYPES, LaunchSettings
 
 # ---------------------------------------------------------------------------
@@ -342,7 +343,7 @@ async def parse_supported_flags(exe: str) -> set[str]:
         if key in _help_cache:
             return _help_cache[key]
         proc = await asyncio.create_subprocess_exec(
-            exe, "--help",
+            *spawn_argv(exe, "--help"),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
         )
