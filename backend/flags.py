@@ -42,6 +42,26 @@ def validate_settings(
     if models_root is not None and not models_root.is_dir():
         warnings.append(f"models_root does not exist: {models_root}")
 
+    def _check_model_file(label: str, raw: str) -> None:
+        """Reject paths that llama-server cannot open (folder instead of .gguf)."""
+        if not raw.strip():
+            return
+        p = Path(raw).expanduser()
+        if not p.is_absolute():
+            if models_root is None:
+                return  # unresolvable relative path — skip the check
+            p = models_root / p
+        if p.is_dir():
+            ggufs = sorted(f.name for f in p.glob("*.gguf")
+                           if not f.name.lower().startswith("mmproj"))
+            hint = f" — .gguf files inside: {', '.join(ggufs[:5])}" if ggufs else ""
+            errors.append(f"{label} path is a directory, not a .gguf file: {p}{hint}")
+        elif not p.exists():
+            errors.append(f"{label} file not found: {p}")
+
+    _check_model_file("model", s.model)
+    _check_model_file("drafter model", s.spec.draft_model)
+
     if s.spec.spec_type == "draft-mtp" and s.mmproj.strip():
         errors.append(
             "mmproj (vision) and draft-mtp speculative decoding are incompatible — "
