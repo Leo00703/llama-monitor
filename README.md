@@ -105,5 +105,5 @@ The panel is built in incremental phases (see `Implementation Plan.md`):
 2. Preset system (CRUD, JSON storage, flag translation layer) — done
 3. Resource monitoring (CPU/RAM/GPU, inference metrics) with history charts — done
 4. Model browser, mmproj, speculative decoding, generation parameters + proxy — done
-5. Analytics: usage history (SQLite), energy cost, historical charts — pending
+5. Analytics: usage history (SQLite), energy cost, historical charts — done
 6. Header (status/version/host), collapsible sidebar, design polish — done

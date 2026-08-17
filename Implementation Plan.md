@@ -224,7 +224,7 @@ Costruisci per fasi incrementali, ognuna testabile prima di passare alla success
 2. **Fase 2**: sistema preset completo (CRUD, salvataggio JSON, layer di traduzione flag)
 3. **Fase 3**: monitoraggio risorse (CPU/RAM/GPU, incluso consumo Watt) in tempo reale, con grafici ad andamento
 4. **Fase 4**: file browser modelli + supporto mmproj + speculative decoding + parametri di generazione (punto 4.9)
-5. **Fase 5**: Analytics — parser dei log per i timing, database SQLite, correlazione con i consumi energetici, pagina con i grafici storici (punto 4.10)
+5. **Fase 5**: Analytics — parser dei log per i timing, database SQLite, correlazione con i consumi energetici, pagina con i grafici storici (punto 4.10) — completata (default prezzo energia impostato a 0,20 €/kWh su scelta dell'utente, non 0,30/0,316)
 6. **Fase 6**: header con stato/versione/controlli, sidebar comprimibile, rifinitura del design secondo il punto 5
 
 ## Appendice: comando llama-server attualmente in uso (riferimento)

@@ -50,6 +50,7 @@ class LlamaServerManager:
         self._error = ""
         self._version = ""
         self._log: collections.deque[str] = collections.deque(maxlen=LOG_BUFFER_SIZE)
+        self._log_hooks: list[Callable[[str], None]] = []
         self._listeners: set[asyncio.Queue] = set()
         self._lock = asyncio.Lock()
         self._launch_args: list[str] = []
@@ -234,8 +235,17 @@ class LlamaServerManager:
     # internals
     # ------------------------------------------------------------------
 
+    def add_log_hook(self, hook: Callable[[str], None]) -> None:
+        """Register a sync callback invoked for every log line (e.g. the
+        print_timing parser). Hook exceptions are swallowed: they must never
+        break log streaming."""
+        self._log_hooks.append(hook)
+
     def _publish_log(self, line: str) -> None:
         self._log.append(line)
+        for hook in self._log_hooks:
+            with contextlib.suppress(Exception):
+                hook(line)
         self._broadcast({"type": "log", "line": line})
 
     def _publish_state(self) -> None:

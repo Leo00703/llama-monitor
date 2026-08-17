@@ -40,6 +40,9 @@
       <button class="nav-item" data-page="models" title="Models">
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="8" ry="3"></ellipse><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"></path><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"></path></svg><span class="nav-label">Models</span>
       </button>
+      <button class="nav-item" data-page="analytics" title="Analytics">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"></path><path d="M7 14l4-4 3 3 5-6"></path></svg><span class="nav-label">Analytics</span>
+      </button>
       <button class="nav-item" data-page="settings" title="Settings">
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.09a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.09a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg><span class="nav-label">Settings</span>
       </button>
@@ -334,6 +337,67 @@
       </div>
     </section>
 
+    <!-- ============================ ANALYTICS ============================ -->
+    <section id="page-analytics" class="page hidden">
+      <div class="card">
+        <div class="card-head">
+          <h2>Generation analytics</h2>
+          <div class="row">
+            <div class="range-group" id="analytics-range">
+              <button class="range-btn" data-range="day" type="button">Day</button>
+              <button class="range-btn active" data-range="week" type="button">Week</button>
+              <button class="range-btn" data-range="month" type="button">Month</button>
+              <button class="range-btn" data-range="year" type="button">Year</button>
+              <button class="range-btn" data-range="all" type="button">All</button>
+            </div>
+            <button id="btn-analytics-export" class="btn">Export CSV</button>
+          </div>
+        </div>
+        <p class="muted small">
+          Per-request history parsed from <code>slot print_timing</code> server logs.
+          Energy and cost are estimates from sampled GPU power × request duration
+          (price configurable in Settings).
+        </p>
+        <section class="metrics-grid" id="analytics-cards"></section>
+        <div class="grid2">
+          <div class="card metric-card">
+            <div class="card-head"><h2>Tokens generated</h2><span class="muted small" id="an-tokens-sub"></span></div>
+            <canvas id="an-tokens-chart" class="chart"></canvas>
+          </div>
+          <div class="card metric-card">
+            <div class="card-head"><h2>Avg generation speed</h2><span class="muted small" id="an-speed-sub"></span></div>
+            <canvas id="an-speed-chart" class="chart"></canvas>
+          </div>
+        </div>
+        <div class="grid2">
+          <div class="card metric-card">
+            <div class="card-head"><h2>By model</h2></div>
+            <div id="an-models-bars"></div>
+            <div id="an-models-empty" class="muted small hidden" style="padding:12px">No requests recorded in this range yet.</div>
+            <div class="table-wrap">
+              <table class="table">
+                <thead>
+                  <tr><th>Model</th><th>Requests</th><th>Generated</th><th>avg tok/s</th><th>max tok/s</th><th>€ / 1M</th></tr>
+                </thead>
+                <tbody id="an-models-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="card metric-card">
+            <div class="card-head"><h2>Recent requests</h2><span class="muted small" id="an-records-count"></span></div>
+            <div class="table-wrap">
+              <table class="table">
+                <thead>
+                  <tr><th>Time</th><th>Model</th><th>Prompt</th><th>Generated</th><th>tok/s</th><th>Duration</th><th>Energy</th></tr>
+                </thead>
+                <tbody id="an-records-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- ============================= SETTINGS ============================= -->
     <section id="page-settings" class="page hidden">
       <div class="card">
@@ -348,8 +412,10 @@
             <div class="field"><label class="field-label" for="set-port">Default server port</label><input type="number" id="set-port" min="1" step="1"></div>
             <div class="field"><label class="field-label" for="set-phost">Panel host</label><input type="text" id="set-phost"></div>
             <div class="field"><label class="field-label" for="set-pport">Panel port</label><input type="number" id="set-pport" min="1" step="1"></div>
+            <div class="field"><label class="field-label" for="set-energy-price">Energy price (€ / kWh)</label><input type="number" id="set-energy-price" min="0" step="0.01"></div>
+            <div class="field"><label class="field-label" for="set-energy-overhead">System overhead (W, added to GPU power)</label><input type="number" id="set-energy-overhead" min="0" step="1"></div>
           </div>
-          <p class="muted small">Panel host/port only take effect on next panel restart.</p>
+          <p class="muted small">Panel host/port only take effect on next panel restart. Energy price is used for the cost estimates on the Analytics page.</p>
         </form>
       </div>
     </section>
@@ -369,6 +435,7 @@
 <script src="js/pages/generation.js"></script>
 <script src="js/pages/presets.js"></script>
 <script src="js/pages/settings.js"></script>
+<script src="js/pages/analytics.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

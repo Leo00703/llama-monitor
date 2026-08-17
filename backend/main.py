@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, AsyncIterator, Optional
@@ -14,7 +15,8 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 
-from .config import PRESETS_DIR, AppConfig, load_config, save_config
+from .analytics import AnalyticsStore, PowerSampler, PrintTimingTracker, RANGES
+from .config import DATA_DIR, PRESETS_DIR, AppConfig, load_config, save_config
 from .flags import build_args, parse_supported_flags, validate_settings
 from .metrics import MetricsCollector
 from .models import list_models
@@ -30,7 +32,8 @@ FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 METRICS_INTERVAL = 1.5
 
 
-async def _metrics_loop(collector: MetricsCollector, manager: LlamaServerManager) -> None:
+async def _metrics_loop(collector: MetricsCollector, manager: LlamaServerManager,
+                        power: PowerSampler) -> None:
     """Poll system + inference metrics and push them to WebSocket listeners."""
     while True:
         await asyncio.sleep(METRICS_INTERVAL)
@@ -39,6 +42,8 @@ async def _metrics_loop(collector: MetricsCollector, manager: LlamaServerManager
         except Exception:  # metrics must never take the panel down
             log.exception("metrics collection failed")
             continue
+        total_w = sum(g["power_w"] for g in data.get("gpus", []) if g.get("power_w") is not None)
+        power.add(float(data.get("ts") or time.time()), total_w if total_w > 0 else None)
         manager.broadcast({"type": "metrics", "data": data})
 
 
@@ -58,6 +63,35 @@ def create_app() -> FastAPI:
     manager = LlamaServerManager(lambda: config)
     store = PresetStore(PRESETS_DIR)
     collector = MetricsCollector()
+    analytics = AnalyticsStore(DATA_DIR / "analytics.db")
+    power = PowerSampler()
+
+    def _complete_request(rec: dict) -> None:
+        """Persist one completed request (from a parsed print_timing block)."""
+        try:
+            now = time.time()
+            total_ms = rec.get("total_ms") or 0.0
+            start = max(now - total_ms / 1000.0, now - 86400.0)
+            gpu_wh = power.energy_wh(start, now)
+            energy_wh = gpu_wh
+            if config.energy_overhead_w > 0:
+                energy_wh = (gpu_wh or 0.0) + config.energy_overhead_w * (total_ms / 1000.0) / 3600.0
+            pid = manager.preset_id
+            preset = store.get(pid) if pid else None
+            model = preset.launch.model if preset and preset.launch.model else (preset.name if preset else "")
+            analytics.record(
+                ts=now,
+                preset_id=pid or "",
+                preset_name=preset.name if preset else "",
+                model=model,
+                rec=rec,
+                energy_wh=energy_wh,
+            )
+        except Exception:
+            log.exception("failed to record generation request")
+
+    tracker = PrintTimingTracker(_complete_request)
+    manager.add_log_hook(tracker.feed)
 
     def _launch_for(preset_id: Optional[str]) -> Optional[dict[str, Any]]:
         if not preset_id:
@@ -75,7 +109,7 @@ def create_app() -> FastAPI:
         log.info("llama-monitor panel starting")
         await manager.on_startup()
         log.info("panel ready (state=%s)", manager.snapshot()["state"])
-        task = asyncio.create_task(_metrics_loop(collector, manager))
+        task = asyncio.create_task(_metrics_loop(collector, manager, power))
         yield
         task.cancel()
         await manager.shutdown()
@@ -146,7 +180,9 @@ def create_app() -> FastAPI:
 
     @app.post("/api/server/stop")
     async def server_stop() -> dict:
-        return await manager.stop()
+        result = await manager.stop()
+        tracker.reset()
+        return result
 
     @app.post("/api/server/restart")
     async def server_restart(body: StartRequest | None = None) -> dict:
@@ -160,6 +196,7 @@ def create_app() -> FastAPI:
             args = (body.args if body and body.args else None)
             response_extra = {}
         result = await manager.restart(args)
+        tracker.reset()
         if result.get("ok"):
             manager.set_preset_id((body.preset_id if body and body.preset_id else None))
             proxy.invalidate_props_cache()
@@ -290,6 +327,51 @@ def create_app() -> FastAPI:
         if preset is None:
             return {"ok": False, "error": "not found"}
         return {"ok": True, "generation": preset.launch.generation}
+
+    # ------------------------------------------------------------------
+    # REST: analytics (per-request history + energy cost)
+    # ------------------------------------------------------------------
+
+    def _price() -> float:
+        try:
+            return max(float(config.energy_price_eur_kwh), 0.0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    @app.get("/api/analytics/summary")
+    async def analytics_summary(range: str = "week") -> dict:
+        if range not in RANGES:
+            return {"ok": False, "error": f"range must be one of {', '.join(RANGES)}"}
+        return {"ok": True, "summary": analytics.summary(range, _price())}
+
+    @app.get("/api/analytics/timeseries")
+    async def analytics_timeseries(range: str = "week", bucket: str = "") -> dict:
+        if range not in RANGES:
+            return {"ok": False, "error": f"range must be one of {', '.join(RANGES)}"}
+        return {"ok": True, **analytics.timeseries(range, _price(), bucket or None)}
+
+    @app.get("/api/analytics/models")
+    async def analytics_models(range: str = "week") -> dict:
+        if range not in RANGES:
+            return {"ok": False, "error": f"range must be one of {', '.join(RANGES)}"}
+        return {"ok": True, "models": analytics.models(range, _price())}
+
+    @app.get("/api/analytics/records")
+    async def analytics_records(range: str = "week", limit: int = 100) -> dict:
+        if range not in RANGES:
+            return {"ok": False, "error": f"range must be one of {', '.join(RANGES)}"}
+        limit = max(1, min(int(limit), 500))
+        return {"ok": True, "records": analytics.records(range, limit)}
+
+    @app.get("/api/analytics/export")
+    async def analytics_export(range: str = "week") -> Response:
+        if range not in RANGES:
+            return JSONResponse({"error": f"range must be one of {', '.join(RANGES)}"}, status_code=400)
+        return Response(
+            content=analytics.export_csv(range),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename=llama-monitor-analytics-{range}.csv"},
+        )
 
     # ------------------------------------------------------------------
     # proxy to the running llama-server

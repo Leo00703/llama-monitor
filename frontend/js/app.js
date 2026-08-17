@@ -33,7 +33,7 @@ const STATE_LABELS = {
 /* routing                                                           */
 /* ---------------------------------------------------------------- */
 
-const PAGES = ["dashboard", "generation", "presets", "models", "settings"];
+const PAGES = ["dashboard", "generation", "presets", "models", "analytics", "settings"];
 
 function showPage(name) {
   for (const p of PAGES) {
@@ -44,6 +44,7 @@ function showPage(name) {
   });
   if (name === "generation") Generation.refresh();
   if (name === "models") Models.refresh();
+  if (name === "analytics") Analytics.refresh();
 }
 
 document.querySelectorAll(".nav-item").forEach((el) => {
@@ -262,6 +263,7 @@ Models.init();
 Generation.init();
 Presets.init();
 Settings.init();
+Analytics.init();
 Metrics.init();
 
 refreshState();

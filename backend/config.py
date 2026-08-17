@@ -32,6 +32,8 @@ class AppConfig(BaseModel):
     default_server_port: int = 8080
     panel: PanelSettings = Field(default_factory=PanelSettings)
     active_preset_id: str = ""
+    energy_price_eur_kwh: float = 0.20
+    energy_overhead_w: float = 0.0
 
     def model_root(self) -> Optional[Path]:
         """Resolved models root directory, or None if unset."""
