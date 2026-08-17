@@ -80,9 +80,14 @@ class LlamaServerManager:
                                ServerState.RESTARTING, ServerState.EXTERNAL):
                 return {"ok": False, "error": f"server is {self._state.value}"}
 
-            exe = self._get_config().resolved_exe()
+            cfg = self._get_config()
+            exe = cfg.resolved_exe()
             if not exe:
-                msg = "llama-server executable not configured (see Settings)"
+                raw = cfg.llama_server_exe.strip()
+                msg = (
+                    f"llama-server executable not found: {raw} (fix llama_server_exe in Settings)"
+                    if raw else "llama-server executable not configured (see Settings)"
+                )
                 self._set_error_state(msg)
                 return {"ok": False, "error": msg}
 

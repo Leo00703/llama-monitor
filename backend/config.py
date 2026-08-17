@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import shutil
 from pathlib import Path
 from typing import Optional
@@ -14,6 +15,8 @@ CONFIG_PATH = APP_ROOT / "config.json"
 EXAMPLE_PATH = APP_ROOT / "config.example.json"
 DATA_DIR = APP_ROOT / "data"
 PRESETS_DIR = DATA_DIR / "presets"
+
+log = logging.getLogger("llama-monitor.config")
 
 
 class PanelSettings(BaseModel):
@@ -41,13 +44,35 @@ class AppConfig(BaseModel):
         exe = self.llama_server_exe.strip()
         if not exe:
             return None
-        path = Path(exe).expanduser()
-        if path.exists():
-            return str(path)
-        if "/" not in exe and "\\" not in exe:
-            found = shutil.which(exe)
-            return found
+        return resolve_exe_path(exe)
+
+
+def resolve_exe_path(exe: str) -> Optional[str]:
+    """Resolve an executable path, tolerating a directory that *contains* it.
+
+    Users often paste the folder an extracted llama.cpp build lives in
+    (e.g. ``C:\\llama-b10448-...\\``) instead of the ``llama-server.exe``
+    inside it. Windows' CreateProcess cannot launch a directory (it fails
+    with WinError 5, "access denied"), so we resolve to the exe within it.
+    """
+    path = Path(exe).expanduser()
+    if path.is_dir():
+        candidate = path / "llama-server.exe"
+        if candidate.exists():
+            log.warning(
+                "llama_server_exe points at a directory; using %s", candidate
+            )
+            return str(candidate)
+        log.error(
+            "llama_server_exe points at a directory without llama-server.exe: %s",
+            path,
+        )
         return None
+    if path.exists():
+        return str(path)
+    if "/" not in exe and "\\" not in exe:
+        return shutil.which(exe)
+    return None
 
 
 def spawn_argv(exe: str, *args: str) -> list[str]:
