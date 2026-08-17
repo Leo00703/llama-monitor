@@ -8,6 +8,7 @@ venv/
 # Local, machine-specific data (live config, presets, runtime state)
 config.json
 data/
+*.log
 
 # Editor / OS
 .vscode/

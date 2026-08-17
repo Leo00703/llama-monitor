@@ -53,6 +53,23 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border: 1px solid var(--border-strong);
+  background: var(--panel);
+  color: var(--muted);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background .15s ease, color .15s ease;
+}
+.icon-btn:hover { background: var(--panel-strong); color: var(--text); }
+.icon-btn svg { width: 17px; height: 17px; }
+
 .brand {
   font-weight: 650;
   font-size: 16px;
@@ -66,6 +83,28 @@ body {
   gap: 12px;
   flex: 1;
   min-width: 0;
+}
+
+.host {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 550;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.host .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ok);
+  box-shadow: 0 0 8px rgba(63, 185, 80, 0.6);
+  flex: none;
+}
+.host.offline .dot {
+  background: var(--err);
+  box-shadow: 0 0 8px rgba(248, 81, 73, 0.6);
 }
 
 .actions { display: flex; gap: 8px; }
@@ -163,10 +202,14 @@ body {
   gap: 4px;
   border-right: 1px solid var(--border);
   min-height: calc(100vh - 57px);
+  transition: flex-basis 0.18s ease, width 0.18s ease;
 }
 
 .nav-item {
   appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 11px;
   text-align: left;
   font-family: inherit;
   font-size: 14px;
@@ -175,9 +218,16 @@ body {
   background: transparent;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
-  padding: 9px 14px;
+  padding: 9px 12px;
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease;
+}
+
+.nav-icon {
+  width: 19px;
+  height: 19px;
+  flex: none;
+  opacity: 0.9;
 }
 
 .nav-item:hover { background: var(--panel); color: var(--text); }
@@ -187,6 +237,20 @@ body {
   border-color: rgba(91, 140, 255, 0.35);
   color: #cdd9ff;
 }
+
+.sidebar.collapsed {
+  flex: 0 0 58px;
+  width: 58px;
+  padding: 16px 8px;
+}
+
+.sidebar.collapsed .nav-item {
+  justify-content: center;
+  padding: 9px 0;
+  gap: 0;
+}
+
+.sidebar.collapsed .nav-label { display: none; }
 
 main {
   display: flex;

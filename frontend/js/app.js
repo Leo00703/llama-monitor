@@ -5,6 +5,8 @@
 const $ = (id) => document.getElementById(id);
 
 const badge = $("status-badge");
+const statusText = $("status-text");
+const hostBadge = $("host-badge");
 const errorLabel = $("error-label");
 const versionLabel = $("version-label");
 const logEl = $("log");
@@ -49,6 +51,22 @@ document.querySelectorAll(".nav-item").forEach((el) => {
 });
 
 /* ---------------------------------------------------------------- */
+/* sidebar (collapsible)                                             */
+/* ---------------------------------------------------------------- */
+
+const sidebar = $("sidebar");
+const btnSidebar = $("btn-sidebar");
+
+function setSidebarCollapsed(collapsed) {
+  sidebar.classList.toggle("collapsed", collapsed);
+  btnSidebar.setAttribute("aria-expanded", String(!collapsed));
+  try { localStorage.setItem("lm.sidebar.collapsed", collapsed ? "1" : "0"); } catch (_) {}
+}
+
+btnSidebar.addEventListener("click", () => setSidebarCollapsed(!sidebar.classList.contains("collapsed")));
+try { if (localStorage.getItem("lm.sidebar.collapsed") === "1") setSidebarCollapsed(true); } catch (_) {}
+
+/* ---------------------------------------------------------------- */
 /* log rendering                                                     */
 /* ---------------------------------------------------------------- */
 
@@ -71,10 +89,15 @@ function renderLog(lines) {
 /* state / UI updates                                                */
 /* ---------------------------------------------------------------- */
 
+function setHost(online) {
+  hostBadge.classList.toggle("offline", !online);
+  hostBadge.title = online ? "host online" : "host unreachable";
+}
+
 function applyState(state) {
   serverState = state.state;
   const label = STATE_LABELS[serverState] || serverState;
-  badge.textContent = label;
+  statusText.textContent = label;
   badge.className = `badge badge-${serverState}`;
   errorLabel.textContent = state.error || "";
   versionLabel.textContent = state.version ? `llama-server ${state.version}` : "";
@@ -90,9 +113,11 @@ async function refreshState() {
   try {
     const state = await API.get("/api/state");
     applyState(state);
+    setHost(true);
   } catch (_) {
-    badge.textContent = "offline";
+    statusText.textContent = "offline";
     badge.className = "badge badge-error";
+    setHost(false);
   }
 }
 
@@ -182,6 +207,7 @@ API.connect("/ws/logs", (event) => {
   if (event.type === "init") {
     renderLog(event.lines || []);
     applyState(event.state || {});
+    setHost(true);
   } else if (event.type === "log") {
     appendLogLine(event.line);
   } else if (event.type === "state") {
