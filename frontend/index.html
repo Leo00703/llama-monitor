@@ -25,8 +25,13 @@
   </div>
 </header>
 
+<div id="nav-overlay" class="nav-overlay hidden"></div>
+
 <div class="layout">
   <aside class="sidebar" id="sidebar">
+    <button id="btn-sidebar-close" class="icon-btn nav-close" type="button" aria-label="Close menu" title="Close menu">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="5" x2="19" y2="19"></line><line x1="19" y1="5" x2="5" y2="19"></line></svg>
+    </button>
     <nav>
       <button class="nav-item active" data-page="dashboard" title="Dashboard">
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="1.5"></rect><rect x="14" y="3" width="7" height="7" rx="1.5"></rect><rect x="3" y="14" width="7" height="7" rx="1.5"></rect><rect x="14" y="14" width="7" height="7" rx="1.5"></rect></svg><span class="nav-label">Dashboard</span>
@@ -59,7 +64,7 @@
           <h2>Server</h2>
           <div class="row">
             <label class="field-label" for="preset-select">Preset</label>
-            <select id="preset-select" style="width:260px"></select>
+            <select id="preset-select"></select>
           </div>
         </div>
         <div id="preset-summary" class="muted small"></div>
@@ -300,7 +305,7 @@
         <div class="card-head">
           <h2>Models <span id="models-root" class="muted small"></span></h2>
           <div class="row">
-            <input type="search" id="models-search" placeholder="filter by name or path..." style="width:280px">
+            <input type="search" id="models-search" placeholder="filter by name or path...">
             <span id="models-count" class="muted small"></span>
             <button id="models-refresh" class="btn">Refresh</button>
           </div>
@@ -323,7 +328,7 @@
           <h2 id="md-name"></h2>
           <div class="row mb-actions">
             <label class="field-label" for="models-preset-select">Apply to preset</label>
-            <select id="models-preset-select" style="width:220px"></select>
+            <select id="models-preset-select"></select>
             <button id="models-apply-model" class="btn btn-primary">Apply as model</button>
             <button id="models-apply-mmproj" class="btn">Apply mmproj</button>
           </div>

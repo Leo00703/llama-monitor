@@ -48,15 +48,17 @@ function showPage(name) {
 }
 
 document.querySelectorAll(".nav-item").forEach((el) => {
-  el.addEventListener("click", () => showPage(el.dataset.page));
+  el.addEventListener("click", () => { showPage(el.dataset.page); closeDrawer(); });
 });
 
 /* ---------------------------------------------------------------- */
-/* sidebar (collapsible)                                             */
+/* sidebar (collapsible on desktop, off-canvas drawer on mobile)     */
 /* ---------------------------------------------------------------- */
 
 const sidebar = $("sidebar");
 const btnSidebar = $("btn-sidebar");
+const navOverlay = $("nav-overlay");
+const mobileQuery = window.matchMedia("(max-width: 900px)");
 
 function setSidebarCollapsed(collapsed) {
   sidebar.classList.toggle("collapsed", collapsed);
@@ -64,7 +66,35 @@ function setSidebarCollapsed(collapsed) {
   try { localStorage.setItem("lm.sidebar.collapsed", collapsed ? "1" : "0"); } catch (_) {}
 }
 
-btnSidebar.addEventListener("click", () => setSidebarCollapsed(!sidebar.classList.contains("collapsed")));
+function openDrawer() {
+  sidebar.classList.add("open");
+  navOverlay.classList.remove("hidden");
+  document.body.classList.add("nav-locked");
+  btnSidebar.setAttribute("aria-expanded", "true");
+}
+
+function closeDrawer() {
+  if (!sidebar.classList.contains("open")) return;
+  sidebar.classList.remove("open");
+  navOverlay.classList.add("hidden");
+  document.body.classList.remove("nav-locked");
+  btnSidebar.setAttribute("aria-expanded", "false");
+}
+
+btnSidebar.addEventListener("click", () => {
+  if (mobileQuery.matches) {
+    if (sidebar.classList.contains("open")) closeDrawer();
+    else openDrawer();
+  } else {
+    setSidebarCollapsed(!sidebar.classList.contains("collapsed"));
+  }
+});
+
+navOverlay.addEventListener("click", closeDrawer);
+$("btn-sidebar-close").addEventListener("click", closeDrawer);
+window.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDrawer(); });
+mobileQuery.addEventListener("change", (e) => { if (!e.matches) closeDrawer(); });
+
 try { if (localStorage.getItem("lm.sidebar.collapsed") === "1") setSidebarCollapsed(true); } catch (_) {}
 
 /* ---------------------------------------------------------------- */

@@ -225,8 +225,30 @@ const Metrics = (() => {
     updateSlots(inf);
   }
 
+  function redrawAll() {
+    drawSpark($("cpu-spark"), hist.cpu, { max: 100 });
+    drawSpark($("ram-spark"), hist.ram, { max: 100 });
+    for (const key of Object.keys(gpuEls)) {
+      drawSpark(gpuEls[key].spark, gpuHist[key].util, { max: 100 });
+    }
+    drawSpark(
+      $("prompt-spark"), hist.prompt,
+      { max: Math.max(...hist.prompt, 1), color: "#6ee7b7", fill: "rgba(110, 231, 183, 0.12)" },
+    );
+    drawSpark(
+      $("gen-spark"), hist.gen,
+      { max: Math.max(...hist.gen, 1), color: "#f5a524", fill: "rgba(245, 165, 36, 0.12)" },
+    );
+  }
+
+  let resizeTimer = null;
+
   function init() {
     updateGpus([]);
+    window.addEventListener("resize", () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(redrawAll, 150);
+    });
   }
 
   return { init, update };

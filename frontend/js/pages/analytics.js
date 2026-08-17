@@ -112,7 +112,7 @@ const Analytics = (() => {
       ctx.stroke();
     }
 
-    const shown = Math.min(6, n);
+    const shown = Math.min(Math.max(2, Math.floor(w / 72)), n);
     ctx.fillStyle = "#9aa0a6";
     ctx.textAlign = "center";
     for (let k = 0; k < shown; k++) {
@@ -122,8 +122,11 @@ const Analytics = (() => {
     }
   }
 
-  function renderTimeseries(ts) {
-    const buckets = ts.buckets || [];
+  let lastTs = null;
+
+  function drawTimeseries() {
+    if (!lastTs) return;
+    const buckets = lastTs.buckets || [];
     const labels = buckets.map((b) => b.label);
     drawChart(
       $("an-tokens-chart"),
@@ -137,6 +140,12 @@ const Analytics = (() => {
       labels,
       { mode: "line", color: "#f5a524" },
     );
+  }
+
+  function renderTimeseries(ts) {
+    lastTs = ts;
+    drawTimeseries();
+    const buckets = ts.buckets || [];
     const total = buckets.reduce((a, b) => a + (b.gen_tokens || 0), 0);
     $("an-tokens-sub").textContent = `${fmtNum(total)} tokens · ${ts.bucket}`;
     $("an-speed-sub").textContent = "tok/s";
@@ -233,9 +242,15 @@ const Analytics = (() => {
     refresh();
   }
 
+  let resizeTimer = null;
+
   function init() {
     document.querySelectorAll("#analytics-range .range-btn").forEach((b) => {
       b.addEventListener("click", () => setRange(b.dataset.range));
+    });
+    window.addEventListener("resize", () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(drawTimeseries, 150);
     });
     $("btn-analytics-export").addEventListener("click", () => {
       if (!RANGES.includes(range)) return;
