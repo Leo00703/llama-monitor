@@ -20,14 +20,18 @@ line:
   *not* launch flags: they are injected into every proxied
   `/v1/chat/completions` and `/completion` request, so they can be changed at
   any time without restarting the server.
+- **Model browser** — recursive scan of `models_root` for `.gguf` files with
+  size/sort, plus automatic mmproj (vision) projectors detection per model.
 
 ## Requirements
 
 - Python 3.10+ (tested on 3.11/3.14)
-- A `llama-server` binary (llama.cpp) on the same machine
+- Windows or Linux
+- A `llama-server` binary (llama.cpp) on the same machine — **only needed to
+  launch the server**; the panel, monitoring, model browser, and presets all
+  work without it (Start/Restart just fail until the exe path is set)
 - NVIDIA GPU driver providing `nvidia-smi` (optional — GPU cards are hidden
   when no GPU is detected; works on CPU-only machines too)
-- Windows or Linux
 
 ## Install
 
@@ -78,6 +82,7 @@ applied to every request through the panel.
 backend/
   main.py        FastAPI app: REST API, WebSockets, static frontend
   config.py      config.json loading/saving (pathlib, cross-platform)
+  schema.py      Pydantic models for launch settings, specs, and API payloads
   process.py     llama-server child-process manager (state machine, log capture)
   flags.py       semantic settings -> CLI flags translation + --help validation
   presets.py     preset CRUD (JSON files under data/presets)
@@ -87,7 +92,8 @@ backend/
 frontend/
   index.html     single-page app (vanilla HTML/CSS/JS, no build step)
   css/style.css  dark frosted-glass theme
-  js/            app shell, pages, widgets
+  js/            app shell (app.js), api/ui/metrics helpers, pages/ (dashboard,
+                 generation, presets, models, settings)
 data/            local runtime data (git-ignored)
 ```
 
@@ -95,8 +101,9 @@ data/            local runtime data (git-ignored)
 
 The panel is built in incremental phases (see `Implementation Plan.md`):
 
-1. Process start/stop/restart + live log streaming
-2. Preset system (CRUD, JSON storage, flag translation layer)
-3. Resource monitoring (CPU/RAM/GPU, inference metrics) with history charts
-4. Model browser, mmproj, speculative decoding, generation parameters + proxy
-5. Header (status/version), collapsible sidebar, design polish
+1. Process start/stop/restart + live log streaming — done
+2. Preset system (CRUD, JSON storage, flag translation layer) — done
+3. Resource monitoring (CPU/RAM/GPU, inference metrics) with history charts — done
+4. Model browser, mmproj, speculative decoding, generation parameters + proxy — done
+5. Analytics: usage history (SQLite), energy cost, historical charts — pending
+6. Header (status/version/host), collapsible sidebar, design polish — done
