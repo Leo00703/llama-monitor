@@ -16,7 +16,7 @@ Sei uno sviluppatore full-stack incaricato di costruire un pannello di controllo
 - **Backend**: Python 3, FastAPI + uvicorn, supporto WebSocket nativo
 - **Frontend**: HTML/CSS/JavaScript vanilla — niente framework (no React/Vue), niente build step (no npm/webpack/vite)
 - **Percorsi file**: usa sempre `pathlib.Path`, mai stringhe concatenate a mano — deve funzionare identico su Windows e Linux
-- **Persistenza dati**: file JSON su disco (nessun database esterno necessario)
+- **Persistenza dati**: file JSON su disco per preset/impostazioni (nessun database esterno necessario). Per lo storico Analytics (punto 4.10) usa invece **SQLite** (modulo `sqlite3` della libreria standard, un solo file su disco, nessuna dipendenza esterna) — è lo strumento giusto per le query di aggregazione su molti record nel tempo, cosa che JSON gestirebbe male
 - Librerie Python da usare: `psutil` (CPU/RAM), `subprocess` per gestire il processo `llama-server` e leggerne stdout/stderr, chiamate a `nvidia-smi` (via subprocess, parsing dell'output `--query-gpu`) per le metriche GPU
 
 ## 4. Funzionalità richieste
@@ -121,9 +121,55 @@ Organizzali in due sotto-categorie, coerenti con l'interfaccia ufficiale allegat
 
 I valori di default esatti vanno letti dall'endpoint del server che espone `default_generation_settings` — usali come riferimento invece di inventare default arbitrari.
 
+### 4.10 Analytics e storico d'uso
+- Ogni intervallo di generazione va registrato in uno storico persistente con: timestamp, modello/preset attivo, token di prompt processati, token generati, velocità di prompt processing, velocità di generazione, e — se lo speculative decoding è attivo — token di bozza proposti e accettati
+- **Fonte dati confermata**: l'oggetto `timings` nella risposta di ogni `/completion` include `draft_n`/`draft_n_accepted` quando `timings_per_token` è abilitato; l'endpoint `/metrics` espone anche contatori cumulativi equivalenti, inclusi i token accettati per posizione di bozza
+- **Architettura consigliata**: NON costruire un proxy delle richieste di inferenza (aggiungerebbe un punto di fallimento sul percorso critico). Interroga periodicamente `/metrics` e `/slots` (stesso polling del punto 4.2), calcola i delta tra un'interrogazione e la successiva, registrali nello storico etichettati con il modello/preset attualmente caricato — il server esegue un modello alla volta, quindi l'etichettatura è già inequivocabile
+- Aggregazioni da calcolare: giornaliera, settimanale, mensile, annuale, totale storico
+- Classifica dei modelli per token totali generati/processati
+- Velocità media (tok/s generazione e prompt processing) per modello/preset
+- Percentuale media di accettazione bozze per modello/preset, solo dove applicabile
+
+### 4.11 Stima costo energetico
+- Usa il consumo istantaneo delle GPU già raccolto per il monitoraggio (punto 4.2, campo `power.draw` di `nvidia-smi`) per stimare l'energia consumata durante ogni sessione di generazione
+- Formula: energia (kWh) = potenza media GPU (kW) × tempo di generazione (h); costo per 1M token = (energia consumata / token generati) × 1.000.000 × prezzo €/kWh
+- Prezzo dell'energia come impostazione modificabile (non hardcoded), default **0,30 €/kWh** (media nazionale tutto compreso, riferimento ARERA III trimestre 2026 — non esiste una tariffa regionale Veneto distinta, la regolazione è sostanzialmente nazionale)
+- Nota esplicativa da mostrare nell'interfaccia: la stima copre solo il consumo delle GPU, non l'intero sistema (CPU, RAM, dispersione dell'alimentatore) — è una stima per difetto. Campo opzionale "overhead di sistema stimato (W)" per chi vuole includere un contributo fisso per il resto della macchina
+
+### 4.10 Analytics e storico
+
+Richiede una **pagina dedicata**, propria voce nella sidebar (aggiornare punto 5.2). A differenza del monitoraggio in tempo reale (punto 4.2, che mostra lo stato attuale), qui si mostra l'**andamento storico** — serve persistenza dedicata, non solo dati in memoria.
+
+**Come raccogliere i dati per ogni richiesta, senza costruire un reverse proxy**: llama-server stampa già, per ogni richiesta completata, una riga di log strutturata e facilmente analizzabile nel formato:
+```
+slot print_timing: id 0 | task N | prompt eval time = X ms / Y tokens ( ..., Z tokens per second)
+eval time = A ms / B tokens ( ..., C tokens per second)
+total time = D ms / E tokens
+```
+Il log del processo è già intercettato e trasmesso al frontend (punto 4.1) — aggiungi semplicemente un parser che riconosce questo pattern nello stream già catturato, estraendo token di prompt, token generati, tempo/velocità di entrambe le fasi. Non serve un proxy per intercettare le richieste API: il log contiene già tutto il necessario. Ogni riga riconosciuta diventa un record nel database, taggato con il preset/modello attivo in quel momento (il backend lo sa già, essendo lui ad aver lanciato il processo).
+
+**Acceptance rate dello speculative decoding**: se MTP/DFlash sono attivi, verifica nei log o nell'endpoint `/metrics` la presenza di un contatore di token di bozza proposti/accettati — il nome esatto del campo va confermato osservando l'output reale del server con speculative decoding attivo (può differire tra build). Se non è recuperabile in modo affidabile per una richiesta, ometti il dato invece di stimarlo.
+
+**Collegare i consumi energetici al costo**: il monitoraggio del punto 4.2 campiona già la potenza (Watt) di ogni GPU ogni 1-2 secondi — mantieni un piccolo buffer temporaneo di questi campioni con timestamp. Quando arriva una riga `print_timing`, calcola la potenza media nella finestra temporale di quella richiesta, convertila in Wh (potenza media × durata in ore, sommata su tutte le GPU), e salvala nello stesso record. Da qui si derivano Wh per token generato e, con un prezzo €/kWh configurabile, il costo stimato per 1M di token.
+
+**Prezzo dell'energia**: campo configurabile dalle Impostazioni, con default iniziale **0,316 €/kWh** (prezzo ARERA tutto compreso, III trimestre 2026, mercato di maggior tutela — è un riferimento nazionale, non esiste un prezzo distinto per il Veneto su questa componente). Se sei sul mercato libero il valore reale può differire sensibilmente (indicativamente 0,12-0,30 €/kWh secondo l'offerta) — aggiornalo con quello della tua bolletta per una stima precisa.
+
+**Grafici e viste richieste nella pagina**:
+- Token totali generati: oggi, settimana, mese, anno, totale storico — con andamento a barre/linee per periodo
+- Ripartizione per modello/preset (quali hanno generato più token — grafico a torta o barre orizzontali)
+- Velocità media tok/s (generazione e prompt processing), andamento nel tempo — utile per verificare se una modifica ai parametri ha davvero migliorato le prestazioni nel tempo, non solo in un test isolato
+- Acceptance rate medio dello speculative decoding nel tempo, quando disponibile
+- Costo stimato: oggi/settimana/mese/anno/totale, più costo stimato per 1M token per ciascun modello/preset
+
+**Suggerimenti aggiuntivi da valutare per la pagina**:
+- Confronto diretto tra preset/modelli sulla stessa metrica (tabella affiancata tok/s medio + costo per 1M token) — coerente con il modo in cui hai già confrontato le tue configurazioni durante questa conversazione
+- Velocità di picco raggiunta per modello/preset, per capire se una modifica di tuning ha davvero alzato il tetto massimo, non solo la media
+- Export dei dati storici in CSV per analisi esterne
+- Conteggio richieste fallite/errori, come indicatore base di affidabilità
+
 ## 5. Design dell'interfaccia
 
-Replica lo stesso linguaggio visivo della WebUI ufficiale di llama.cpp:
+Replica lo stesso linguaggio visivo della WebUI ufficiale di llama.cpp (screenshot allegati come riferimento):
 
 - Tema scuro, sfondo quasi nero
 - Elementi principali (barra di input, pillole di selezione) con angoli arrotondati, leggero effetto vetro sfocato/frosted-glass, bordo sottile semi-trasparente
@@ -136,13 +182,14 @@ Replica lo stesso linguaggio visivo della WebUI ufficiale di llama.cpp:
 - Indicatore sintetico dello stato del PC host (es. online/raggiungibile)
 - Pulsanti azione sempre accessibili: Avvia, Ferma, Riavvia
 
-### 5.2 Sidebar sinistra (comprimibile, a icone+etichetta)
+### 5.2 Sidebar sinistra (comprimibile, a icone+etichetta, stile identico agli screenshot allegati)
 Voci di menu:
 - Dashboard principale
+- Analytics (storico, punto 4.10)
 - Parametri di generazione (sampling/penalties, punto 4.9)
 - Parametri server (punto 4.8)
 - Selezione modelli (file browser GGUF/mmproj, punto 4.6)
-- Impostazioni (percorso binario, cartella modelli, punto 4.5)
+- Impostazioni (percorso binario, cartella modelli, prezzo energia, punto 4.5)
 
 ### 5.3 Dashboard principale (contenuto centrale)
 Pannelli/card in tempo reale, con grafici ad andamento (sparkline o simili) non solo numeri statici:
@@ -177,7 +224,8 @@ Costruisci per fasi incrementali, ognuna testabile prima di passare alla success
 2. **Fase 2**: sistema preset completo (CRUD, salvataggio JSON, layer di traduzione flag)
 3. **Fase 3**: monitoraggio risorse (CPU/RAM/GPU, incluso consumo Watt) in tempo reale, con grafici ad andamento
 4. **Fase 4**: file browser modelli + supporto mmproj + speculative decoding + parametri di generazione (punto 4.9)
-5. **Fase 5**: header con stato/versione/controlli, sidebar comprimibile, rifinitura del design secondo il punto 5
+5. **Fase 5**: Analytics — parser dei log per i timing, database SQLite, correlazione con i consumi energetici, pagina con i grafici storici (punto 4.10)
+6. **Fase 6**: header con stato/versione/controlli, sidebar comprimibile, rifinitura del design secondo il punto 5
 
 ## Appendice: comando llama-server attualmente in uso (riferimento)
 
