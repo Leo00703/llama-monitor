@@ -65,7 +65,7 @@ python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000
 ```
 
 Then open `http://<server-ip>:8000` in a browser. Point your OpenAI-compatible
-clients at `http://<server-ip>:8000/v1/...` to have generation parameters
+clients at `http://<server-ip>:8000/proxy/v1/...` to have generation parameters
 applied to every request through the panel.
 
 > Note: the panel only manages `llama-server` processes it started itself.

@@ -25,7 +25,9 @@
   <aside class="sidebar" id="sidebar">
     <nav>
       <button class="nav-item active" data-page="dashboard">Dashboard</button>
+      <button class="nav-item" data-page="generation">Generation</button>
       <button class="nav-item" data-page="presets">Presets</button>
+      <button class="nav-item" data-page="models">Models</button>
       <button class="nav-item" data-page="settings">Settings</button>
     </nav>
   </aside>
@@ -109,6 +111,34 @@
       </section>
     </section>
 
+    <!-- ============================ GENERATION ============================ -->
+    <section id="page-generation" class="page hidden">
+      <div class="card">
+        <div class="card-head">
+          <h2>Generation defaults</h2>
+          <div class="row">
+            <span id="gen-head" class="muted small"></span>
+            <span id="gen-status" class="row"></span>
+            <button id="gen-save" class="btn btn-primary">Save</button>
+            <button id="gen-reset" class="btn">Clear saved</button>
+          </div>
+        </div>
+        <p class="muted small">
+          Saved defaults are injected by the panel proxy into <code>/completion</code> and
+          <code>/v1/chat/completions</code> requests. Fields sent by the client always win.
+          Unsaved fields fall back to the server's own defaults.
+        </p>
+        <div class="gen-tabs">
+          <button class="gen-tab active" data-tab="sampling">Sampling</button>
+          <button class="gen-tab" data-tab="penalties">Penalties</button>
+          <button class="gen-tab" data-tab="other">Other</button>
+        </div>
+        <div id="gen-panel-sampling" class="gen-panel"></div>
+        <div id="gen-panel-penalties" class="gen-panel hidden"></div>
+        <div id="gen-panel-other" class="gen-panel hidden"></div>
+      </div>
+    </section>
+
     <!-- ============================= PRESETS ============================= -->
     <section id="page-presets" class="page hidden">
       <div id="presets-list-view" class="card">
@@ -150,9 +180,9 @@
           <fieldset class="fieldset">
             <legend>Model &amp; memory</legend>
             <div class="grid2">
-              <div class="field"><label class="field-label" for="pf-model">Model path (relative to models root)</label><input type="text" id="pf-model" spellcheck="false"></div>
+              <div class="field"><label class="field-label" for="pf-model">Model path (relative to models root)</label><input type="text" id="pf-model" list="models-datalist" spellcheck="false"></div>
               <div class="field"><label class="field-label" for="pf-alias">Alias</label><input type="text" id="pf-alias"></div>
-              <div class="field"><label class="field-label" for="pf-mmproj">mmproj / vision projector (optional)</label><input type="text" id="pf-mmproj" spellcheck="false"></div>
+              <div class="field"><label class="field-label" for="pf-mmproj">mmproj / vision projector (optional)</label><input type="text" id="pf-mmproj" list="mmproj-datalist" spellcheck="false"></div>
               <div class="field"><label class="field-label" for="pf-ctx">Context size (-c)</label><input type="number" id="pf-ctx" min="0" step="256"></div>
               <div class="field"><label class="field-label" for="pf-ngl">GPU layers to offload (-ngl)</label><input type="number" id="pf-ngl" min="0" step="1"></div>
               <div class="field"><label class="field-label" for="pf-ncmoe">MoE layers on CPU (--n-cpu-moe, 0 = off)</label><input type="number" id="pf-ncmoe" min="0" step="1"></div>
@@ -196,6 +226,9 @@
 
           <fieldset class="fieldset">
             <legend>Speculative decoding</legend>
+            <div id="pf-mtp-warning" class="banner banner-err hidden" style="margin:0 0 10px">
+              draft-mtp + mmproj is not supported by the current llama-server build (the vision projector disables the MTP head).
+            </div>
             <div class="grid3">
               <div class="field"><label class="field-label" for="pf-spectype">Type (--spec-type)</label>
                 <select id="pf-spectype">
@@ -241,6 +274,49 @@
       </div>
     </section>
 
+    <!-- ============================== MODELS ============================== -->
+    <section id="page-models" class="page hidden">
+      <div class="card">
+        <div class="card-head">
+          <h2>Models <span id="models-root" class="muted small"></span></h2>
+          <div class="row">
+            <input type="search" id="models-search" placeholder="filter by name or path..." style="width:280px">
+            <span id="models-count" class="muted small"></span>
+            <button id="models-refresh" class="btn">Refresh</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr><th>File</th><th>Path (relative to root)</th><th>Size</th><th>Modified</th></tr>
+            </thead>
+            <tbody id="models-tbody"></tbody>
+          </table>
+        </div>
+        <div id="models-empty" class="muted small hidden" style="padding:12px">
+          No .gguf files found. Set the models root folder in Settings.
+        </div>
+      </div>
+
+      <div id="models-detail" class="card models-detail hidden">
+        <div class="card-head">
+          <h2 id="md-name"></h2>
+          <div class="row mb-actions">
+            <label class="field-label" for="models-preset-select">Apply to preset</label>
+            <select id="models-preset-select" style="width:220px"></select>
+            <button id="models-apply-model" class="btn btn-primary">Apply as model</button>
+            <button id="models-apply-mmproj" class="btn">Apply mmproj</button>
+          </div>
+        </div>
+        <div class="mb-meta">
+          <div><span class="muted small">path (relative to root)</span><div id="md-path" class="mono"></div></div>
+          <div><span class="muted small">size</span><div id="md-size"></div></div>
+          <div><span class="muted small">modified</span><div id="md-mtime"></div></div>
+          <div><span class="muted small">vision projector (mmproj)</span><div id="md-mmproj"></div></div>
+        </div>
+      </div>
+    </section>
+
     <!-- ============================= SETTINGS ============================= -->
     <section id="page-settings" class="page hidden">
       <div class="card">
@@ -265,10 +341,15 @@
 
 <div id="toast" class="toast hidden"></div>
 
+<datalist id="models-datalist"></datalist>
+<datalist id="mmproj-datalist"></datalist>
+
 <script src="js/api.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/metrics.js"></script>
 <script src="js/pages/dashboard.js"></script>
+<script src="js/pages/models.js"></script>
+<script src="js/pages/generation.js"></script>
 <script src="js/pages/presets.js"></script>
 <script src="js/pages/settings.js"></script>
 <script src="js/app.js"></script>

@@ -73,8 +73,42 @@ const Presets = {
     document.getElementById("pf-spectype").addEventListener("change", (e) => {
       const needsDrafter = ["draft-simple", "draft-eagle3", "draft-dflash", "draft-dspark"].includes(e.target.value);
       document.getElementById("pf-draftwrap").classList.toggle("hidden", !needsDrafter);
+      this.updateMtpWarning();
     });
+    document.getElementById("pf-model").addEventListener("change", () => this.suggestMmproj());
+    document.getElementById("pf-mmproj").addEventListener("input", () => this.updateMtpWarning());
     this.showList();
+  },
+
+  /* ---------------- model browser integration ---------------- */
+
+  refreshDatalists() {
+    const models = (typeof Models !== "undefined" && Models.models) || [];
+    const modelsList = document.getElementById("models-datalist");
+    const mmprojList = document.getElementById("mmproj-datalist");
+    if (modelsList) {
+      modelsList.innerHTML = models.map((m) => `<option value="${UI.esc(m.path)}">`).join("");
+    }
+    const mm = new Set();
+    for (const m of models) for (const p of m.mmproj) mm.add(p);
+    if (mmprojList) {
+      mmprojList.innerHTML = [...mm].map((p) => `<option value="${UI.esc(p)}">`).join("");
+    }
+  },
+
+  suggestMmproj() {
+    const model = document.getElementById("pf-model").value.trim();
+    const mmprojEl = document.getElementById("pf-mmproj");
+    if (!model || mmprojEl.value.trim()) return;
+    const m = typeof Models !== "undefined" && Models.find(model);
+    if (m && m.mmproj.length) mmprojEl.value = m.mmproj[0];
+  },
+
+  updateMtpWarning() {
+    const el = document.getElementById("pf-mtp-warning");
+    const isMtp = document.getElementById("pf-spectype").value === "draft-mtp";
+    const hasMmproj = !!document.getElementById("pf-mmproj").value.trim();
+    el.classList.toggle("hidden", !(isMtp && hasMmproj));
   },
 
   /* ---------------- list ---------------- */
@@ -112,6 +146,7 @@ const Presets = {
         </td>
       </tr>`).join("");
     document.getElementById("presets-empty").classList.toggle("hidden", rows.length > 0);
+    this.refreshDatalists();
   },
 
   async duplicate(id) {
@@ -216,6 +251,7 @@ const Presets = {
     const specType = document.getElementById("pf-spectype").value;
     const needsDrafter = ["draft-simple", "draft-eagle3", "draft-dflash", "draft-dspark"].includes(specType);
     document.getElementById("pf-draftwrap").classList.toggle("hidden", !needsDrafter);
+    this.updateMtpWarning();
   },
 
   async save() {

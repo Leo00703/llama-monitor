@@ -53,6 +53,7 @@ class LlamaServerManager:
         self._launch_args: list[str] = []
         self._stop_requested = False
         self._port: Optional[int] = None
+        self._preset_id: Optional[str] = None
 
     # ------------------------------------------------------------------
     # lifecycle
@@ -132,6 +133,7 @@ class LlamaServerManager:
                         await asyncio.wait_for(proc.wait(), timeout=KILL_TIMEOUT)
                 self._proc = None
                 self._port = None
+                self._preset_id = None
                 self._state = ServerState.STOPPED
                 self._error = ""
                 self._publish_log("[panel] server stopped")
@@ -155,6 +157,7 @@ class LlamaServerManager:
                 except psutil.Error:
                     pass
                 self._port = None
+                self._preset_id = None
                 self._state = ServerState.STOPPED
                 self._error = ""
                 self._publish_log("[panel] external server stopped")
@@ -162,6 +165,7 @@ class LlamaServerManager:
                 return {"ok": True, "state": self._state.value}
 
             self._port = None
+            self._preset_id = None
             self._state = ServerState.STOPPED
             self._error = ""
             self._publish_state()
@@ -185,7 +189,16 @@ class LlamaServerManager:
             "pid": self._proc.pid if self._proc is not None and self._proc.returncode is None else None,
             "version": self._version,
             "error": self._error,
+            "preset_id": self._preset_id,
         }
+
+    def set_preset_id(self, preset_id: Optional[str]) -> None:
+        """Remember which preset was used to launch the current server."""
+        self._preset_id = preset_id
+
+    @property
+    def preset_id(self) -> Optional[str]:
+        return self._preset_id
 
     def current_port(self) -> Optional[int]:
         """Port of the active server (panel-started or external), or None."""
@@ -265,6 +278,7 @@ class LlamaServerManager:
             self._publish_state()
         code = await proc.wait()
         self._port = None
+        self._preset_id = None
         if self._stop_requested or code in (0, None):
             if self._state not in (ServerState.STOPPED,):
                 self._state = ServerState.STOPPED

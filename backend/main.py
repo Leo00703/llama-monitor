@@ -3,20 +3,24 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, AsyncIterator, Optional
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 
 from .config import PRESETS_DIR, AppConfig, load_config, save_config
 from .flags import build_args, parse_supported_flags, validate_settings
 from .metrics import MetricsCollector
+from .models import list_models
 from .process import LlamaServerManager
 from .presets import PresetStore
+from .proxy import ProxyOffline, ServerProxy
 from .schema import LaunchSettings, Preset
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-7s %(name)s: %(message)s")
@@ -55,6 +59,17 @@ def create_app() -> FastAPI:
     store = PresetStore(PRESETS_DIR)
     collector = MetricsCollector()
 
+    def _launch_for(preset_id: Optional[str]) -> Optional[dict[str, Any]]:
+        if not preset_id:
+            return None
+        preset = store.get(preset_id)
+        return preset.launch.model_dump() if preset else None
+
+    proxy = ServerProxy(
+        get_port=manager.current_port,
+        get_launch=lambda: _launch_for(manager.preset_id or config.active_preset_id),
+    )
+
     @asynccontextmanager
     async def lifespan(_: FastAPI):
         log.info("llama-monitor panel starting")
@@ -65,7 +80,7 @@ def create_app() -> FastAPI:
         task.cancel()
         await manager.shutdown()
 
-    app = FastAPI(title="llama-monitor", version="0.3.0", lifespan=lifespan)
+    app = FastAPI(title="llama-monitor", version="0.4.0", lifespan=lifespan)
 
     # ------------------------------------------------------------------
     # launch preparation (presets -> validated, version-checked flags)
@@ -123,6 +138,9 @@ def create_app() -> FastAPI:
             args = body.args
             response_extra = {}
         result = await manager.start(args)
+        if result.get("ok"):
+            manager.set_preset_id(body.preset_id or None)
+            proxy.invalidate_props_cache()
         result.update(response_extra)
         return result
 
@@ -142,6 +160,9 @@ def create_app() -> FastAPI:
             args = (body.args if body and body.args else None)
             response_extra = {}
         result = await manager.restart(args)
+        if result.get("ok"):
+            manager.set_preset_id((body.preset_id if body and body.preset_id else None))
+            proxy.invalidate_props_cache()
         result.update(response_extra)
         return result
 
@@ -226,6 +247,86 @@ def create_app() -> FastAPI:
         config.active_preset_id = preset_id
         save_config(config)
         return {"ok": True, "active_id": config.active_preset_id}
+
+    # ------------------------------------------------------------------
+    # REST: models browser
+    # ------------------------------------------------------------------
+
+    @app.get("/api/models")
+    async def models_list() -> dict:
+        root = config.model_root()
+        if root is None:
+            return {"models": [], "root": ""}
+        models = await asyncio.to_thread(list_models, root)
+        return {"models": models, "root": str(root)}
+
+    # ------------------------------------------------------------------
+    # REST: generation defaults
+    # ------------------------------------------------------------------
+
+    @app.get("/api/generation/defaults")
+    async def generation_defaults(preset_id: str = "") -> dict:
+        pid = preset_id or (manager.preset_id or config.active_preset_id)
+        preset = store.get(pid) if pid else None
+        saved = dict(preset.launch.generation) if preset and preset.launch.generation else {}
+        params = await proxy.server_params()
+        return {
+            "ok": True,
+            "server_online": proxy.base_url() is not None,
+            "server_defaults": params,
+            "saved": saved,
+            "preset_id": preset.id if preset else (pid or ""),
+            "preset_name": preset.name if preset else "",
+        }
+
+    @app.put("/api/presets/{preset_id}/generation")
+    async def presets_update_generation(preset_id: str, body: dict[str, Any]) -> dict:
+        generation = body.get("generation")
+        if generation is None:
+            generation = {}
+        if not isinstance(generation, dict):
+            return {"ok": False, "error": "generation must be an object"}
+        preset = store.update(preset_id, generation=generation)
+        if preset is None:
+            return {"ok": False, "error": "not found"}
+        return {"ok": True, "generation": preset.launch.generation}
+
+    # ------------------------------------------------------------------
+    # proxy to the running llama-server
+    # ------------------------------------------------------------------
+
+    @app.api_route("/proxy/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+    async def llama_proxy(path: str, request: Request) -> Response:
+        body: Optional[dict[str, Any]] = None
+        if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+            raw = await request.body()
+            if raw:
+                try:
+                    body = json.loads(raw)
+                except json.JSONDecodeError:
+                    return JSONResponse({"error": "invalid JSON body"}, status_code=400)
+        headers = dict(request.headers.items())
+        query = request.url.query
+
+        if proxy.base_url() is None:
+            return JSONResponse({"error": "llama-server is not running"}, status_code=503)
+
+        try:
+            if isinstance(body, dict) and body.get("stream") is True:
+                async def gen() -> AsyncIterator[bytes]:
+                    async for chunk in proxy.stream(request.method, path, body, headers, query):
+                        yield chunk
+
+                return StreamingResponse(
+                    gen(),
+                    media_type="text/event-stream",
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+                )
+            status, out_headers, content = await proxy.request(
+                request.method, path, body, headers, query)
+            return Response(content=content, status_code=status, headers=out_headers)
+        except ProxyOffline as exc:
+            return JSONResponse({"error": f"llama-server offline: {exc}"}, status_code=503)
 
     # ------------------------------------------------------------------
     # WebSockets

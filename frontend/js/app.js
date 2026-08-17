@@ -31,7 +31,7 @@ const STATE_LABELS = {
 /* routing                                                           */
 /* ---------------------------------------------------------------- */
 
-const PAGES = ["dashboard", "presets", "settings"];
+const PAGES = ["dashboard", "generation", "presets", "models", "settings"];
 
 function showPage(name) {
   for (const p of PAGES) {
@@ -40,6 +40,8 @@ function showPage(name) {
   document.querySelectorAll(".nav-item").forEach((el) => {
     el.classList.toggle("active", el.dataset.page === name);
   });
+  if (name === "generation") Generation.refresh();
+  if (name === "models") Models.refresh();
 }
 
 document.querySelectorAll(".nav-item").forEach((el) => {
@@ -184,6 +186,7 @@ API.connect("/ws/logs", (event) => {
     appendLogLine(event.line);
   } else if (event.type === "state") {
     applyState(event);
+    if (!$("page-generation").classList.contains("hidden")) Generation.refresh();
   } else if (event.type === "metrics") {
     Metrics.update(event.data);
   }
@@ -204,6 +207,8 @@ $("btn-toggle-log").addEventListener("click", () => {
 });
 
 Dashboard.init();
+Models.init();
+Generation.init();
 Presets.init();
 Settings.init();
 Metrics.init();
