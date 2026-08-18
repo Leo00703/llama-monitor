@@ -212,6 +212,10 @@ class LlamaServerManager:
     def preset_id(self) -> Optional[str]:
         return self._preset_id
 
+    @property
+    def launch_args(self) -> list[str]:
+        return list(self._launch_args)
+
     def current_port(self) -> Optional[int]:
         """Port of the active server (panel-started or external), or None."""
         if self._port is not None:

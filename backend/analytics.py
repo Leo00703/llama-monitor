@@ -24,19 +24,20 @@ log = logging.getLogger("llama-monitor.analytics")
 
 RANGES = ("day", "week", "month", "year", "all")
 
-# llama-server prints one block of 3 lines per completed request:
-#   slot print_timing: id 0 | task 5 | prompt eval time = 123.45 ms / 12 tokens ( 10.29 ms per token, 97.24 tokens per second)
-#   slot print_timing: | eval time = 4567.89 ms / 100 tokens ( 45.68 ms per token, 21.89 tokens per second)
-#   slot print_timing: | total time = 5691.34 ms / 112 tokens
-# Continuation lines may be prefixed with "slot print_timing: |" or just "|".
+# llama-server prints one block of 3 lines per completed request.
+# Newer builds right-align the numbers (padded with spaces), e.g.:
+#   slot print_timing: id  3 | task 0 | prompt eval time =      30.47 ms /     9 tokens (    3.39 ms per token,   295.37 tokens per second)
+#   slot print_timing: id  3 | task 0 |        eval time =      456.78 ms /   100 tokens (     4.57 ms per token,    218.89 tokens per second)
+#   slot print_timing: id  3 | task 0 |       total time =     500.25 ms /   109 tokens
+# Older builds use single spaces; both are matched by the \s+ below.
 _PROMPT_RE = re.compile(
-    r"slot print_timing: id (\d+) \| task (\d+) \| prompt eval time = ([\d.]+) ms / (\d+) tokens"
+    r"slot print_timing: id\s+(\d+)\s*\|\s*task\s+(-?\d+)\s*\|\s*prompt eval time =\s*([\d.]+) ms /\s*(\d+) tokens"
     r"(?:\s*\(.*?([\d.]+) tokens per second\))?"
 )
 _EVAL_RE = re.compile(
-    r"(?:^|\|)\s*eval time = ([\d.]+) ms / (\d+) tokens(?:\s*\(.*?([\d.]+) tokens per second\))?"
+    r"(?:^|\|)\s*eval time =\s*([\d.]+) ms /\s*(\d+) tokens(?:\s*\(.*?([\d.]+) tokens per second\))?"
 )
-_TOTAL_RE = re.compile(r"(?:^|\|)\s*total time = ([\d.]+) ms / (\d+) tokens")
+_TOTAL_RE = re.compile(r"(?:^|\|)\s*total time =\s*([\d.]+) ms /\s*(\d+) tokens")
 
 
 def _f(value: Optional[str]) -> Optional[float]:
@@ -44,6 +45,17 @@ def _f(value: Optional[str]) -> Optional[float]:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _tps(tokens: int, ms: float, reported: Optional[float]) -> Optional[float]:
+    """Trust the server-reported tps unless it is a division artifact of a
+    near-zero time (the server prints e.g. 1000000.00 for a sub-millisecond
+    eval). Fall back to tokens/ms, or None when the time rounds to zero."""
+    if reported is not None and reported <= 10000.0:
+        return reported
+    if ms and ms > 0 and tokens:
+        return tokens * 1000.0 / ms
+    return None
 
 
 class PrintTimingTracker:
@@ -65,7 +77,7 @@ class PrintTimingTracker:
                 "task_id": int(m.group(2)),
                 "prompt_ms": float(m.group(3)),
                 "prompt_tokens": int(m.group(4)),
-                "prompt_tps": _f(m.group(5)),
+                "prompt_tps": _tps(int(m.group(4)), float(m.group(3)), _f(m.group(5))),
             }
             return
         if self._pending is None:
@@ -74,7 +86,7 @@ class PrintTimingTracker:
         if m:
             self._pending["eval_ms"] = float(m.group(1))
             self._pending["gen_tokens"] = int(m.group(2))
-            self._pending["gen_tps"] = _f(m.group(3))
+            self._pending["gen_tps"] = _tps(int(m.group(2)), float(m.group(1)), _f(m.group(3)))
             return
         m = _TOTAL_RE.search(line)
         if m:

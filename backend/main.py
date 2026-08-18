@@ -58,6 +58,16 @@ class PresetRequest(BaseModel):
     generation: Optional[dict[str, Any]] = None
 
 
+def _model_from_args(args: list[str]) -> str:
+    """Model path from raw launch args (-m/--model), for preset-less starts."""
+    for i, a in enumerate(args):
+        if a in ("-m", "--model") and i + 1 < len(args):
+            return args[i + 1]
+        if a.startswith("--model="):
+            return a.split("=", 1)[1]
+    return ""
+
+
 def create_app() -> FastAPI:
     config: AppConfig = load_config()
     manager = LlamaServerManager(lambda: config)
@@ -79,6 +89,8 @@ def create_app() -> FastAPI:
             pid = manager.preset_id
             preset = store.get(pid) if pid else None
             model = preset.launch.model if preset and preset.launch.model else (preset.name if preset else "")
+            if not model:
+                model = _model_from_args(manager.launch_args)
             analytics.record(
                 ts=now,
                 preset_id=pid or "",
