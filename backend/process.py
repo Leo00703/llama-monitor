@@ -16,7 +16,7 @@ from typing import Any, Callable, Optional
 
 import psutil
 
-from .config import spawn_argv
+from .config import no_window_kwargs, spawn_argv
 
 log = logging.getLogger("llama-monitor.process")
 
@@ -318,11 +318,12 @@ class LlamaServerManager:
 
     @staticmethod
     def _spawn_kwargs() -> dict:
+        kwargs = no_window_kwargs()
         if os.name == "nt":
-            return {
-                "creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW,
-            }
-        return {"start_new_session": True}
+            kwargs["creationflags"] |= subprocess.CREATE_NEW_PROCESS_GROUP
+        else:
+            kwargs["start_new_session"] = True
+        return kwargs
 
     @staticmethod
     def _terminate(proc: asyncio.subprocess.Process) -> None:

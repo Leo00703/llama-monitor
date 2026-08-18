@@ -22,6 +22,8 @@ from typing import Any, Optional
 import httpx
 import psutil
 
+from .config import no_window_kwargs
+
 log = logging.getLogger("llama-monitor.metrics")
 
 NVIDIA_QUERY = (
@@ -91,6 +93,9 @@ def run_nvidia_smi() -> Optional[list[dict]]:
             text=True,
             timeout=5,
             check=False,
+            # polled every 1.5s: without CREATE_NO_WINDOW a windowless build
+            # flashes a console window on every poll (Windows)
+            **no_window_kwargs(),
         )
         if out.returncode != 0:
             log.debug("nvidia-smi failed (rc=%s)", out.returncode)

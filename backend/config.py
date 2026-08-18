@@ -18,6 +18,7 @@ import json
 import logging
 import os
 import shutil
+import subprocess
 from pathlib import Path
 from typing import Optional
 
@@ -163,6 +164,15 @@ def spawn_argv(exe: str, *args: str) -> list[str]:
     if exe.lower().endswith((".bat", ".cmd")):
         return ["cmd.exe", "/c", exe, *args]
     return [exe, *args]
+
+
+def no_window_kwargs() -> dict:
+    """Spawn kwargs that keep console-app children (llama-server, nvidia-smi,
+    ...) from flashing a console window when the panel runs windowless
+    (frozen --noconsole build) on Windows. Harmless empty dict elsewhere."""
+    if os.name == "nt":
+        return {"creationflags": subprocess.CREATE_NO_WINDOW}
+    return {}
 
 
 def load_config() -> AppConfig:

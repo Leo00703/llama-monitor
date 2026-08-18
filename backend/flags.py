@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
 
-from .config import spawn_argv
+from .config import no_window_kwargs, spawn_argv
 from .schema import DRAFT_MODEL_REQUIRED_TYPES, LaunchSettings
 
 # ---------------------------------------------------------------------------
@@ -366,6 +366,7 @@ async def parse_supported_flags(exe: str) -> set[str]:
             *spawn_argv(exe, "--help"),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
+            **no_window_kwargs(),
         )
         out, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
         flags: set[str] = set()
