@@ -1,6 +1,8 @@
 /* llama-monitor — dark frosted-glass theme */
 
 :root {
+  /* native form popups (select lists, date pickers) render in dark mode */
+  color-scheme: dark;
   /* solid background — official llama.cpp UI color */
   --bg: #0d0d0d;
   --panel: rgba(255, 255, 255, 0.045);
@@ -383,6 +385,9 @@ details[open] .card-summary { margin-bottom: 8px; }
 #page-dashboard .log-card { flex: 1 1 auto; }
 #page-dashboard .log-card .log { max-height: none; }
 #page-dashboard .log-card.collapsed { flex: 0 0 auto; }
+
+/* native <select> popups: keep option text readable on the dark list */
+select option { background: #17181c; color: var(--text); }
 
 /* ---------- metrics grid ---------- */
 
