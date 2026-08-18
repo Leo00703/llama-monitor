@@ -692,7 +692,7 @@ body.nav-locked { overflow: hidden; }
     table-layout: fixed;
     font-size: 12px;
   }
-  #page-analytics .table th { padding: 6px; }
+  #page-analytics .table th { padding: 6px; white-space: normal; }
   #page-analytics .table td {
     padding: 6px;
     white-space: nowrap;
