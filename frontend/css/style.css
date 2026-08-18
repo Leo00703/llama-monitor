@@ -405,7 +405,10 @@ details[open] .card-summary { margin-bottom: 8px; }
 }
 
 .infer-line .metric-value { font-size: 16px; min-width: 46px; }
-.infer-line .spark { flex: 1; }
+/* min-width:0 lets the canvas shrink below its intrinsic (dpr-scaled) width */
+.infer-line .spark { flex: 1; min-width: 0; }
+
+#draft-cell { grid-column: 1 / -1; }
 
 .ctx-detail { margin-top: 8px; min-height: 16px; }
 

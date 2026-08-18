@@ -194,7 +194,9 @@ class MetricsCollector:
                         continue
                     n_ctx = int(s.get("n_ctx") or 0)
                     busy = bool(s.get("is_processing"))
-                    used = int(s.get("n_prompt_tokens") or 0) if busy else 0
+                    # n_prompt_tokens persists after the request finishes (the
+                    # server keeps the last value), so report it even when idle.
+                    used = min(int(s.get("n_prompt_tokens") or 0), n_ctx)
                     ctx_total += n_ctx
                     ctx_used += min(used, n_ctx)
                     slots.append(

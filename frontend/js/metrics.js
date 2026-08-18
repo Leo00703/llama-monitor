@@ -4,10 +4,11 @@
 
 const Metrics = (() => {
   const HISTORY = 120;
-  const hist = { cpu: [], ram: [], prompt: [], gen: [] };
+  const hist = { cpu: [], ram: [], prompt: [], gen: [], draft: [] };
   const gpuHist = {};
   const gpuEls = {};
   let lastGpuCount = -1;
+  let lastSeq = 0;
 
   const $ = (id) => document.getElementById(id);
 
@@ -211,16 +212,35 @@ const Metrics = (() => {
     const promptEl = $("prompt-tps");
     const genEl = $("gen-tps");
     const stateEl = $("infer-state");
+    const draftCell = $("draft-cell");
     if (inf) {
       promptEl.textContent = inf.prompt_tps == null ? "—" : inf.prompt_tps.toFixed(1);
       genEl.textContent = inf.gen_tps == null ? "—" : inf.gen_tps.toFixed(1);
       stateEl.textContent = "live";
       stateEl.classList.remove("muted");
+      if (inf.last_seq != null && inf.last_seq !== lastSeq) {
+        lastSeq = inf.last_seq;
+        if ((inf.draft_proposed || 0) > 0) {
+          const rate = (inf.draft_accepted / inf.draft_proposed) * 100;
+          push(hist.draft, rate);
+          if (draftCell) {
+            draftCell.hidden = false;
+            $("draft-rate").textContent = `${rate.toFixed(1)}%`;
+            drawSpark(
+              $("draft-spark"), hist.draft,
+              { max: 100, color: "#c084fc", fill: "rgba(192, 132, 252, 0.12)" },
+            );
+          }
+        } else if (draftCell) {
+          draftCell.hidden = true;
+        }
+      }
     } else {
       promptEl.textContent = "—";
       genEl.textContent = "—";
       stateEl.textContent = "no server";
       stateEl.classList.add("muted");
+      if (draftCell) draftCell.hidden = true;
     }
     updateSlots(inf);
   }
@@ -238,6 +258,10 @@ const Metrics = (() => {
     drawSpark(
       $("gen-spark"), hist.gen,
       { max: Math.max(...hist.gen, 1), color: "#f5a524", fill: "rgba(245, 165, 36, 0.12)" },
+    );
+    drawSpark(
+      $("draft-spark"), hist.draft,
+      { max: 100, color: "#c084fc", fill: "rgba(192, 132, 252, 0.12)" },
     );
   }
 

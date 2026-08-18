@@ -38,6 +38,12 @@ _EVAL_RE = re.compile(
     r"(?:^|\|)\s*eval time =\s*([\d.]+) ms /\s*(\d+) tokens(?:\s*\(.*?([\d.]+) tokens per second\))?"
 )
 _TOTAL_RE = re.compile(r"(?:^|\|)\s*total time =\s*([\d.]+) ms /\s*(\d+) tokens")
+# With speculative decoding (MTP/draft) a fourth line follows the total line:
+#   slot print_timing: id  3 | task 0 | draft acceptance = 0.65217 (   65 accepted /  100 generated), mean len =  1.65
+_DRAFT_RE = re.compile(
+    r"slot print_timing: id\s+(\d+)\s*\|\s*task\s+(-?\d+)\s*\|\s*"
+    r"draft acceptance =\s*[\d.]+\s*\(\s*(\d+) accepted /\s*(\d+) generated\)"
+)
 
 
 def _f(value: Optional[str]) -> Optional[float]:
@@ -59,19 +65,26 @@ def _tps(tokens: int, ms: float, reported: Optional[float]) -> Optional[float]:
 
 
 class PrintTimingTracker:
-    """Accumulates the 3-line print_timing block into one completed record.
+    """Accumulates the print_timing block into one completed record.
 
-    The three lines are printed back-to-back by the server, so a single
-    pending slot is enough; a new prompt line discards an incomplete one.
+    The block is printed back-to-back by the server, so a single pending
+    slot is enough. With speculative decoding a fourth "draft acceptance"
+    line follows the total line, so the block is finalized lazily: on the
+    draft line, on the next log line of any kind, or via ``tick()`` once
+    the total line is >1s old (server went silent).
     """
 
     def __init__(self, on_complete: Callable[[dict], None]) -> None:
         self._on_complete = on_complete
         self._pending: Optional[dict] = None
+        self._seq = 0
+        self.latest: Optional[dict] = None
 
     def feed(self, line: str) -> None:
         m = _PROMPT_RE.search(line)
         if m:
+            if self._pending is not None and self._pending.get("total_seen"):
+                self._finalize()
             self._pending = {
                 "slot_id": int(m.group(1)),
                 "task_id": int(m.group(2)),
@@ -92,16 +105,45 @@ class PrintTimingTracker:
         if m:
             self._pending["total_ms"] = float(m.group(1))
             self._pending["total_tokens"] = int(m.group(2))
-            rec, self._pending = self._pending, None
-            if rec.get("gen_tokens") is None:
-                rec["gen_tokens"] = max(rec.get("total_tokens", 0) - rec.get("prompt_tokens", 0), 0)
-            if rec.get("total_ms") is None:
-                rec["total_ms"] = (rec.get("prompt_ms") or 0.0) + (rec.get("eval_ms") or 0.0)
-            self._on_complete(rec)
+            self._pending["total_seen"] = True
+            self._pending["total_ts"] = time.time()
+            return
+        m = _DRAFT_RE.search(line)
+        if m:
+            self._pending["draft_accepted"] = int(m.group(3))
+            self._pending["draft_proposed"] = int(m.group(4))
+            self._finalize()
+            return
+        if self._pending.get("total_seen"):
+            self._finalize()
+
+    def _finalize(self) -> None:
+        rec, self._pending = self._pending, None
+        if rec.get("gen_tokens") is None:
+            rec["gen_tokens"] = max(rec.get("total_tokens", 0) - rec.get("prompt_tokens", 0), 0)
+        if rec.get("total_ms") is None:
+            rec["total_ms"] = (rec.get("prompt_ms") or 0.0) + (rec.get("eval_ms") or 0.0)
+        self._seq += 1
+        self.latest = {
+            "seq": self._seq,
+            "prompt_tps": rec.get("prompt_tps"),
+            "gen_tps": rec.get("gen_tps"),
+            "draft_proposed": rec.get("draft_proposed"),
+            "draft_accepted": rec.get("draft_accepted"),
+        }
+        self._on_complete(rec)
+
+    def tick(self) -> None:
+        """Close a block whose total line arrived but was never followed by
+        a draft line or any other log line (server went silent)."""
+        p = self._pending
+        if p and p.get("total_seen") and time.time() - p.get("total_ts", 0.0) > 1.0:
+            self._finalize()
 
     def reset(self) -> None:
         """Drop a partially parsed block (e.g. on server stop/restart)."""
         self._pending = None
+        self.latest = None
 
 
 class PowerSampler:

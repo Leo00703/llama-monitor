@@ -33,7 +33,7 @@ METRICS_INTERVAL = 1.5
 
 
 async def _metrics_loop(collector: MetricsCollector, manager: LlamaServerManager,
-                        power: PowerSampler) -> None:
+                        power: PowerSampler, tracker: PrintTimingTracker) -> None:
     """Poll system + inference metrics and push them to WebSocket listeners."""
     while True:
         await asyncio.sleep(METRICS_INTERVAL)
@@ -44,7 +44,36 @@ async def _metrics_loop(collector: MetricsCollector, manager: LlamaServerManager
             continue
         total_w = sum(g["power_w"] for g in data.get("gpus", []) if g.get("power_w") is not None)
         power.add(float(data.get("ts") or time.time()), total_w if total_w > 0 else None)
+        _enrich_inference(data, tracker)
+        tracker.tick()
         manager.broadcast({"type": "metrics", "data": data})
+
+
+def _enrich_inference(data: dict, tracker: PrintTimingTracker) -> None:
+    """Show real per-request speeds when idle; live counter deltas when busy.
+
+    The /metrics counters are lifetime-smoothed averages (prompt_tokens /
+    prompt_tokens_seconds), useless as a live gauge. While a slot is busy the
+    1.5s counter deltas are the only live signal; once idle we fall back to
+    the exact tok/s parsed from the print_timing block of the last completed
+    request (``tracker.latest``). External servers emit no such lines, so
+    ``latest`` stays None and the delta values are kept.
+    """
+    inf = data.get("inference")
+    if not isinstance(inf, dict) or not inf.get("ok"):
+        return
+    latest = tracker.latest
+    busy = any(s.get("busy") for s in inf.get("slots") or [])
+    if not busy and latest is not None:
+        if latest.get("prompt_tps") is not None:
+            inf["prompt_tps"] = round(latest["prompt_tps"], 2)
+        if latest.get("gen_tps") is not None:
+            inf["gen_tps"] = round(latest["gen_tps"], 2)
+    inf["last_seq"] = latest.get("seq") if latest else None
+    inf["last_prompt_tps"] = round(latest["prompt_tps"], 2) if latest and latest.get("prompt_tps") is not None else None
+    inf["last_gen_tps"] = round(latest["gen_tps"], 2) if latest and latest.get("gen_tps") is not None else None
+    inf["draft_proposed"] = latest.get("draft_proposed") if latest else None
+    inf["draft_accepted"] = latest.get("draft_accepted") if latest else None
 
 
 class StartRequest(BaseModel):
@@ -121,7 +150,7 @@ def create_app() -> FastAPI:
         log.info("llama-monitor panel starting")
         await manager.on_startup()
         log.info("panel ready (state=%s)", manager.snapshot()["state"])
-        task = asyncio.create_task(_metrics_loop(collector, manager, power))
+        task = asyncio.create_task(_metrics_loop(collector, manager, power, tracker))
         yield
         task.cancel()
         await manager.shutdown()
