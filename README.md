@@ -45,12 +45,17 @@ pip install -r requirements.txt
 
 ## Configure
 
-Copy the example config and edit it (or use the in-app **Settings** page):
+All persistent data (config, presets, analytics history) lives in a stable
+per-user directory **outside the repository**, so `git pull`, fresh clones,
+`git clean`, or sync tools can never wipe it:
 
-```bash
-copy config.example.json config.json    # Windows
-cp config.example.json config.json      # Linux
-```
+- Windows: `%APPDATA%\llama-monitor\`
+- Linux/macOS: `~/.config/llama-monitor/` (or `$XDG_CONFIG_HOME/llama-monitor`)
+- Override: set the `LLAMA_MONITOR_DATA` environment variable
+
+On first start the config is seeded from `config.example.json` (or migrated
+from a legacy in-repo `config.json` / `data/` if present). Edit it with the
+in-app **Settings** page (which shows the data directory in use):
 
 | Key | Meaning |
 | --- | --- |
@@ -59,8 +64,6 @@ cp config.example.json config.json      # Linux
 | `default_server_port` | Port assumed for external/ready checks when nothing else is known |
 | `panel.host` / `panel.port` | Bind address/port of the panel itself (default `0.0.0.0:8000`, so it is reachable over Tailscale) |
 | `active_preset_id` | Preset currently selected for launches |
-
-Presets and any other runtime data live in `data/` (git-ignored).
 
 ## Run
 
@@ -81,21 +84,24 @@ applied to every request through the panel.
 ```
 backend/
   main.py        FastAPI app: REST API, WebSockets, static frontend
-  config.py      config.json loading/saving (pathlib, cross-platform)
+  config.py      config loading/saving + user-data-dir resolution & legacy migration
   schema.py      Pydantic models for launch settings, specs, and API payloads
   process.py     llama-server child-process manager (state machine, log capture)
   flags.py       semantic settings -> CLI flags translation + --help validation
-  presets.py     preset CRUD (JSON files under data/presets)
+  presets.py     preset CRUD (JSON files under <data-dir>/presets)
   metrics.py     CPU/RAM (psutil), GPU (nvidia-smi), inference metrics
   models.py      recursive .gguf browser + mmproj detection
   proxy.py       /v1/chat/completions & /completion proxy with settings injection
 frontend/
   index.html     single-page app (vanilla HTML/CSS/JS, no build step)
   css/style.css  dark frosted-glass theme
-  js/            app shell (app.js), api/ui/metrics helpers, pages/ (dashboard,
-                 generation, presets, models, settings)
-data/            local runtime data (git-ignored)
+   js/            app shell (app.js), api/ui/metrics helpers, pages/ (dashboard,
+                  generation, presets, models, settings)
 ```
+
+Persistent data lives outside the repo (see Configure): config.json,
+presets/, analytics.db under `%APPDATA%\llama-monitor` (Windows) or
+`~/.config/llama-monitor` (Linux/macOS).
 
 ## Development phases
 

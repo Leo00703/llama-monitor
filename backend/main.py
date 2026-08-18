@@ -264,7 +264,7 @@ def create_app() -> FastAPI:
 
     @app.get("/api/config")
     async def get_config() -> dict:
-        return config.model_dump()
+        return {**config.model_dump(), "data_dir": str(DATA_DIR)}
 
     @app.post("/api/config")
     async def post_config(body: dict[str, Any]) -> dict:

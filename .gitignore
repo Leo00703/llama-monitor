@@ -5,7 +5,10 @@ __pycache__/
 venv/
 *.egg-info/
 
-# Local, machine-specific data (live config, presets, runtime state)
+# Local, machine-specific data (live config, presets, runtime state).
+# New installs store these in the user-data dir (%APPDATA%/llama-monitor on
+# Windows, ~/.config/llama-monitor elsewhere) — these entries only cover
+# legacy in-repo layouts, which are auto-migrated on startup.
 config.json
 data/
 *.log

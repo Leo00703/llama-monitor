@@ -1,9 +1,22 @@
-"""Application configuration (config.json), cross-platform via pathlib."""
+"""Application configuration, cross-platform via pathlib.
+
+config.json and all persistent data (presets, analytics DB) live in a stable
+per-user directory OUTSIDE the repository, so git operations (clone,
+`git clean -fdx`, sync) can never wipe user data:
+
+  Windows:  %APPDATA%/llama-monitor
+  other:    $XDG_CONFIG_HOME/llama-monitor (default ~/.config/llama-monitor)
+
+Override the location with the LLAMA_MONITOR_DATA environment variable.
+Legacy data left in the repo (config.json, data/) is migrated automatically
+on startup (one-way, idempotent).
+"""
 
 from __future__ import annotations
 
 import json
 import logging
+import os
 import shutil
 from pathlib import Path
 from typing import Optional
@@ -11,12 +24,75 @@ from typing import Optional
 from pydantic import BaseModel, Field, ValidationError
 
 APP_ROOT = Path(__file__).resolve().parent.parent
-CONFIG_PATH = APP_ROOT / "config.json"
 EXAMPLE_PATH = APP_ROOT / "config.example.json"
-DATA_DIR = APP_ROOT / "data"
-PRESETS_DIR = DATA_DIR / "presets"
+LEGACY_CONFIG = APP_ROOT / "config.json"
+LEGACY_DATA_DIR = APP_ROOT / "data"
 
 log = logging.getLogger("llama-monitor.config")
+
+
+def default_data_dir() -> Path:
+    if os.name == "nt":
+        base = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
+    else:
+        base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
+    return Path(base) / "llama-monitor"
+
+
+_override = os.environ.get("LLAMA_MONITOR_DATA", "").strip()
+DATA_DIR = Path(_override).expanduser() if _override else default_data_dir()
+CONFIG_PATH = DATA_DIR / "config.json"
+PRESETS_DIR = DATA_DIR / "presets"
+
+
+def migrate_legacy_data() -> None:
+    """Move old in-repo config/data to DATA_DIR. Idempotent, best-effort."""
+    try:
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise RuntimeError(f"cannot create data directory {DATA_DIR}: {exc}") from exc
+
+    if LEGACY_CONFIG.exists() and not CONFIG_PATH.exists():
+        try:
+            shutil.move(str(LEGACY_CONFIG), str(CONFIG_PATH))
+            log.warning("migrated legacy config %s -> %s", LEGACY_CONFIG, CONFIG_PATH)
+        except OSError as exc:
+            log.error("could not migrate legacy config %s: %s", LEGACY_CONFIG, exc)
+
+    if LEGACY_DATA_DIR.is_dir():
+        for name in ("presets", "analytics.db"):
+            src = LEGACY_DATA_DIR / name
+            dst = DATA_DIR / name
+            if not src.exists() or dst.exists():
+                continue
+            try:
+                if src.is_dir():
+                    dst.mkdir(parents=True, exist_ok=True)
+                    moved = 0
+                    for f in src.iterdir():
+                        target = dst / f.name
+                        if not target.exists():
+                            shutil.move(str(f), str(target))
+                            moved += 1
+                    if moved:
+                        log.warning("migrated legacy %s -> %s", src, dst)
+                    try:
+                        src.rmdir()  # only succeeds if empty now
+                    except OSError:
+                        pass
+                else:
+                    shutil.move(str(src), str(dst))
+                    log.warning("migrated legacy %s -> %s", src, dst)
+            except OSError as exc:
+                log.error("could not migrate legacy %s: %s", src, exc)
+        try:
+            if LEGACY_DATA_DIR.is_dir() and not any(LEGACY_DATA_DIR.iterdir()):
+                LEGACY_DATA_DIR.rmdir()
+        except OSError:
+            pass
+
+
+migrate_legacy_data()
 
 
 class PanelSettings(BaseModel):

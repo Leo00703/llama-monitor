@@ -19,6 +19,9 @@ const Settings = {
       document.getElementById("set-pport").value = panel.port || 8000;
       document.getElementById("set-energy-price").value = cfg.energy_price_eur_kwh ?? 0.2;
       document.getElementById("set-energy-overhead").value = cfg.energy_overhead_w ?? 0;
+      document.getElementById("set-datadir").textContent = cfg.data_dir
+        ? `Data (config, presets, analytics history) is stored in: ${cfg.data_dir}`
+        : "";
     } catch (e) {
       UI.toast(`failed to load settings: ${e}`, "err");
     }
