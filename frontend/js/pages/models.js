@@ -14,10 +14,10 @@ const Models = {
   init() {
     document.getElementById("models-search").addEventListener("input", () => this.render());
     document.getElementById("models-refresh").addEventListener("click", () => this.refresh());
-    document.getElementById("models-tbody").addEventListener("click", (e) => {
-      const tr = e.target.closest("tr[data-path]");
-      if (!tr) return;
-      this.selected = tr.dataset.path;
+    document.getElementById("models-cards").addEventListener("click", (e) => {
+      const card = e.target.closest(".model-card");
+      if (!card) return;
+      this.selected = card.dataset.path;
       this.render();
       this.renderDetail();
     });
@@ -42,18 +42,33 @@ const Models = {
     if (typeof Presets !== "undefined") Presets.refreshDatalists();
   },
 
+  tags(m) {
+    const out = [];
+    const p = /[-_](\d+(?:\.\d+)?[BM])(?=[._\-]|$)/i.exec(m.name);
+    if (p) out.push(`<span class="chip chip-params">${UI.esc(p[1].toUpperCase())}</span>`);
+    const q = /\b(Q\d+(?:_[A-Za-z0-9]+)*|F16|BF16|FP16)\b/.exec(m.name);
+    if (q) out.push(`<span class="chip chip-quant">${UI.esc(q[1])}</span>`);
+    if (m.mmproj.length) out.push(`<span class="chip chip-vision">vision</span>`);
+    return out;
+  },
+
   render() {
     const q = (document.getElementById("models-search").value || "").toLowerCase();
-    const tbody = document.getElementById("models-tbody");
+    const cards = document.getElementById("models-cards");
     const rows = this.models.filter(
       (m) => !q || m.name.toLowerCase().includes(q) || m.path.toLowerCase().includes(q));
-    tbody.innerHTML = rows.map((m) => `
-      <tr data-path="${UI.esc(m.path)}" class="${m.path === this.selected ? "selected" : ""}">
-        <td>${UI.esc(m.name)}${m.mmproj.length ? ' <span class="chip chip-vision">vision</span>' : ""}</td>
-        <td class="muted mono" title="${UI.esc(m.path)}">${UI.esc(m.path)}</td>
-        <td>${m.size_mb} MB</td>
-        <td class="muted">${UI.timeAgo(m.mtime)}</td>
-      </tr>`).join("");
+    cards.innerHTML = rows.map((m) => {
+      const tags = this.tags(m);
+      return `
+      <article class="model-card ${m.path === this.selected ? "selected" : ""}" data-path="${UI.esc(m.path)}" title="${UI.esc(m.path)}">
+        <h3 class="model-card-name">${UI.esc(m.name)}</h3>
+        ${tags.length ? `<div class="model-card-chips">${tags.join("")}</div>` : ""}
+        <div class="model-card-meta">
+          <div><span class="muted small">size</span><div>${m.size_mb} MB</div></div>
+          <div><span class="muted small">modified</span><div class="muted">${UI.timeAgo(m.mtime)}</div></div>
+        </div>
+      </article>`;
+    }).join("");
     document.getElementById("models-count").textContent = `${rows.length} / ${this.models.length} files`;
     document.getElementById("models-empty").classList.toggle("hidden", this.models.length > 0);
     document.getElementById("models-root").textContent = this.root ? this.root : "";
