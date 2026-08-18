@@ -23,10 +23,10 @@ const Analytics = (() => {
     return parts[parts.length - 1] || path;
   }
 
-  function cardHtml(label, value, sub = "") {
+  function cardHtml(label, value, sub = "", valueClass = "") {
     return `
       <div class="card metric-card">
-        <div class="card-head"><h2>${label}</h2><span class="metric-value">${value}</span></div>
+        <div class="card-head"><h2>${label}</h2><span class="metric-value${valueClass ? " " + valueClass : ""}">${value}</span></div>
         <div class="muted small">${sub}</div>
       </div>`;
   }
@@ -37,8 +37,14 @@ const Analytics = (() => {
       : "no GPU power data";
     const cost = s.cost_eur != null ? `€ ${s.cost_eur.toFixed(4)}` : "—";
     const cost1m = s.cost_per_1m != null ? `€ ${s.cost_per_1m.toFixed(2)} / 1M` : "";
+    const failed = s.failed || 0;
+    const attempts = s.requests + failed;
+    const failedSub = failed
+      ? `${attempts} attempts · ${((failed / attempts) * 100).toFixed(1)}% failed`
+      : "none in this range";
     $("analytics-cards").innerHTML = [
       cardHtml("Requests", fmtNum(s.requests), range),
+      cardHtml("Failed requests", fmtNum(failed), failedSub, failed ? "err" : ""),
       cardHtml("Tokens generated", fmtNum(s.gen_tokens), `prompt ${fmtNum(s.prompt_tokens)}`),
       cardHtml("Energy", energy, s.has_energy ? "GPU power estimate" : "nvidia-smi power not sampled"),
       cardHtml("Est. cost", cost, cost1m),

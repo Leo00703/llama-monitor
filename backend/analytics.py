@@ -186,6 +186,16 @@ CREATE TABLE IF NOT EXISTS generation_records (
 )
 """
 
+_FAILED_SCHEMA = """
+CREATE TABLE IF NOT EXISTS failed_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts REAL NOT NULL,
+    model TEXT DEFAULT '',
+    status INTEGER,
+    path TEXT DEFAULT ''
+)
+"""
+
 
 class AnalyticsStore:
     """SQLite-backed per-request history with range aggregations."""
@@ -196,6 +206,8 @@ class AnalyticsStore:
         with self._conn() as conn:
             conn.execute(_SCHEMA)
             conn.execute("CREATE INDEX IF NOT EXISTS idx_gen_ts ON generation_records(ts)")
+            conn.execute(_FAILED_SCHEMA)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_failed_ts ON failed_requests(ts)")
 
     @contextmanager
     def _conn(self):
@@ -235,9 +247,24 @@ class AnalyticsStore:
                 ),
             )
 
+    def record_failure(self, *, ts: float, model: str, status: int, path: str) -> None:
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT INTO failed_requests (ts, model, status, path) VALUES (?,?,?,?)",
+                (ts, model or "", status, path or ""),
+            )
+
     # ------------------------------------------------------------------
     # read
     # ------------------------------------------------------------------
+
+    def failed_count(self, range_name: str) -> int:
+        start = self.range_start(range_name if range_name in RANGES else "all")
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM failed_requests WHERE ts >= ?", (start,)
+            ).fetchone()
+        return int(row["n"]) if row else 0
 
     @staticmethod
     def range_start(range_name: str, now: Optional[float] = None) -> float:
@@ -279,6 +306,7 @@ class AnalyticsStore:
         return {
             "range": range_name,
             "requests": n,
+            "failed": self.failed_count(range_name),
             "prompt_tokens": prompt,
             "gen_tokens": gen,
             "avg_prompt_tps": avg_prompt,

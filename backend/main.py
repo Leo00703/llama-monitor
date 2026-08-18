@@ -22,7 +22,7 @@ from .metrics import MetricsCollector
 from .models import list_models
 from .process import LlamaServerManager
 from .presets import PresetStore
-from .proxy import ProxyOffline, ServerProxy
+from .proxy import INJECT_PATHS, ProxyOffline, ServerProxy
 from .schema import LaunchSettings, Preset
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-7s %(name)s: %(message)s")
@@ -105,6 +105,15 @@ def create_app() -> FastAPI:
     analytics = AnalyticsStore(DATA_DIR / "analytics.db")
     power = PowerSampler()
 
+    def _model_for_request() -> str:
+        """Best-effort model name for the currently launched server."""
+        pid = manager.preset_id
+        preset = store.get(pid) if pid else None
+        model = preset.launch.model if preset and preset.launch.model else (preset.name if preset else "")
+        if not model:
+            model = _model_from_args(manager.launch_args)
+        return model
+
     def _complete_request(rec: dict) -> None:
         """Persist one completed request (from a parsed print_timing block)."""
         try:
@@ -117,19 +126,24 @@ def create_app() -> FastAPI:
                 energy_wh = (gpu_wh or 0.0) + config.energy_overhead_w * (total_ms / 1000.0) / 3600.0
             pid = manager.preset_id
             preset = store.get(pid) if pid else None
-            model = preset.launch.model if preset and preset.launch.model else (preset.name if preset else "")
-            if not model:
-                model = _model_from_args(manager.launch_args)
             analytics.record(
                 ts=now,
                 preset_id=pid or "",
                 preset_name=preset.name if preset else "",
-                model=model,
+                model=_model_for_request(),
                 rec=rec,
                 energy_wh=energy_wh,
             )
         except Exception:
             log.exception("failed to record generation request")
+
+    def _record_failure(status: int, path: str) -> None:
+        """Count a failed generation attempt (offline server / upstream error)."""
+        try:
+            analytics.record_failure(
+                ts=time.time(), model=_model_for_request(), status=status, path=path)
+        except Exception:
+            log.exception("failed to record failed request")
 
     tracker = PrintTimingTracker(_complete_request)
     manager.add_log_hook(tracker.feed)
@@ -427,11 +441,16 @@ def create_app() -> FastAPI:
                 try:
                     body = json.loads(raw)
                 except json.JSONDecodeError:
+                    if path.lstrip("/") in INJECT_PATHS:
+                        _record_failure(400, path)
                     return JSONResponse({"error": "invalid JSON body"}, status_code=400)
         headers = dict(request.headers.items())
         query = request.url.query
+        is_generation = path.lstrip("/") in INJECT_PATHS
 
         if proxy.base_url() is None:
+            if is_generation:
+                _record_failure(503, path)
             return JSONResponse({"error": "llama-server is not running"}, status_code=503)
 
         try:
@@ -447,8 +466,12 @@ def create_app() -> FastAPI:
                 )
             status, out_headers, content = await proxy.request(
                 request.method, path, body, headers, query)
+            if is_generation and status >= 400:
+                _record_failure(status, path)
             return Response(content=content, status_code=status, headers=out_headers)
         except ProxyOffline as exc:
+            if is_generation:
+                _record_failure(503, path)
             return JSONResponse({"error": f"llama-server offline: {exc}"}, status_code=503)
 
     # ------------------------------------------------------------------

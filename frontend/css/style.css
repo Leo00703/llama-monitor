@@ -383,6 +383,8 @@ details[open] .card-summary { margin-bottom: 8px; }
   color: var(--text);
 }
 
+.metric-value.err { color: var(--err); }
+
 .metric-big {
   display: flex;
   align-items: baseline;
