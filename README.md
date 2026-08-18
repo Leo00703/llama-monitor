@@ -79,6 +79,27 @@ applied to every request through the panel.
 > If a server is already running on the configured port, the panel marks it
 > as **external** and can still stop it.
 
+## Tray launcher (Windows .exe)
+
+For Windows there is a single-file `.exe` that runs the whole panel in the
+system tray — no console, no browser tab needed for the panel itself. The tray
+icon mirrors the server state (colored status dot + tooltip) and its menu has
+**Open panel**, **Start / Stop server**, and **Quit**. The panel is embedded in
+the same process (uvicorn in a daemon thread) on the configured
+`panel.host:panel.port`, so OpenAI-compatible proxying works exactly as above.
+
+- **Download** — the latest build is uploaded as an artifact by the
+  `Build Windows tray exe` GitHub Actions workflow on every push to `main`
+  (or run the workflow manually).
+- **Build locally** — `build_exe.bat` (creates/updates `.venv`, installs deps,
+  runs a headless smoke test, then PyInstaller) produces
+  `dist\llama-monitor-tray.exe`.
+- **Run from source** — `python tray.py` (Windows only; `--smoke` runs the
+  headless self-test used by CI).
+
+A single-instance mutex prevents duplicate panels; a log is written to
+`launcher.log` in the data directory.
+
 ## Project layout
 
 ```
@@ -97,6 +118,11 @@ frontend/
   css/style.css  dark frosted-glass theme
    js/            app shell (app.js), api/ui/metrics helpers, pages/ (dashboard,
                   generation, presets, models, settings)
+tray.py          Windows system-tray launcher (embeds the panel, --smoke self-test)
+build_exe.bat    local PyInstaller build of dist\llama-monitor-tray.exe
+requirements-tray.txt   extra deps for the tray launcher (pystray, Pillow, pyinstaller)
+assets/tray/     tray mark (PNG) + exe icon (ICO)
+.github/workflows/build-exe.yml   CI: smoke test + PyInstaller + artifact upload
 ```
 
 Persistent data lives outside the repo (see Configure): config.json,

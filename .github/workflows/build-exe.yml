@@ -1,0 +1,55 @@
+name: Build Windows tray exe
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-exe:
+    runs-on: windows-latest
+    env:
+      # Python 3.14 on Windows needs this for case-insensitive imports
+      # (the PyInstaller package dir has mixed case). Harmless otherwise.
+      PYTHONCASEOK: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-tray.txt
+
+      - name: Smoke test (panel boot + health)
+        run: python tray.py --smoke
+
+      - name: Build single-file exe
+        run: |
+          pyinstaller --noconfirm --onefile --noconsole --name llama-monitor-tray `
+            --icon assets/tray/icon.ico `
+            --add-data "frontend;frontend" `
+            --add-data "config.example.json;." `
+            --add-data "assets/tray;assets/tray" `
+            --hidden-import pystray._win32 `
+            --hidden-import six `
+            --hidden-import uvicorn.loops.auto `
+            --hidden-import uvicorn.loops.asyncio `
+            --hidden-import uvicorn.protocols.http.auto `
+            --hidden-import uvicorn.protocols.http.h11_impl `
+            --hidden-import uvicorn.protocols.websockets.auto `
+            --hidden-import uvicorn.protocols.websockets.wsproto_impl `
+            --hidden-import uvicorn.protocols.websockets.websockets_impl `
+            --hidden-import websockets `
+            --hidden-import wsproto `
+            tray.py
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: llama-monitor-tray
+          path: dist/llama-monitor-tray.exe
