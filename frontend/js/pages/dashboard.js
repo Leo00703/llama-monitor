@@ -74,15 +74,23 @@ const Dashboard = {
   },
 
   async preview() {
+    const btn = document.getElementById("btn-preview");
+    const pre = document.getElementById("flag-preview");
+    // toggle off: just hide (a re-show re-fetches, so the command stays fresh)
+    if (!pre.classList.contains("hidden")) {
+      pre.classList.add("hidden");
+      btn.textContent = "Preview launch command";
+      return;
+    }
     if (!this.selectedId) {
       UI.toast("select a preset first", "err");
       return;
     }
     try {
       const res = await API.post(`/api/presets/${this.selectedId}/preview`);
-      const pre = document.getElementById("flag-preview");
-      pre.classList.remove("hidden");
       pre.textContent = res.args.map(UI.quoteForDisplay).join(" ") || "(no flags)";
+      pre.classList.remove("hidden");
+      btn.textContent = "Hide launch command";
       if (res.errors && res.errors.length) {
         UI.banner(document.getElementById("launch-banner"), "err", res.errors);
       } else if (res.warnings && res.warnings.length) {

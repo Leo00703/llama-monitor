@@ -373,6 +373,9 @@ details[open] .card-summary { margin-bottom: 8px; }
 .log-card.collapsed .log { display: none; }
 .log-card.collapsed { min-height: 0; }
 
+/* launch-command preview: keep it off the button */
+#flag-preview { margin-top: 12px; }
+
 /* ---------- metrics grid ---------- */
 
 .metrics-grid {
