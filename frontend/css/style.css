@@ -234,9 +234,9 @@ body {
   transition: flex-basis 0.18s ease, width 0.18s ease;
 }
 
-/* desktop collapse button lives at the top of the sidebar */
+/* desktop collapse button lives at the top-right of the sidebar */
 .nav-collapse {
-  align-self: flex-start;
+  align-self: flex-end;
   margin-bottom: 10px;
 }
 
@@ -282,8 +282,6 @@ body {
   width: 60px;
   padding: 12px 8px;
 }
-
-.sidebar.collapsed .nav-collapse { align-self: center; }
 
 .sidebar.collapsed .nav-item {
   justify-content: center;
