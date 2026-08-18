@@ -57,12 +57,15 @@ document.querySelectorAll(".nav-item").forEach((el) => {
 
 const sidebar = $("sidebar");
 const btnSidebar = $("btn-sidebar");
+const btnCollapse = $("btn-collapse");
 const navOverlay = $("nav-overlay");
 const mobileQuery = window.matchMedia("(max-width: 900px)");
 
 function setSidebarCollapsed(collapsed) {
   sidebar.classList.toggle("collapsed", collapsed);
-  btnSidebar.setAttribute("aria-expanded", String(!collapsed));
+  btnCollapse.setAttribute("aria-expanded", String(!collapsed));
+  btnCollapse.setAttribute("aria-label", collapsed ? "Expand sidebar" : "Collapse sidebar");
+  btnCollapse.setAttribute("title", collapsed ? "Expand sidebar" : "Collapse sidebar");
   try { localStorage.setItem("lm.sidebar.collapsed", collapsed ? "1" : "0"); } catch (_) {}
 }
 
@@ -82,12 +85,12 @@ function closeDrawer() {
 }
 
 btnSidebar.addEventListener("click", () => {
-  if (mobileQuery.matches) {
-    if (sidebar.classList.contains("open")) closeDrawer();
-    else openDrawer();
-  } else {
-    setSidebarCollapsed(!sidebar.classList.contains("collapsed"));
-  }
+  if (sidebar.classList.contains("open")) closeDrawer();
+  else openDrawer();
+});
+
+btnCollapse.addEventListener("click", () => {
+  setSidebarCollapsed(!sidebar.classList.contains("collapsed"));
 });
 
 navOverlay.addEventListener("click", closeDrawer);

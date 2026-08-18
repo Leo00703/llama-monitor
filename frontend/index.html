@@ -2,37 +2,19 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>llama-monitor</title>
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-<header class="topbar">
-  <button id="btn-sidebar" class="icon-btn" type="button" aria-label="Toggle sidebar" aria-expanded="true" title="Toggle sidebar">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="16" rx="2"></rect><line x1="9" y1="4" x2="9" y2="20"></line></svg>
-  </button>
-  <div class="brand">
-    <svg class="brand-logo" viewBox="0 0 600 600" fill="currentColor" aria-hidden="true"><path d="M600 392L504.249 558L504.137 557.929C487.252 584.069 458.193 600 426.864 600H120L240 392H600Z"></path><path d="M240 392H0L199.602 46.0254C216.032 17.5463 246.411 3.25756e-05 279.29 0H466.154L240 392Z"></path></svg>
-    llama-monitor
-  </div>
-  <div class="status-group">
-    <span id="host-badge" class="host" title="Host status"><span class="dot"></span>host</span>
-    <span id="status-badge" class="badge badge-stopped"><span class="dot"></span><span id="status-text">stopped</span></span>
-    <span id="error-label" class="muted small error-label"></span>
-    <span id="version-label" class="muted small"></span>
-  </div>
-  <div class="actions">
-    <button id="btn-start" class="btn btn-primary">Start</button>
-    <button id="btn-stop" class="btn">Stop</button>
-    <button id="btn-restart" class="btn">Restart</button>
-  </div>
-</header>
-
 <div id="nav-overlay" class="nav-overlay hidden"></div>
 
 <div class="layout">
   <aside class="sidebar" id="sidebar">
+    <button id="btn-collapse" class="icon-btn nav-collapse" type="button" aria-label="Collapse sidebar" aria-expanded="true" title="Collapse sidebar">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="16" rx="2"></rect><line x1="9" y1="4" x2="9" y2="20"></line></svg>
+    </button>
     <button id="btn-sidebar-close" class="icon-btn nav-close" type="button" aria-label="Close menu" title="Close menu">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="5" x2="19" y2="19"></line><line x1="19" y1="5" x2="5" y2="19"></line></svg>
     </button>
@@ -58,384 +40,406 @@
     </nav>
   </aside>
 
-  <main>
-    <!-- ============================ DASHBOARD ============================ -->
-    <section id="page-dashboard" class="page">
-      <div id="launch-banner"></div>
-
-      <section class="card">
-        <div class="card-head">
-          <h2>Server</h2>
-          <div class="row">
-            <label class="field-label" for="preset-select">Preset</label>
-            <select id="preset-select"></select>
-          </div>
-        </div>
-        <div id="preset-summary" class="muted small"></div>
-        <div class="card-actions">
-          <button id="btn-preview" class="btn">Preview launch command</button>
-        </div>
-        <pre id="flag-preview" class="log hidden"></pre>
-      </section>
-
-      <section class="metrics-grid" id="metrics-grid">
-        <div class="card metric-card">
-          <div class="card-head">
-            <h2>CPU</h2>
-            <span id="cpu-total" class="metric-value">—</span>
-          </div>
-          <canvas id="cpu-spark" class="spark"></canvas>
-          <div id="cpu-cores" class="core-bars"></div>
-        </div>
-
-        <div class="card metric-card">
-          <div class="card-head">
-            <h2>RAM</h2>
-            <span id="ram-value" class="metric-value">—</span>
-          </div>
-          <canvas id="ram-spark" class="spark"></canvas>
-          <div id="ram-detail" class="muted small"></div>
-        </div>
-
-        <div id="gpu-cards" class="gpu-cards"></div>
-
-        <div class="card metric-card">
-          <div class="card-head">
-            <h2>Inference</h2>
-            <span id="infer-state" class="muted small">no server</span>
-          </div>
-          <div class="infer-grid">
-            <div class="infer-cell">
-              <span class="muted small">prompt tok/s</span>
-              <div class="infer-line">
-                <span id="prompt-tps" class="metric-value">—</span>
-                <canvas id="prompt-spark" class="spark spark-small"></canvas>
-              </div>
-            </div>
-            <div class="infer-cell">
-              <span class="muted small">generation tok/s</span>
-              <div class="infer-line">
-                <span id="gen-tps" class="metric-value">—</span>
-                <canvas id="gen-spark" class="spark spark-small"></canvas>
-              </div>
-            </div>
-            <div class="infer-cell" id="draft-cell" hidden>
-              <span class="muted small">draft acceptance</span>
-              <div class="infer-line">
-                <span id="draft-rate" class="metric-value">—</span>
-                <canvas id="draft-spark" class="spark spark-small"></canvas>
-              </div>
-            </div>
-          </div>
-          <div id="ctx-detail" class="muted small"></div>
-          <div id="slot-list" class="slot-list"></div>
-        </div>
-      </section>
-
-      <section class="card log-card">
-        <div class="card-head">
-          <h2>Server log</h2>
-          <div class="row">
-            <label class="check"><input type="checkbox" id="autoscroll" checked><span>auto-scroll</span></label>
-            <button id="btn-copy-log" class="icon-btn" type="button" aria-label="Copy log" title="Copy full log to clipboard">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-            </button>
-            <button id="btn-toggle-log" class="btn btn-small" type="button">Hide</button>
-          </div>
-        </div>
-        <pre id="log" class="log" aria-live="polite"></pre>
-      </section>
-    </section>
-
-    <!-- ============================ GENERATION ============================ -->
-    <section id="page-generation" class="page hidden">
-      <div class="card">
-        <div class="card-head">
-          <h2>Generation defaults</h2>
-          <div class="row">
-            <span id="gen-head" class="muted small"></span>
-            <span id="gen-status" class="row"></span>
-            <button id="gen-save" class="btn btn-primary">Save</button>
-            <button id="gen-reset" class="btn">Clear saved</button>
-          </div>
-        </div>
-        <p class="muted small">
-          Saved defaults are injected by the panel proxy into <code>/completion</code> and
-          <code>/v1/chat/completions</code> requests. Fields sent by the client always win.
-          Unsaved fields fall back to the server's own defaults.
-        </p>
-        <div class="gen-tabs">
-          <button class="gen-tab active" data-tab="sampling">Sampling</button>
-          <button class="gen-tab" data-tab="penalties">Penalties</button>
-          <button class="gen-tab" data-tab="other">Other</button>
-        </div>
-        <div id="gen-panel-sampling" class="gen-panel"></div>
-        <div id="gen-panel-penalties" class="gen-panel hidden"></div>
-        <div id="gen-panel-other" class="gen-panel hidden"></div>
+  <div class="content">
+    <header class="topbar">
+      <button id="btn-sidebar" class="icon-btn" type="button" aria-label="Open menu" aria-expanded="false" title="Open menu">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="6" x2="20" y2="6"></line><line x1="4" y1="12" x2="20" y2="12"></line><line x1="4" y1="18" x2="20" y2="18"></line></svg>
+      </button>
+      <div class="brand">
+        <svg class="brand-logo" viewBox="0 0 600 600" fill="currentColor" aria-hidden="true"><path d="M600 392L504.249 558L504.137 557.929C487.252 584.069 458.193 600 426.864 600H120L240 392H600Z"></path><path d="M240 392H0L199.602 46.0254C216.032 17.5463 246.411 3.25756e-05 279.29 0H466.154L240 392Z"></path></svg>
+        llama-monitor
       </div>
-    </section>
-
-    <!-- ============================= PRESETS ============================= -->
-    <section id="page-presets" class="page hidden">
-      <div id="presets-list-view" class="card">
-        <div class="card-head">
-          <h2>Presets</h2>
-          <button id="btn-new-preset" class="btn btn-primary">New preset</button>
-        </div>
-        <div class="table-wrap">
-          <table class="table">
-            <thead>
-              <tr>
-                <th>Name</th><th>Model</th><th>Ctx</th><th>NGl</th><th>Spec</th>
-                <th>Port</th><th>Updated</th><th></th>
-              </tr>
-            </thead>
-            <tbody id="presets-tbody"></tbody>
-          </table>
-        </div>
-        <div id="presets-empty" class="muted small hidden" style="padding:12px">
-          No presets yet. Create one to configure the server launch.
-        </div>
+      <div class="status-group">
+        <span id="host-badge" class="host" title="Host status"><span class="dot"></span>host</span>
+        <span id="status-badge" class="badge badge-stopped"><span class="dot"></span><span id="status-text">stopped</span></span>
+        <span id="error-label" class="muted small error-label"></span>
       </div>
+      <span id="version-label" class="muted small"></span>
+      <div class="actions">
+        <button id="btn-start" class="btn btn-start">Start</button>
+        <button id="btn-stop" class="btn btn-stop">Stop</button>
+        <button id="btn-restart" class="btn">Restart</button>
+      </div>
+    </header>
+    <main>
+      <!-- ============================ DASHBOARD ============================ -->
+      <section id="page-dashboard" class="page">
+        <div id="launch-banner"></div>
 
-      <div id="presets-form-view" class="card hidden">
-        <form id="preset-form">
-          <div class="form-head">
-            <h2 id="preset-form-title">New preset</h2>
+        <section class="card">
+          <div class="card-head">
+            <h2>Server</h2>
             <div class="row">
-              <button type="button" id="btn-preset-back" class="btn">Back</button>
-              <button type="submit" class="btn btn-primary">Save</button>
+              <label class="field-label" for="preset-select">Preset</label>
+              <select id="preset-select"></select>
             </div>
           </div>
-
-          <div class="field" style="max-width:420px">
-            <label class="field-label" for="pf-name">Name</label>
-            <input type="text" id="pf-name" required>
+          <div id="preset-summary" class="muted small"></div>
+          <div class="card-actions">
+            <button id="btn-preview" class="btn">Preview launch command</button>
           </div>
+          <pre id="flag-preview" class="log hidden"></pre>
+        </section>
 
-          <fieldset class="fieldset">
-            <legend>Model &amp; memory</legend>
-            <div class="grid2">
-              <div class="field"><label class="field-label" for="pf-model">Model path (relative to models root)</label><input type="text" id="pf-model" list="models-datalist" spellcheck="false"></div>
-              <div class="field"><label class="field-label" for="pf-alias">Alias</label><input type="text" id="pf-alias"></div>
-              <div class="field"><label class="field-label" for="pf-mmproj">mmproj / vision projector (optional)</label><input type="text" id="pf-mmproj" list="mmproj-datalist" spellcheck="false"></div>
-              <div class="field"><label class="field-label" for="pf-ctx">Context size (-c)</label><input type="number" id="pf-ctx" min="0" step="256"></div>
-              <div class="field"><label class="field-label" for="pf-ngl">GPU layers to offload (-ngl)</label><input type="number" id="pf-ngl" min="0" step="1"></div>
-              <div class="field"><label class="field-label" for="pf-ncmoe">MoE layers on CPU (--n-cpu-moe, 0 = off)</label><input type="number" id="pf-ncmoe" min="0" step="1"></div>
-              <div class="field"><label class="field-label" for="pf-override">Override tensors (--override-tensor, comma separated, e.g. experts=CPU)</label><input type="text" id="pf-override" spellcheck="false"></div>
-              <div class="field"><label class="field-label" for="pf-fa">Flash attention (-fa)</label>
-                <select id="pf-fa"><option value="auto">auto</option><option value="on">on</option><option value="off">off</option></select>
-              </div>
-              <div class="field"><label class="field-label" for="pf-ctk">KV cache type K (--cache-type-k)</label>
-                <select id="pf-ctk"><option>f16</option><option>f32</option><option>bf16</option><option>q8_0</option><option>q8_1</option><option>q4_0</option><option>q4_1</option><option>i8</option></select>
-              </div>
-              <div class="field"><label class="field-label" for="pf-ctv">KV cache type V (--cache-type-v)</label>
-                <select id="pf-ctv"><option>f16</option><option>f32</option><option>bf16</option><option>q8_0</option><option>q8_1</option><option>q4_0</option><option>q4_1</option><option>i8</option></select>
-              </div>
-              <div class="field"><label class="field-label" for="pf-load">Load mode (--load-mode)</label>
-                <select id="pf-load"><option>mmap</option><option>none</option><option>mlock</option><option>mmap+mlock</option><option>dio</option></select>
-              </div>
-            </div>
-          </fieldset>
-
-          <fieldset class="fieldset">
-            <legend>Multi-GPU</legend>
-            <div class="grid3">
-              <div class="field"><label class="field-label" for="pf-ts">Tensor split (--tensor-split, e.g. 8,16)</label><input type="text" id="pf-ts" spellcheck="false"></div>
-              <div class="field"><label class="field-label" for="pf-mg">Main GPU (--main-gpu, 0 = none)</label><input type="number" id="pf-mg" min="0" step="1"></div>
-              <div class="field"><label class="field-label" for="pf-sm">Split mode (--split-mode)</label>
-                <select id="pf-sm"><option>layer</option><option>none</option><option>row</option></select>
-              </div>
-            </div>
-          </fieldset>
-
-          <fieldset class="fieldset">
-            <legend>CPU &amp; batching</legend>
-            <div class="grid3">
-              <div class="field"><label class="field-label" for="pf-threads">Generation threads (-t, 0 = auto)</label><input type="number" id="pf-threads" min="0" step="1"></div>
-              <div class="field"><label class="field-label" for="pf-tb">Batch threads (-tb, 0 = same as -t)</label><input type="number" id="pf-tb" min="0" step="1"></div>
-              <div class="field"><label class="field-label" for="pf-b">Batch size (-b)</label><input type="number" id="pf-b" min="1" step="1"></div>
-              <div class="field"><label class="field-label" for="pf-ub">Micro-batch size (-ub)</label><input type="number" id="pf-ub" min="1" step="1"></div>
-              <div class="field"><label class="field-label" for="pf-reuse">Cache reuse (--cache-reuse, 0 = off)</label><input type="number" id="pf-reuse" min="0" step="32"></div>
-            </div>
-          </fieldset>
-
-          <fieldset class="fieldset">
-            <legend>Speculative decoding</legend>
-            <div id="pf-mtp-warning" class="banner banner-err hidden" style="margin:0 0 10px">
-              draft-mtp + mmproj is not supported by the current llama-server build (the vision projector disables the MTP head).
-            </div>
-            <div class="grid3">
-              <div class="field"><label class="field-label" for="pf-spectype">Type (--spec-type)</label>
-                <select id="pf-spectype">
-                  <option value="none">none</option>
-                  <option value="draft-mtp">draft-mtp (built-in MTP head)</option>
-                  <option value="draft-simple">draft-simple</option>
-                  <option value="draft-eagle3">draft-eagle3</option>
-                  <option value="draft-dflash">draft-dflash</option>
-                  <option value="draft-dspark">draft-dspark</option>
-                  <option value="ngram-simple">ngram-simple</option>
-                  <option value="ngram-cache">ngram-cache</option>
-                  <option value="ngram-map-k">ngram-map-k</option>
-                  <option value="ngram-map-k4v">ngram-map-k4v</option>
-                  <option value="ngram-mod">ngram-mod</option>
-                </select>
-              </div>
-              <div class="field hidden" id="pf-draftwrap"><label class="field-label" for="pf-draft">Drafter model (--spec-draft-model)</label><input type="text" id="pf-draft" spellcheck="false"></div>
-              <div class="field"><label class="field-label" for="pf-dnmax">Max draft tokens (--spec-draft-n-max)</label><input type="number" id="pf-dnmax" min="0" step="1"></div>
-              <div class="field"><label class="field-label" for="pf-dnmin">Min draft tokens (--spec-draft-n-min)</label><input type="number" id="pf-dnmin" min="0" step="1"></div>
-              <div class="field"><label class="field-label" for="pf-slots">Parallel slots (-np)</label><input type="number" id="pf-slots" min="1" step="1"></div>
-            </div>
-          </fieldset>
-
-          <fieldset class="fieldset">
-            <legend>Network &amp; observability</legend>
-            <div class="grid3">
-              <div class="field"><label class="field-label" for="pf-host">Host (--host)</label><input type="text" id="pf-host" spellcheck="false"></div>
-              <div class="field"><label class="field-label" for="pf-port">Port (--port)</label><input type="number" id="pf-port" min="1" step="1"></div>
-              <div class="field"><label class="field-label" for="pf-apikey">API key (--api-key, optional)</label><input type="text" id="pf-apikey" spellcheck="false"></div>
-            </div>
-            <div class="checkrow">
-              <label class="check"><input type="checkbox" id="pf-jinja"><span>Jinja templates (--jinja)</span></label>
-              <label class="check"><input type="checkbox" id="pf-reasoning"><span>Preserve reasoning (--reasoning-preserve)</span></label>
-              <label class="check"><input type="checkbox" id="pf-mergeqkv"><span>Merge QKV (--merge-qkv)</span></label>
-              <label class="check"><input type="checkbox" id="pf-fit"><span>Auto fit memory (--fit)</span></label>
-            </div>
-            <div class="grid2">
-              <div class="field"><label class="field-label" for="pf-gr">Graph reuse (-gr, 0 = off)</label><input type="number" id="pf-gr" min="0" step="1"></div>
-              <div class="field"><label class="field-label" for="pf-extra">Extra flags (free form)</label><input type="text" id="pf-extra" spellcheck="false"></div>
-            </div>
-          </fieldset>
-        </form>
-      </div>
-    </section>
-
-    <!-- ============================== MODELS ============================== -->
-    <section id="page-models" class="page hidden">
-      <div class="card">
-        <div class="card-head">
-          <h2>Models <span id="models-root" class="muted small"></span></h2>
-          <div class="row">
-            <input type="search" id="models-search" placeholder="filter by name or path...">
-            <span id="models-count" class="muted small"></span>
-            <button id="models-refresh" class="btn">Refresh</button>
-          </div>
-        </div>
-        <div class="table-wrap">
-          <table class="table">
-            <thead>
-              <tr><th>File</th><th>Path (relative to root)</th><th>Size</th><th>Modified</th></tr>
-            </thead>
-            <tbody id="models-tbody"></tbody>
-          </table>
-        </div>
-        <div id="models-empty" class="muted small hidden" style="padding:12px">
-          No .gguf files found. Set the models root folder in Settings.
-        </div>
-      </div>
-
-      <div id="models-detail" class="card models-detail hidden">
-        <div class="card-head">
-          <h2 id="md-name"></h2>
-          <div class="row mb-actions">
-            <label class="field-label" for="models-preset-select">Apply to preset</label>
-            <select id="models-preset-select"></select>
-            <button id="models-apply-model" class="btn btn-primary">Apply as model</button>
-            <button id="models-apply-mmproj" class="btn">Apply mmproj</button>
-          </div>
-        </div>
-        <div class="mb-meta">
-          <div><span class="muted small">path (relative to root)</span><div id="md-path" class="mono"></div></div>
-          <div><span class="muted small">size</span><div id="md-size"></div></div>
-          <div><span class="muted small">modified</span><div id="md-mtime"></div></div>
-          <div><span class="muted small">vision projector (mmproj)</span><div id="md-mmproj"></div></div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ============================ ANALYTICS ============================ -->
-    <section id="page-analytics" class="page hidden">
-      <div class="card">
-        <div class="card-head">
-          <h2>Generation analytics</h2>
-          <div class="row">
-            <div class="range-group" id="analytics-range">
-              <button class="range-btn" data-range="day" type="button">Day</button>
-              <button class="range-btn active" data-range="week" type="button">Week</button>
-              <button class="range-btn" data-range="month" type="button">Month</button>
-              <button class="range-btn" data-range="year" type="button">Year</button>
-              <button class="range-btn" data-range="all" type="button">All</button>
-            </div>
-            <button id="btn-analytics-export" class="btn">Export CSV</button>
-          </div>
-        </div>
-        <p class="muted small">
-          Per-request history parsed from <code>slot print_timing</code> server logs.
-          Energy and cost are estimates from sampled GPU power × request duration
-          (price configurable in Settings).
-        </p>
-        <section class="metrics-grid" id="analytics-cards"></section>
-        <div class="grid2">
+        <section class="metrics-grid" id="metrics-grid">
           <div class="card metric-card">
-            <div class="card-head"><h2>Tokens generated</h2><span class="muted small" id="an-tokens-sub"></span></div>
-            <canvas id="an-tokens-chart" class="chart"></canvas>
-          </div>
-          <div class="card metric-card">
-            <div class="card-head"><h2>Avg generation speed</h2><span class="muted small" id="an-speed-sub"></span></div>
-            <canvas id="an-speed-chart" class="chart"></canvas>
-          </div>
-        </div>
-        <div class="grid2">
-          <div class="card metric-card">
-            <div class="card-head"><h2>By model</h2></div>
-            <div id="an-models-bars"></div>
-            <div id="an-models-empty" class="muted small hidden" style="padding:12px">No requests recorded in this range yet.</div>
-            <div class="table-wrap">
-              <table class="table" id="an-models-table">
-                <thead>
-                  <tr><th>Model</th><th>Requests</th><th>Generated</th><th>avg tok/s</th><th>max tok/s</th><th>€ / 1M</th></tr>
-                </thead>
-                <tbody id="an-models-tbody"></tbody>
-              </table>
+            <div class="card-head">
+              <h2>CPU</h2>
+              <span id="cpu-total" class="metric-value">—</span>
             </div>
+            <canvas id="cpu-spark" class="spark"></canvas>
+            <div id="cpu-cores" class="core-bars"></div>
           </div>
-          <div class="card metric-card">
-            <div class="card-head"><h2>Recent requests</h2><span class="muted small" id="an-records-count"></span></div>
-            <div class="table-wrap">
-              <table class="table" id="an-records-table">
-                <thead>
-                  <tr><th>Time</th><th>Model</th><th>Prompt</th><th>Generated</th><th>tok/s</th><th>Duration</th><th>Energy</th></tr>
-                </thead>
-                <tbody id="an-records-tbody"></tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
 
-    <!-- ============================= SETTINGS ============================= -->
-    <section id="page-settings" class="page hidden">
-      <div class="card">
-        <div class="card-head">
-          <h2>Settings</h2>
-          <button type="button" id="btn-save-settings" class="btn btn-primary">Save</button>
+          <div class="card metric-card">
+            <div class="card-head">
+              <h2>RAM</h2>
+              <span id="ram-value" class="metric-value">—</span>
+            </div>
+            <canvas id="ram-spark" class="spark"></canvas>
+            <div id="ram-detail" class="muted small"></div>
+          </div>
+
+          <div id="gpu-cards" class="gpu-cards"></div>
+
+          <div class="card metric-card">
+            <div class="card-head">
+              <h2>Inference</h2>
+              <span id="infer-state" class="muted small">no server</span>
+            </div>
+            <div class="infer-grid">
+              <div class="infer-cell">
+                <span class="muted small">prompt tok/s</span>
+                <div class="infer-line">
+                  <span id="prompt-tps" class="metric-value">—</span>
+                  <canvas id="prompt-spark" class="spark spark-small"></canvas>
+                </div>
+              </div>
+              <div class="infer-cell">
+                <span class="muted small">generation tok/s</span>
+                <div class="infer-line">
+                  <span id="gen-tps" class="metric-value">—</span>
+                  <canvas id="gen-spark" class="spark spark-small"></canvas>
+                </div>
+              </div>
+              <div class="infer-cell" id="draft-cell" hidden>
+                <span class="muted small">draft acceptance</span>
+                <div class="infer-line">
+                  <span id="draft-rate" class="metric-value">—</span>
+                  <canvas id="draft-spark" class="spark spark-small"></canvas>
+                </div>
+              </div>
+            </div>
+            <div id="ctx-detail" class="muted small"></div>
+            <div id="slot-list" class="slot-list"></div>
+          </div>
+        </section>
+
+        <section class="card log-card">
+          <div class="card-head">
+            <h2>Server log</h2>
+            <div class="row">
+              <label class="check"><input type="checkbox" id="autoscroll" checked><span>auto-scroll</span></label>
+              <button id="btn-copy-log" class="icon-btn" type="button" aria-label="Copy log" title="Copy full log to clipboard">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+              </button>
+              <button id="btn-toggle-log" class="btn btn-small" type="button">Hide</button>
+            </div>
+          </div>
+          <pre id="log" class="log" aria-live="polite"></pre>
+        </section>
+      </section>
+
+      <!-- ============================ GENERATION ============================ -->
+      <section id="page-generation" class="page hidden">
+        <div class="card">
+          <div class="card-head">
+            <h2>Generation defaults</h2>
+            <div class="row">
+              <span id="gen-head" class="muted small"></span>
+              <span id="gen-status" class="row"></span>
+              <button id="gen-save" class="btn btn-primary">Save</button>
+              <button id="gen-reset" class="btn">Clear saved</button>
+            </div>
+          </div>
+          <p class="muted small">
+            Saved defaults are injected by the panel proxy into <code>/completion</code> and
+            <code>/v1/chat/completions</code> requests. Fields sent by the client always win.
+            Unsaved fields fall back to the server's own defaults.
+          </p>
+          <div class="gen-tabs">
+            <button class="gen-tab active" data-tab="sampling">Sampling</button>
+            <button class="gen-tab" data-tab="penalties">Penalties</button>
+            <button class="gen-tab" data-tab="other">Other</button>
+          </div>
+          <div id="gen-panel-sampling" class="gen-panel"></div>
+          <div id="gen-panel-penalties" class="gen-panel hidden"></div>
+          <div id="gen-panel-other" class="gen-panel hidden"></div>
         </div>
-        <form id="settings-form">
+      </section>
+
+      <!-- ============================= PRESETS ============================= -->
+      <section id="page-presets" class="page hidden">
+        <div id="presets-list-view" class="card">
+          <div class="card-head">
+            <h2>Presets</h2>
+            <button id="btn-new-preset" class="btn btn-primary">New preset</button>
+          </div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Name</th><th>Model</th><th>Ctx</th><th>NGl</th><th>Spec</th>
+                  <th>Port</th><th>Updated</th><th></th>
+                </tr>
+              </thead>
+              <tbody id="presets-tbody"></tbody>
+            </table>
+          </div>
+          <div id="presets-empty" class="muted small hidden" style="padding:12px">
+            No presets yet. Create one to configure the server launch.
+          </div>
+        </div>
+
+        <div id="presets-form-view" class="card hidden">
+          <form id="preset-form">
+            <div class="form-head">
+              <h2 id="preset-form-title">New preset</h2>
+              <div class="row">
+                <button type="button" id="btn-preset-back" class="btn">Back</button>
+                <button type="submit" class="btn btn-primary">Save</button>
+              </div>
+            </div>
+
+            <div class="field" style="max-width:420px">
+              <label class="field-label" for="pf-name">Name</label>
+              <input type="text" id="pf-name" required>
+            </div>
+
+            <fieldset class="fieldset">
+              <legend>Model &amp; memory</legend>
+              <div class="grid2">
+                <div class="field"><label class="field-label" for="pf-model">Model path (relative to models root)</label><input type="text" id="pf-model" list="models-datalist" spellcheck="false"></div>
+                <div class="field"><label class="field-label" for="pf-alias">Alias</label><input type="text" id="pf-alias"></div>
+                <div class="field"><label class="field-label" for="pf-mmproj">mmproj / vision projector (optional)</label><input type="text" id="pf-mmproj" list="mmproj-datalist" spellcheck="false"></div>
+                <div class="field"><label class="field-label" for="pf-ctx">Context size (-c)</label><input type="number" id="pf-ctx" min="0" step="256"></div>
+                <div class="field"><label class="field-label" for="pf-ngl">GPU layers to offload (-ngl)</label><input type="number" id="pf-ngl" min="0" step="1"></div>
+                <div class="field"><label class="field-label" for="pf-ncmoe">MoE layers on CPU (--n-cpu-moe, 0 = off)</label><input type="number" id="pf-ncmoe" min="0" step="1"></div>
+                <div class="field"><label class="field-label" for="pf-override">Override tensors (--override-tensor, comma separated, e.g. experts=CPU)</label><input type="text" id="pf-override" spellcheck="false"></div>
+                <div class="field"><label class="field-label" for="pf-fa">Flash attention (-fa)</label>
+                  <select id="pf-fa"><option value="auto">auto</option><option value="on">on</option><option value="off">off</option></select>
+                </div>
+                <div class="field"><label class="field-label" for="pf-ctk">KV cache type K (--cache-type-k)</label>
+                  <select id="pf-ctk"><option>f16</option><option>f32</option><option>bf16</option><option>q8_0</option><option>q8_1</option><option>q4_0</option><option>q4_1</option><option>i8</option></select>
+                </div>
+                <div class="field"><label class="field-label" for="pf-ctv">KV cache type V (--cache-type-v)</label>
+                  <select id="pf-ctv"><option>f16</option><option>f32</option><option>bf16</option><option>q8_0</option><option>q8_1</option><option>q4_0</option><option>q4_1</option><option>i8</option></select>
+                </div>
+                <div class="field"><label class="field-label" for="pf-load">Load mode (--load-mode)</label>
+                  <select id="pf-load"><option>mmap</option><option>none</option><option>mlock</option><option>mmap+mlock</option><option>dio</option></select>
+                </div>
+              </div>
+            </fieldset>
+
+            <fieldset class="fieldset">
+              <legend>Multi-GPU</legend>
+              <div class="grid3">
+                <div class="field"><label class="field-label" for="pf-ts">Tensor split (--tensor-split, e.g. 8,16)</label><input type="text" id="pf-ts" spellcheck="false"></div>
+                <div class="field"><label class="field-label" for="pf-mg">Main GPU (--main-gpu, 0 = none)</label><input type="number" id="pf-mg" min="0" step="1"></div>
+                <div class="field"><label class="field-label" for="pf-sm">Split mode (--split-mode)</label>
+                  <select id="pf-sm"><option>layer</option><option>none</option><option>row</option></select>
+                </div>
+              </div>
+            </fieldset>
+
+            <fieldset class="fieldset">
+              <legend>CPU &amp; batching</legend>
+              <div class="grid3">
+                <div class="field"><label class="field-label" for="pf-threads">Generation threads (-t, 0 = auto)</label><input type="number" id="pf-threads" min="0" step="1"></div>
+                <div class="field"><label class="field-label" for="pf-tb">Batch threads (-tb, 0 = same as -t)</label><input type="number" id="pf-tb" min="0" step="1"></div>
+                <div class="field"><label class="field-label" for="pf-b">Batch size (-b)</label><input type="number" id="pf-b" min="1" step="1"></div>
+                <div class="field"><label class="field-label" for="pf-ub">Micro-batch size (-ub)</label><input type="number" id="pf-ub" min="1" step="1"></div>
+                <div class="field"><label class="field-label" for="pf-reuse">Cache reuse (--cache-reuse, 0 = off)</label><input type="number" id="pf-reuse" min="0" step="32"></div>
+              </div>
+            </fieldset>
+
+            <fieldset class="fieldset">
+              <legend>Speculative decoding</legend>
+              <div id="pf-mtp-warning" class="banner banner-err hidden" style="margin:0 0 10px">
+                draft-mtp + mmproj is not supported by the current llama-server build (the vision projector disables the MTP head).
+              </div>
+              <div class="grid3">
+                <div class="field"><label class="field-label" for="pf-spectype">Type (--spec-type)</label>
+                  <select id="pf-spectype">
+                    <option value="none">none</option>
+                    <option value="draft-mtp">draft-mtp (built-in MTP head)</option>
+                    <option value="draft-simple">draft-simple</option>
+                    <option value="draft-eagle3">draft-eagle3</option>
+                    <option value="draft-dflash">draft-dflash</option>
+                    <option value="draft-dspark">draft-dspark</option>
+                    <option value="ngram-simple">ngram-simple</option>
+                    <option value="ngram-cache">ngram-cache</option>
+                    <option value="ngram-map-k">ngram-map-k</option>
+                    <option value="ngram-map-k4v">ngram-map-k4v</option>
+                    <option value="ngram-mod">ngram-mod</option>
+                  </select>
+                </div>
+                <div class="field hidden" id="pf-draftwrap"><label class="field-label" for="pf-draft">Drafter model (--spec-draft-model)</label><input type="text" id="pf-draft" spellcheck="false"></div>
+                <div class="field"><label class="field-label" for="pf-dnmax">Max draft tokens (--spec-draft-n-max)</label><input type="number" id="pf-dnmax" min="0" step="1"></div>
+                <div class="field"><label class="field-label" for="pf-dnmin">Min draft tokens (--spec-draft-n-min)</label><input type="number" id="pf-dnmin" min="0" step="1"></div>
+                <div class="field"><label class="field-label" for="pf-slots">Parallel slots (-np)</label><input type="number" id="pf-slots" min="1" step="1"></div>
+              </div>
+            </fieldset>
+
+            <fieldset class="fieldset">
+              <legend>Network &amp; observability</legend>
+              <div class="grid3">
+                <div class="field"><label class="field-label" for="pf-host">Host (--host)</label><input type="text" id="pf-host" spellcheck="false"></div>
+                <div class="field"><label class="field-label" for="pf-port">Port (--port)</label><input type="number" id="pf-port" min="1" step="1"></div>
+                <div class="field"><label class="field-label" for="pf-apikey">API key (--api-key, optional)</label><input type="text" id="pf-apikey" spellcheck="false"></div>
+              </div>
+              <div class="checkrow">
+                <label class="check"><input type="checkbox" id="pf-jinja"><span>Jinja templates (--jinja)</span></label>
+                <label class="check"><input type="checkbox" id="pf-reasoning"><span>Preserve reasoning (--reasoning-preserve)</span></label>
+                <label class="check"><input type="checkbox" id="pf-mergeqkv"><span>Merge QKV (--merge-qkv)</span></label>
+                <label class="check"><input type="checkbox" id="pf-fit"><span>Auto fit memory (--fit)</span></label>
+              </div>
+              <div class="grid2">
+                <div class="field"><label class="field-label" for="pf-gr">Graph reuse (-gr, 0 = off)</label><input type="number" id="pf-gr" min="0" step="1"></div>
+                <div class="field"><label class="field-label" for="pf-extra">Extra flags (free form)</label><input type="text" id="pf-extra" spellcheck="false"></div>
+              </div>
+            </fieldset>
+          </form>
+        </div>
+      </section>
+
+      <!-- ============================== MODELS ============================== -->
+      <section id="page-models" class="page hidden">
+        <div class="card">
+          <div class="card-head">
+            <h2>Models <span id="models-root" class="muted small"></span></h2>
+            <div class="row">
+              <input type="search" id="models-search" placeholder="filter by name or path...">
+              <span id="models-count" class="muted small"></span>
+              <button id="models-refresh" class="btn">Refresh</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr><th>File</th><th>Path (relative to root)</th><th>Size</th><th>Modified</th></tr>
+              </thead>
+              <tbody id="models-tbody"></tbody>
+            </table>
+          </div>
+          <div id="models-empty" class="muted small hidden" style="padding:12px">
+            No .gguf files found. Set the models root folder in Settings.
+          </div>
+        </div>
+
+        <div id="models-detail" class="card models-detail hidden">
+          <div class="card-head">
+            <h2 id="md-name"></h2>
+            <div class="row mb-actions">
+              <label class="field-label" for="models-preset-select">Apply to preset</label>
+              <select id="models-preset-select"></select>
+              <button id="models-apply-model" class="btn btn-primary">Apply as model</button>
+              <button id="models-apply-mmproj" class="btn">Apply mmproj</button>
+            </div>
+          </div>
+          <div class="mb-meta">
+            <div><span class="muted small">path (relative to root)</span><div id="md-path" class="mono"></div></div>
+            <div><span class="muted small">size</span><div id="md-size"></div></div>
+            <div><span class="muted small">modified</span><div id="md-mtime"></div></div>
+            <div><span class="muted small">vision projector (mmproj)</span><div id="md-mmproj"></div></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================ ANALYTICS ============================ -->
+      <section id="page-analytics" class="page hidden">
+        <div class="card">
+          <div class="card-head">
+            <h2>Generation analytics</h2>
+            <div class="row">
+              <div class="range-group" id="analytics-range">
+                <button class="range-btn" data-range="day" type="button">Day</button>
+                <button class="range-btn active" data-range="week" type="button">Week</button>
+                <button class="range-btn" data-range="month" type="button">Month</button>
+                <button class="range-btn" data-range="year" type="button">Year</button>
+                <button class="range-btn" data-range="all" type="button">All</button>
+              </div>
+              <button id="btn-analytics-export" class="btn">Export CSV</button>
+            </div>
+          </div>
+          <p class="muted small">
+            Per-request history parsed from <code>slot print_timing</code> server logs.
+            Energy and cost are estimates from sampled GPU power × request duration
+            (price configurable in Settings).
+          </p>
+          <section class="metrics-grid" id="analytics-cards"></section>
           <div class="grid2">
-            <div class="field"><label class="field-label" for="set-exe">llama-server executable path</label><input type="text" id="set-exe" spellcheck="false" placeholder="C:\...\llama-server.exe or llama-server"></div>
-            <div class="field"><label class="field-label" for="set-root">Models root folder</label><input type="text" id="set-root" spellcheck="false" placeholder="C:\Users\you\llama-models"></div>
-            <div class="field"><label class="field-label" for="set-port">Default server port</label><input type="number" id="set-port" min="1" step="1"></div>
-            <div class="field"><label class="field-label" for="set-phost">Panel host</label><input type="text" id="set-phost"></div>
-            <div class="field"><label class="field-label" for="set-pport">Panel port</label><input type="number" id="set-pport" min="1" step="1"></div>
-            <div class="field"><label class="field-label" for="set-energy-price">Energy price (€ / kWh)</label><input type="number" id="set-energy-price" min="0" step="0.01"></div>
-            <div class="field"><label class="field-label" for="set-energy-overhead">System overhead (W, added to GPU power)</label><input type="number" id="set-energy-overhead" min="0" step="1"></div>
+            <div class="card metric-card">
+              <div class="card-head"><h2>Tokens generated</h2><span class="muted small" id="an-tokens-sub"></span></div>
+              <canvas id="an-tokens-chart" class="chart"></canvas>
+            </div>
+            <div class="card metric-card">
+              <div class="card-head"><h2>Avg generation speed</h2><span class="muted small" id="an-speed-sub"></span></div>
+              <canvas id="an-speed-chart" class="chart"></canvas>
+            </div>
           </div>
-          <p class="muted small">Panel host/port only take effect on next panel restart. Energy price is used for the cost estimates on the Analytics page.</p>
-        </form>
-      </div>
-    </section>
-  </main>
+          <div class="grid2">
+            <div class="card metric-card">
+              <div class="card-head"><h2>By model</h2></div>
+              <div id="an-models-bars"></div>
+              <div id="an-models-empty" class="muted small hidden" style="padding:12px">No requests recorded in this range yet.</div>
+              <div class="table-wrap">
+                <table class="table" id="an-models-table">
+                  <thead>
+                    <tr><th>Model</th><th>Requests</th><th>Generated</th><th>avg tok/s</th><th>max tok/s</th><th>€ / 1M</th></tr>
+                  </thead>
+                  <tbody id="an-models-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="card metric-card">
+              <div class="card-head"><h2>Recent requests</h2><span class="muted small" id="an-records-count"></span></div>
+              <div class="table-wrap">
+                <table class="table" id="an-records-table">
+                  <thead>
+                    <tr><th>Time</th><th>Model</th><th>Prompt</th><th>Generated</th><th>tok/s</th><th>Duration</th><th>Energy</th></tr>
+                  </thead>
+                  <tbody id="an-records-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================= SETTINGS ============================= -->
+      <section id="page-settings" class="page hidden">
+        <div class="card">
+          <div class="card-head">
+            <h2>Settings</h2>
+            <button type="button" id="btn-save-settings" class="btn btn-primary">Save</button>
+          </div>
+          <form id="settings-form">
+            <div class="grid2">
+              <div class="field"><label class="field-label" for="set-exe">llama-server executable path</label><input type="text" id="set-exe" spellcheck="false" placeholder="C:\...\llama-server.exe or llama-server"></div>
+              <div class="field"><label class="field-label" for="set-root">Models root folder</label><input type="text" id="set-root" spellcheck="false" placeholder="C:\Users\you\llama-models"></div>
+              <div class="field"><label class="field-label" for="set-port">Default server port</label><input type="number" id="set-port" min="1" step="1"></div>
+              <div class="field"><label class="field-label" for="set-phost">Panel host</label><input type="text" id="set-phost"></div>
+              <div class="field"><label class="field-label" for="set-pport">Panel port</label><input type="number" id="set-pport" min="1" step="1"></div>
+              <div class="field"><label class="field-label" for="set-energy-price">Energy price (€ / kWh)</label><input type="number" id="set-energy-price" min="0" step="0.01"></div>
+              <div class="field"><label class="field-label" for="set-energy-overhead">System overhead (W, added to GPU power)</label><input type="number" id="set-energy-overhead" min="0" step="1"></div>
+            </div>
+            <p class="muted small">Panel host/port only take effect on next panel restart. Energy price is used for the cost estimates on the Analytics page.</p>
+          </form>
+        </div>
+      </section>
+    </main>
+  </div>
 </div>
 
 <div id="toast" class="toast hidden"></div>

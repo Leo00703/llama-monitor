@@ -1,9 +1,8 @@
 /* llama-monitor — dark frosted-glass theme */
 
 :root {
-  --bg: #0a0c10;
-  --bg-accent-1: rgba(56, 89, 170, 0.10);
-  --bg-accent-2: rgba(120, 60, 160, 0.07);
+  /* solid background — official llama.cpp UI color */
+  --bg: #0d0d0d;
   --panel: rgba(255, 255, 255, 0.045);
   --panel-strong: rgba(255, 255, 255, 0.08);
   --border: rgba(255, 255, 255, 0.09);
@@ -35,26 +34,19 @@ body {
   font-family: var(--font);
   font-size: 15px;
   color: var(--text);
-  background:
-    radial-gradient(1100px 500px at 15% -10%, var(--bg-accent-1), transparent 60%),
-    radial-gradient(900px 480px at 90% 0%, var(--bg-accent-2), transparent 55%),
-    var(--bg);
+  background: var(--bg);
   min-height: 100vh;
 }
 
 /* ---------- top bar ---------- */
 
 .topbar {
-  position: sticky;
-  top: 0;
-  z-index: 50;
   display: flex;
   align-items: center;
   gap: 18px;
   padding: 10px 20px;
-  background: rgba(13, 15, 20, 0.72);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  flex: none;
+  background: var(--bg);
   border-bottom: 1px solid var(--border);
 }
 
@@ -192,6 +184,20 @@ body {
 }
 .btn-primary:hover:not(:disabled) { background: rgba(91, 140, 255, 0.3); }
 
+.btn-start {
+  background: rgba(63, 185, 80, 0.16);
+  border-color: rgba(63, 185, 80, 0.45);
+  color: #7ee787;
+}
+.btn-start:hover:not(:disabled) { background: rgba(63, 185, 80, 0.28); }
+
+.btn-stop {
+  background: rgba(248, 81, 73, 0.16);
+  border-color: rgba(248, 81, 73, 0.45);
+  color: #ff9d97;
+}
+.btn-stop:hover:not(:disabled) { background: rgba(248, 81, 73, 0.28); }
+
 .btn-danger { border-color: rgba(248, 81, 73, 0.5); color: #ffc9c6; background: rgba(248, 81, 73, 0.1); }
 .btn-danger:hover:not(:disabled) { background: rgba(248, 81, 73, 0.22); }
 
@@ -199,25 +205,33 @@ body {
 
 .layout {
   display: flex;
-  align-items: flex-start;
-  max-width: 1600px;
-  margin: 0 auto;
   width: 100%;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .sidebar {
-  position: sticky;
-  top: 57px;
   flex: 0 0 190px;
   width: 190px;
-  padding: 16px 10px;
+  padding: 12px 10px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   border-right: 1px solid var(--border);
-  min-height: calc(100vh - 57px);
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
   transition: flex-basis 0.18s ease, width 0.18s ease;
 }
+
+/* desktop collapse button lives at the top of the sidebar */
+.nav-collapse {
+  align-self: flex-start;
+  margin-bottom: 10px;
+}
+
+/* hamburger (drawer opener) only shows on mobile */
+#btn-sidebar { display: none; }
 
 .nav-item {
   appearance: none;
@@ -232,7 +246,7 @@ body {
   background: transparent;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
-  padding: 9px 12px;
+  padding: 8px 10px;
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease;
 }
@@ -253,18 +267,28 @@ body {
 }
 
 .sidebar.collapsed {
-  flex: 0 0 58px;
-  width: 58px;
-  padding: 16px 8px;
+  flex: 0 0 60px;
+  width: 60px;
+  padding: 12px 8px;
 }
+
+.sidebar.collapsed .nav-collapse { align-self: center; }
 
 .sidebar.collapsed .nav-item {
   justify-content: center;
-  padding: 9px 0;
+  padding: 10px 0;
   gap: 0;
 }
 
 .sidebar.collapsed .nav-label { display: none; }
+
+.content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
 
 main {
   display: flex;
@@ -273,6 +297,8 @@ main {
   padding: 20px;
   flex: 1;
   min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .page { display: flex; flex-direction: column; gap: 16px; }
@@ -553,7 +579,11 @@ label.field-label {
 body.nav-locked { overflow: hidden; }
 
 @media (max-width: 900px) {
-  main { padding: 12px; gap: 12px; }
+  main {
+    padding: 12px;
+    gap: 12px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+  }
   .page { gap: 12px; }
   .card { padding: 14px; }
   .metrics-grid { gap: 10px; }
@@ -599,6 +629,8 @@ body.nav-locked { overflow: hidden; }
   .sidebar.collapsed .nav-item { justify-content: flex-start; padding: 10px 12px; gap: 11px; }
   .sidebar.collapsed .nav-label { display: inline; }
   .nav-close { display: inline-flex; align-self: flex-end; margin-bottom: 10px; }
+  .nav-collapse { display: none; }
+  #btn-sidebar { display: inline-flex; }
   .nav-item { min-height: 42px; }
 }
 
