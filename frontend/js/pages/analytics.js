@@ -197,7 +197,9 @@ const Analytics = (() => {
     }
     for (const r of records) {
       const tr = document.createElement("tr");
-      const when = new Date(r.ts * 1000).toLocaleString();
+      const d = new Date(r.ts * 1000);
+      const p2 = (n) => String(n).padStart(2, "0");
+      const when = `<span class="t-full">${d.toLocaleString()}</span><span class="t-short">${p2(d.getMonth() + 1)}/${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}</span>`;
       const dur = r.total_ms != null ? `${(r.total_ms / 1000).toFixed(1)}s` : "—";
       const energy = r.energy_wh != null ? `${r.energy_wh.toFixed(2)} Wh` : "—";
       tr.innerHTML = `
