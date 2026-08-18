@@ -376,6 +376,14 @@ details[open] .card-summary { margin-bottom: 8px; }
 /* launch-command preview: keep it off the button */
 #flag-preview { margin-top: 12px; }
 
+/* dashboard fills the viewport: the log card absorbs the remaining height,
+   so the latest log lines are visible without scrolling (page still scrolls
+   if the cards above + the log's min-height don't fit) */
+#page-dashboard { flex: 1 1 auto; min-height: 0; }
+#page-dashboard .log-card { flex: 1 1 auto; }
+#page-dashboard .log-card .log { max-height: none; }
+#page-dashboard .log-card.collapsed { flex: 0 0 auto; }
+
 /* ---------- metrics grid ---------- */
 
 .metrics-grid {
