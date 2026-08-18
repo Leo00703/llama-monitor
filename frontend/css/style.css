@@ -88,7 +88,15 @@ body {
   align-items: center;
   gap: 12px;
   flex: 1;
+}
+
+/* version line: shrink + ellipsize instead of wrapping onto the status pill */
+.version-label {
+  flex: 0 1 auto;
   min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .host {
@@ -211,8 +219,8 @@ body {
 }
 
 .sidebar {
-  flex: 0 0 190px;
-  width: 190px;
+  flex: 0 0 150px;
+  width: 150px;
   padding: 12px 10px;
   display: flex;
   flex-direction: column;
@@ -237,6 +245,7 @@ body {
   appearance: none;
   display: flex;
   align-items: center;
+  width: 100%;
   gap: 11px;
   text-align: left;
   font-family: inherit;
@@ -576,6 +585,7 @@ label.field-label {
   backdrop-filter: blur(2px);
 }
 
+.drawer-head { display: none; }
 .nav-close { display: none; }
 
 body.nav-locked { overflow: hidden; }
@@ -650,7 +660,15 @@ body.nav-locked { overflow: hidden; }
   .sidebar.collapsed { width: 272px; max-width: 85vw; padding: 14px 14px 24px; }
   .sidebar.collapsed .nav-item { justify-content: flex-start; padding: 10px 12px; gap: 11px; }
   .sidebar.collapsed .nav-label { display: inline; }
-  .nav-close { display: inline-flex; align-self: flex-end; margin-bottom: 10px; }
+  .drawer-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .drawer-head .brand { flex: 1; min-width: 0; font-size: 15px; }
+  .nav-close { display: inline-flex; }
   .nav-collapse { display: none; }
   #btn-sidebar { display: inline-flex; }
   .nav-item { min-height: 42px; }
