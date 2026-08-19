@@ -174,9 +174,11 @@ class LiveLogStats:
     """
 
     def __init__(self) -> None:
+        self.reset_count = 0
         self.reset()
 
     def reset(self) -> None:
+        self.reset_count += 1
         self.task: Optional[int] = None
         self.prompt_tps: Optional[float] = None
         self.prompt_tokens: Optional[int] = None

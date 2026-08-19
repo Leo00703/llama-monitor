@@ -105,6 +105,10 @@ async def _metrics_loop(collector: MetricsCollector, manager: LlamaServerManager
 # once a second / every 3s; allow slack for a slow server).
 _LIVE_LOG_STALE = 10.0
 
+# Last live measurement shown while a request is running; kept across ticks
+# until a newer one arrives so the card never clears to "—" mid-generation.
+_last_live: dict = {"rc": 0, "prompt": None, "gen": None}
+
 
 def _enrich_inference(data: dict, tracker: PrintTimingTracker,
                       live_log: Optional[LiveLogStats] = None) -> None:
@@ -145,10 +149,24 @@ def _enrich_inference(data: dict, tracker: PrintTimingTracker,
         # The server's own live measurements override the /slots and
         # /metrics deltas while they are fresh.
         now = time.monotonic()
+        if live_log.reset_count != _last_live["rc"]:
+            # Request boundary ("stop processing" or stop/restart):
+            # never carry values across requests.
+            _last_live["rc"] = live_log.reset_count
+            _last_live["prompt"] = None
+            _last_live["gen"] = None
         if live_log.prompt_tps is not None and now - live_log.prompt_ts < _LIVE_LOG_STALE:
-            inf["prompt_tps"] = round(live_log.prompt_tps, 2)
+            _last_live["prompt"] = round(live_log.prompt_tps, 2)
+            inf["prompt_tps"] = _last_live["prompt"]
         if live_log.gen_tps is not None and now - live_log.gen_ts < _LIVE_LOG_STALE:
-            inf["gen_tps"] = round(live_log.gen_tps, 2)
+            _last_live["gen"] = round(live_log.gen_tps, 2)
+            inf["gen_tps"] = _last_live["gen"]
+        # Sticky: while busy, keep the last shown value instead of
+        # clearing to "—" when this tick has no fresh measurement.
+        if inf.get("prompt_tps") is None and _last_live["prompt"] is not None:
+            inf["prompt_tps"] = _last_live["prompt"]
+        if inf.get("gen_tps") is None and _last_live["gen"] is not None:
+            inf["gen_tps"] = _last_live["gen"]
 
 
 class StartRequest(BaseModel):

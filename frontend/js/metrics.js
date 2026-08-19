@@ -13,8 +13,14 @@ const Metrics = (() => {
   const $ = (id) => document.getElementById(id);
 
   function push(arr, v) {
-    // null = "no data" → gap in the sparkline (0 would read as flat zero)
     if (v === undefined || Number.isNaN(v)) v = null;
+    if (v === null) {
+      // hold the last value flat until a new one is parsed: the graph stays
+      // uniform with no data gaps (leading nulls stay null — nothing yet)
+      for (let i = arr.length - 1; i >= 0; i--) {
+        if (arr[i] != null) { v = arr[i]; break; }
+      }
+    }
     arr.push(v);
     if (arr.length > HISTORY) arr.shift();
   }
