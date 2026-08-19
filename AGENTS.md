@@ -26,9 +26,13 @@ llama-monitor: a lightweight web control panel for a local `llama-server`
   `js/` (app shell + `pages/`)
 - `tray.py` — Windows tray launcher (embeds the panel; `--smoke` headless self-test)
 - `build_exe.bat` — local PyInstaller build → `dist\llama-monitor-tray.exe`
+- `llama-monitor-tray.exe` — latest CI-built tray exe, **tracked at the repo root**
+  so `git pull` always ships it (refreshed by CI, see Gotchas)
 - `requirements-tray.txt` — tray-only deps (pystray, Pillow, pyinstaller)
 - `assets/tray/` — tray mark PNGs + exe icon
-- `.github/workflows/build-exe.yml` — CI: smoke test + PyInstaller + artifact upload
+- `docs/` — README screenshots (desktop + mobile)
+- `.github/workflows/build-exe.yml` — CI: smoke test + PyInstaller + artifact
+  upload + commit refreshed exe back to the repo root
 - `TODO.md` — local scratchpad, **gitignored, never committed**
 
 ## Commands
@@ -50,7 +54,12 @@ manual/ad-hoc (see Verification below).
   `%APPDATA%\llama-monitor` (Windows), `~/.config/llama-monitor` (Linux/macOS);
   override with the `LLAMA_MONITOR_DATA` env var.
 - Never write config/data into the working tree. In-repo `config.json` and
-  `data/` are gitignored legacy, auto-migrated once on startup.
+  `data/` are gitignored legacy, auto-migrated **merge-based** on startup
+  (destination wins name collisions; conflicting files are kept + warned,
+  never deleted). Frozen builds resolve the legacy root from the **exe's own
+  folder** (PyInstaller onefile `__file__` points at `_MEIPASS`), so a pulled
+  repo with legacy data next to `llama-monitor-tray.exe` migrates on first
+  start.
 - `config.example.json` is the source of truth for config keys.
 - The panel only manages `llama-server` processes it started itself; a server
   already running on the port is treated as **external**.
@@ -149,3 +158,14 @@ To stay focused on the current work:
   current builds — all log-parsing regexes must be whitespace-tolerant.
 - **Headless Chrome** clamps window width to ~500px — size the viewport with an
   iframe inside the page, not with the browser window.
+- **CI commits the exe back to `main`**: `build-exe.yml` pushes the built exe
+  to the repo root as bot commit `"Build: refresh bundled tray exe"` (sha256
+  skip when unchanged). Loop prevention = the workflow skips the whole build
+  when the triggering push's HEAD is that exact bot commit (author + subject
+  match) — keep that commit subject stable. Each refresh adds a ~25MB object
+  to git history (known bloat, revisit later, e.g. GitHub Releases).
+- **Config API merges only sent keys**: `POST /api/config` overwrites just
+  the fields present in the body — omitted keys keep their current value
+  (a full-replace once wiped `active_preset_id` on every Settings save).
+  Nested models are still **fully replaced** when their key is sent — a
+  client sending `panel` must send both `host` and `port`.
