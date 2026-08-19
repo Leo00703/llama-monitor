@@ -9,7 +9,7 @@ per-user directory OUTSIDE the repository, so git operations (clone,
 
 Override the location with the LLAMA_MONITOR_DATA environment variable.
 Legacy data left in the repo (config.json, data/) is migrated automatically
-on startup (one-way, idempotent).
+on startup (idempotent, merge-based, never deletes data it cannot verify).
 """
 
 from __future__ import annotations
@@ -19,17 +19,35 @@ import logging
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import Optional
 
 from pydantic import BaseModel, Field, ValidationError
 
-APP_ROOT = Path(__file__).resolve().parent.parent
-EXAMPLE_PATH = APP_ROOT / "config.example.json"
-LEGACY_CONFIG = APP_ROOT / "config.json"
-LEGACY_DATA_DIR = APP_ROOT / "data"
-
 log = logging.getLogger("llama-monitor.config")
+
+# Bundle root: the repo in a source run, the PyInstaller extraction dir
+# (_MEIPASS) in a frozen one — bundled resources (config.example.json,
+# frontend/, assets/) live here in both cases.
+_BUNDLE_ROOT = Path(__file__).resolve().parent.parent
+EXAMPLE_PATH = _BUNDLE_ROOT / "config.example.json"
+
+
+def _legacy_root() -> Path:
+    """Where in-repo legacy data (config.json, data/) lives.
+
+    A frozen single-file build executes from a temp extraction dir, so
+    __file__ is useless for legacy lookup — the legacy files sit next to
+    the exe (the repo root in the standard workflow), hence the exe folder.
+    """
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return _BUNDLE_ROOT
+
+
+LEGACY_CONFIG = _legacy_root() / "config.json"
+LEGACY_DATA_DIR = _legacy_root() / "data"
 
 
 def default_data_dir() -> Path:
@@ -46,46 +64,104 @@ CONFIG_PATH = DATA_DIR / "config.json"
 PRESETS_DIR = DATA_DIR / "presets"
 
 
+def _same_file(a: Path, b: Path) -> bool:
+    try:
+        return a.read_bytes() == b.read_bytes()
+    except OSError:
+        return False
+
+
 def migrate_legacy_data() -> None:
-    """Move old in-repo config/data to DATA_DIR. Idempotent, best-effort."""
+    """Merge old in-repo config/data into DATA_DIR (the single source of truth).
+
+    Idempotent and merge-based: every legacy file is handled on its own, so a
+    pre-existing destination never blocks the rest of the migration. The
+    destination always wins a name collision (the live data dir stays
+    authoritative); a legacy file whose content is already present in the
+    destination is dropped, and anything that cannot be merged automatically
+    (config.json, analytics.db, conflicting presets) is left in place with a
+    warning — this function never deletes data it cannot verify.
+    """
     try:
         DATA_DIR.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
         raise RuntimeError(f"cannot create data directory {DATA_DIR}: {exc}") from exc
 
-    if LEGACY_CONFIG.exists() and not CONFIG_PATH.exists():
-        try:
-            shutil.move(str(LEGACY_CONFIG), str(CONFIG_PATH))
-            log.warning("migrated legacy config %s -> %s", LEGACY_CONFIG, CONFIG_PATH)
-        except OSError as exc:
-            log.error("could not migrate legacy config %s: %s", LEGACY_CONFIG, exc)
+    if LEGACY_CONFIG.is_file():
+        if CONFIG_PATH.exists():
+            log.warning(
+                "legacy config %s and live config %s both exist; both kept — "
+                "merge manually if the legacy one holds values you need",
+                LEGACY_CONFIG,
+                CONFIG_PATH,
+            )
+        else:
+            try:
+                shutil.move(str(LEGACY_CONFIG), str(CONFIG_PATH))
+                log.warning("migrated legacy config %s -> %s", LEGACY_CONFIG, CONFIG_PATH)
+            except OSError as exc:
+                log.error("could not migrate legacy config %s: %s", LEGACY_CONFIG, exc)
 
     if LEGACY_DATA_DIR.is_dir():
-        for name in ("presets", "analytics.db"):
-            src = LEGACY_DATA_DIR / name
-            dst = DATA_DIR / name
-            if not src.exists() or dst.exists():
-                continue
+        presets_src = LEGACY_DATA_DIR / "presets"
+        if presets_src.is_dir():
+            PRESETS_DIR.mkdir(parents=True, exist_ok=True)
+            moved = dropped = kept = 0
+            for f in sorted(presets_src.iterdir()):
+                if not f.is_file():
+                    continue
+                target = PRESETS_DIR / f.name
+                if target.exists():
+                    if _same_file(f, target):
+                        try:
+                            f.unlink()  # exact duplicate of the live preset
+                            dropped += 1
+                        except OSError as exc:
+                            log.error("could not drop duplicate legacy preset %s: %s", f, exc)
+                    else:
+                        kept += 1  # conflict: live preset wins, legacy kept
+                    continue
+                try:
+                    shutil.move(str(f), str(target))
+                    moved += 1
+                except OSError as exc:
+                    log.error("could not migrate legacy preset %s: %s", f, exc)
+            if moved:
+                log.warning("migrated %d legacy preset(s) -> %s", moved, PRESETS_DIR)
+            if dropped:
+                log.warning(
+                    "dropped %d legacy preset(s) already present in %s", dropped, PRESETS_DIR
+                )
+            if kept:
+                log.warning(
+                    "%d legacy preset(s) in %s conflict with the live %s — live kept, "
+                    "legacy copy left in place",
+                    kept,
+                    presets_src,
+                    PRESETS_DIR,
+                )
             try:
-                if src.is_dir():
-                    dst.mkdir(parents=True, exist_ok=True)
-                    moved = 0
-                    for f in src.iterdir():
-                        target = dst / f.name
-                        if not target.exists():
-                            shutil.move(str(f), str(target))
-                            moved += 1
-                    if moved:
-                        log.warning("migrated legacy %s -> %s", src, dst)
-                    try:
-                        src.rmdir()  # only succeeds if empty now
-                    except OSError:
-                        pass
-                else:
-                    shutil.move(str(src), str(dst))
-                    log.warning("migrated legacy %s -> %s", src, dst)
-            except OSError as exc:
-                log.error("could not migrate legacy %s: %s", src, exc)
+                presets_src.rmdir()  # only succeeds once empty
+            except OSError:
+                pass
+
+        db_src = LEGACY_DATA_DIR / "analytics.db"
+        db_dst = DATA_DIR / "analytics.db"
+        if db_src.is_file():
+            if db_dst.exists():
+                log.warning(
+                    "legacy %s and live %s both exist; both kept "
+                    "(SQLite files are not merged automatically)",
+                    db_src,
+                    db_dst,
+                )
+            else:
+                try:
+                    shutil.move(str(db_src), str(db_dst))
+                    log.warning("migrated legacy %s -> %s", db_src, db_dst)
+                except OSError as exc:
+                    log.error("could not migrate legacy %s: %s", db_src, exc)
+
         try:
             if LEGACY_DATA_DIR.is_dir() and not any(LEGACY_DATA_DIR.iterdir()):
                 LEGACY_DATA_DIR.rmdir()
