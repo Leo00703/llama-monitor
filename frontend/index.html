@@ -438,12 +438,48 @@
             <p class="muted small" id="set-datadir"></p>
           </form>
         </div>
+        <div class="card">
+          <div class="card-head">
+            <h2>App version &amp; updates</h2>
+          </div>
+          <div class="grid2">
+            <div class="field"><label class="field-label" for="set-update-interval">Auto-check for updates</label>
+              <select id="set-update-interval">
+                <option value="0">off</option>
+                <option value="5">every 5 min</option>
+                <option value="15">every 15 min</option>
+                <option value="60">hourly</option>
+              </select>
+            </div>
+            <div class="field"><label class="field-label">Current version</label>
+              <div id="set-app-version" class="muted">loading…</div>
+            </div>
+          </div>
+          <p class="muted small" id="set-update-status">Checking…</p>
+          <div class="set-update-actions">
+            <button type="button" id="btn-check-updates" class="btn">Check for updates</button>
+            <button type="button" id="btn-apply-update" class="btn btn-primary" disabled>Update now</button>
+          </div>
+          <p class="muted small">Updates pull the latest commits from the repository and restart the panel. The model server is stopped during the update and must be started again afterwards.</p>
+        </div>
       </section>
     </main>
   </div>
 </div>
 
 <div id="toast" class="toast hidden"></div>
+
+<div id="update-toast" class="update-toast hidden" role="status" aria-live="polite">
+  <div class="update-toast-head">
+    <span class="update-toast-title">Update available</span>
+    <button type="button" id="update-toast-close" class="update-toast-close" title="Dismiss" aria-label="Dismiss">&times;</button>
+  </div>
+  <div id="update-toast-commits" class="update-toast-commits"></div>
+  <div class="update-toast-actions">
+    <span class="muted small">The model server is stopped during the update.</span>
+    <button type="button" id="update-toast-apply" class="btn btn-primary">Update now</button>
+  </div>
+</div>
 
 <datalist id="models-datalist"></datalist>
 <datalist id="mmproj-datalist"></datalist>
@@ -457,6 +493,7 @@
 <script src="js/pages/presets.js"></script>
 <script src="js/pages/settings.js"></script>
 <script src="js/pages/analytics.js"></script>
+<script src="js/update.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

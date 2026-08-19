@@ -5,6 +5,14 @@
 const Settings = {
   init() {
     document.getElementById("btn-save-settings").addEventListener("click", () => this.save());
+    document.getElementById("btn-check-updates").addEventListener("click", () => {
+      this.refreshUpdateStatus(true);
+      Update.check(true);
+    });
+    document.getElementById("btn-apply-update").addEventListener("click", async () => {
+      await Update.apply();
+      this.refreshUpdateStatus(true);
+    });
     this.load();
   },
 
@@ -22,13 +30,60 @@ const Settings = {
       document.getElementById("set-datadir").textContent = cfg.data_dir
         ? `Data (config, presets, analytics history) is stored in: ${cfg.data_dir}`
         : "";
+      document.getElementById("set-update-interval").value = String(cfg.update_check_minutes ?? 5);
     } catch (e) {
       UI.toast(`failed to load settings: ${e}`, "err");
+    }
+    this.refreshUpdateStatus();
+  },
+
+  async refreshUpdateStatus(force = false) {
+    const ver = document.getElementById("set-app-version");
+    const status = document.getElementById("set-update-status");
+    const applyBtn = document.getElementById("btn-apply-update");
+    try {
+      const d = await API.get(`/api/update/check${force ? "?force=true" : ""}`);
+      const cur = d.current || {};
+      const when = cur.date ? " · " + cur.date.replace("T", " ").slice(0, 16) : "";
+      ver.textContent = cur.sha
+        ? `${cur.sha} (${cur.source === "build" ? "build" : "dev"}${when})`
+        : "unknown";
+      if (!d.git) {
+        status.textContent = "git is not installed — auto-updates are unavailable.";
+        applyBtn.disabled = true;
+      } else if (!d.repo) {
+        status.textContent = "Not running from a git checkout — auto-updates are unavailable (the bundled exe must live in the repository).";
+        applyBtn.disabled = true;
+      } else if (d.error) {
+        status.textContent = `Update check failed: ${d.error}`;
+        applyBtn.disabled = true;
+      } else if (d.behind > 0) {
+        const issues = [];
+        if (d.dirty) issues.push("the repo has local changes");
+        if (d.ahead > 0) issues.push(`${d.ahead} local commit(s) to push`);
+        status.textContent = `${d.behind} commit${d.behind > 1 ? "s" : ""} behind origin${issues.length ? " — " + issues.join(", ") : ""}`;
+        applyBtn.disabled = issues.length > 0;
+      } else {
+        const notes = [];
+        if (d.ahead > 0) notes.push(`${d.ahead} local commit(s) to push`);
+        if (d.dirty) notes.push("local changes present");
+        const base = d.origin
+          ? `Up to date (${(d.latest || {}).sha || "HEAD"})`
+          : "Up to date";
+        status.textContent = notes.length
+          ? `${base} — ${notes.join(", ")}`
+          : d.origin ? `${base} · ${d.origin}` : base;
+        applyBtn.disabled = true;
+      }
+    } catch (_) {
+      status.textContent = "Update check unavailable.";
+      applyBtn.disabled = true;
     }
   },
 
   async save() {
     const body = {
+      update_check_minutes: parseInt(document.getElementById("set-update-interval").value, 10) || 0,
       llama_server_exe: document.getElementById("set-exe").value.trim(),
       models_root: document.getElementById("set-root").value.trim(),
       default_server_port: parseInt(document.getElementById("set-port").value, 10) || 8080,

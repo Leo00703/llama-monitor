@@ -249,6 +249,8 @@ API.connect("/ws/logs", (event) => {
     if (!$("page-generation").classList.contains("hidden")) Generation.refresh();
   } else if (event.type === "metrics") {
     Metrics.update(event.data);
+  } else if (event.type === "update.available") {
+    Update.maybeShow(event.data);
   }
 });
 
@@ -298,6 +300,7 @@ Presets.init();
 Settings.init();
 Analytics.init();
 Metrics.init();
+Update.init();
 
 refreshState();
 setInterval(refreshState, 10000);

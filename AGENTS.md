@@ -22,17 +22,20 @@ llama-monitor: a lightweight web control panel for a local `llama-server`
   - `models.py` recursive `.gguf` browser + mmproj detection
   - `proxy.py` `/v1/chat/completions` & `/completion` proxy with settings injection
   - `analytics.py` print_timing parser + SQLite request/energy history
+  - `update.py` git self-update (fetch/ff-only pull of origin, version info)
 - `frontend/` — single-page vanilla app: `index.html`, `css/style.css`,
   `js/` (app shell + `pages/`)
-- `tray.py` — Windows tray launcher (embeds the panel; `--smoke` headless self-test)
+- `tray.py` — Windows tray launcher (embeds the panel; `--smoke` headless
+  self-test; `--restarting` internal flag for the update relaunch handoff)
 - `build_exe.bat` — local PyInstaller build → `dist\llama-monitor.exe`
 - `llama-monitor.exe` — latest CI-built tray exe, **tracked at the repo root**
   so `git pull` always ships it (refreshed by CI, see Gotchas)
 - `requirements-tray.txt` — tray-only deps (pystray, Pillow, pyinstaller)
 - `assets/tray/` — tray mark PNGs + exe icon
 - `docs/` — README screenshots (desktop + mobile)
-- `.github/workflows/build-exe.yml` — CI: smoke test + PyInstaller + artifact
-  upload + commit refreshed exe back to the repo root
+- `.github/workflows/build-exe.yml` — CI: smoke test + bake
+  `backend/_buildinfo.json` (commit + date, gitignored) + PyInstaller +
+  artifact upload + commit refreshed exe back to the repo root
 - `TODO.md` — local scratchpad, **gitignored, never committed**
 
 ## Commands
@@ -190,3 +193,24 @@ To stay focused on the current work:
   (a full-replace once wiped `active_preset_id` on every Settings save).
   Nested models are still **fully replaced** when their key is sent — a
   client sending `panel` must send both `host` and `port`.
+- **Self-update = git pull, repo layout is load-bearing**: `update.py` runs
+  git in the *repo root* (frozen: exe dir; dev: repo checkout), so updates
+  work only when the app runs from a real git checkout with an `origin`
+  remote — the bundled exe at the repo root is what makes `git pull` ship
+  both code and exe. `apply_update()` is `git merge --ff-only` only and
+  refuses a dirty tree or local divergence (never rewrites local work).
+  Restart handoff: `tray.py` registers `set_restart_hook(_restart_app)` in
+  `backend.main`; the hook spawns the launcher with `--restarting` (new
+  process retries the single-instance mutex + waits for the old panel's
+  port) and then quits via the normal clean path (lifespan stops
+  llama-server). Dev/uvicorn mode has no hook: the pull succeeds, the
+  restart is reported as manual. Version of the running app: frozen builds
+  read `_MEIPASS/backend/_buildinfo.json` (CI bakes `GITHUB_SHA`); dev
+  reports live `git HEAD`.
+- **Update-checker thread**: `create_app()`'s lifespan starts a daemon
+  thread (`_update_loop`) that polls `update_check_minutes` (live config,
+  0 = off) and broadcasts `update.available` over WS via
+  `loop.call_soon_threadsafe(manager.broadcast, ...)` — never call
+  `manager.broadcast` from another thread directly (asyncio.Queue is not
+  thread-safe). The frontend toast dedupes by the latest commit sha; a
+  dismissed sha stays dismissed until a newer commit arrives.

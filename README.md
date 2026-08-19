@@ -22,6 +22,11 @@ line:
   any time without restarting the server.
 - **Model browser** — recursive scan of `models_root` for `.gguf` files with
   size/sort, plus automatic mmproj (vision) projectors detection per model.
+- **Self-updating** — the panel checks the git remote in the background and
+  offers a one-click **Update now** (bottom-right toast, also in Settings):
+  it pulls the latest commits from the repo (which ships the code *and* the
+  bundled tray exe) and restarts the app. Fast-forward only — local changes
+  or unpushed commits block the update with a clear message.
 
 ## Screenshots
 
@@ -123,12 +128,15 @@ backend/
   metrics.py     CPU/RAM (psutil), GPU (nvidia-smi), inference metrics
   models.py      recursive .gguf browser + mmproj detection
   proxy.py       /v1/chat/completions & /completion proxy with settings injection
+  analytics.py   print_timing parser + SQLite request/energy history
+  update.py      git self-update (fetch/ff-only pull of origin, version info)
 frontend/
   index.html     single-page app (vanilla HTML/CSS/JS, no build step)
   css/style.css  dark frosted-glass theme
-   js/            app shell (app.js), api/ui/metrics helpers, pages/ (dashboard,
-                  generation, presets, models, settings)
-tray.py          Windows system-tray launcher (embeds the panel, --smoke self-test)
+   js/            app shell (app.js), api/ui/metrics/update helpers, pages/
+                  (dashboard, generation, presets, models, settings)
+tray.py          Windows system-tray launcher (embeds the panel, --smoke self-test,
+                 --restarting handoff for the update relaunch)
 build_exe.bat    local PyInstaller build of dist\llama-monitor.exe
 requirements-tray.txt   extra deps for the tray launcher (pystray, Pillow, pyinstaller)
 assets/tray/     tray mark (PNG) + exe icon (ICO)
