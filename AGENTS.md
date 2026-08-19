@@ -168,8 +168,13 @@ To stay focused on the current work:
   to the repo root as bot commit `"Build: refresh bundled tray exe"` (sha256
   skip when unchanged). Loop prevention = the workflow skips the whole build
   when the triggering push's HEAD is that exact bot commit (author + subject
-  match) — keep that commit subject stable. Each refresh adds a ~25MB object
-  to git history (known bloat, revisit later, e.g. GitHub Releases).
+  match) — keep that commit subject stable. Observed 2026-08-19: GitHub does
+  NOT trigger a new run for the bot's own push (no run is ever registered
+  for a bot commit), so the skip step is defensive and the loop ends after
+  one bot commit. PyInstaller output is slightly non-deterministic between
+  runner runs (a few hundred bytes), so even doc-only pushes can produce a
+  refresh commit. Each refresh adds a ~25MB object to git history (known
+  bloat, revisit later, e.g. GitHub Releases).
 - **Config API merges only sent keys**: `POST /api/config` overwrites just
   the fields present in the body — omitted keys keep their current value
   (a full-replace once wiped `active_preset_id` on every Settings save).
