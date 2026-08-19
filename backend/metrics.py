@@ -170,28 +170,12 @@ class MetricsCollector:
         gen_tps: Optional[float] = None
         now = time.time()
 
-        if prompt_tokens is not None and gen_tokens is not None:
-            base = self._baseline
-            if (
-                base is not None
-                and base["port"] == port
-                and prompt_tokens >= base["prompt_tokens"]
-                and gen_tokens >= base["gen_tokens"]
-            ):
-                dt = now - base["ts"]
-                if dt > 0.2:
-                    prompt_tps = round((prompt_tokens - base["prompt_tokens"]) / dt, 2)
-                    gen_tps = round((gen_tokens - base["gen_tokens"]) / dt, 2)
-            self._baseline = {
-                "ts": now,
-                "port": port,
-                "prompt_tokens": prompt_tokens,
-                "gen_tokens": gen_tokens,
-            }
-
         slots: list[dict] = []
         ctx_total = 0
         ctx_used = 0
+        n_decoded_sum = 0
+        n_prompt_sum = 0
+        have_decoded = False
         if sres.status_code == 200:
             with contextlib.suppress(ValueError):
                 for s in sres.json():
@@ -199,11 +183,18 @@ class MetricsCollector:
                         continue
                     n_ctx = int(s.get("n_ctx") or 0)
                     busy = bool(s.get("is_processing"))
+                    n_prompt = int(s.get("n_prompt_tokens") or 0)
+                    nt = s.get("next_token")
+                    n_decoded = int(nt.get("n_decoded") or 0) if isinstance(nt, dict) else None
                     # n_prompt_tokens persists after the request finishes (the
                     # server keeps the last value), so report it even when idle.
-                    used = min(int(s.get("n_prompt_tokens") or 0), n_ctx)
+                    used = min(n_prompt, n_ctx)
+                    if n_decoded is not None:
+                        have_decoded = True
+                        n_decoded_sum += n_decoded
+                    n_prompt_sum += n_prompt
                     ctx_total += n_ctx
-                    ctx_used += min(used, n_ctx)
+                    ctx_used += used
                     slots.append(
                         {
                             "id": int(s.get("id") or 0),
@@ -213,6 +204,42 @@ class MetricsCollector:
                             "used": used,
                         }
                     )
+
+        prev = self._baseline
+        dt = now - prev["ts"] if prev is not None and prev.get("port") == port else 0.0
+        if dt > 0.2 and have_decoded and prev.get("n_decoded") is not None:
+            # Live slot-based rates. Recent llama.cpp only updates the
+            # /metrics token counters when a request completes, so they read
+            # 0 while generating. /slots exposes per-slot progress instead:
+            # n_decoded counts every accepted token (spec-decode aware) and
+            # n_prompt_tokens grows while the prompt is being processed.
+            if any(s["busy"] for s in slots):
+                dgen = (n_decoded_sum - prev["n_decoded"]) / dt
+                if dgen > 0:
+                    gen_tps = round(dgen, 2)
+                elif (n_prompt_sum - prev["n_prompt"]) / dt > 0:
+                    prompt_tps = round((n_prompt_sum - prev["n_prompt"]) / dt, 2)
+        elif (
+            dt > 0.2
+            and prompt_tokens is not None
+            and gen_tokens is not None
+            and prev is not None
+            and prev.get("prompt_tokens") is not None
+            and prompt_tokens >= prev["prompt_tokens"]
+            and gen_tokens >= prev["gen_tokens"]
+        ):
+            # Older builds without slot token progress: counter deltas.
+            prompt_tps = round((prompt_tokens - prev["prompt_tokens"]) / dt, 2)
+            gen_tps = round((gen_tokens - prev["gen_tokens"]) / dt, 2)
+
+        self._baseline = {
+            "ts": now,
+            "port": port,
+            "prompt_tokens": prompt_tokens,
+            "gen_tokens": gen_tokens,
+            "n_decoded": n_decoded_sum if have_decoded else None,
+            "n_prompt": n_prompt_sum if have_decoded else None,
+        }
 
         return {
             "ok": True,

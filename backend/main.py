@@ -50,16 +50,17 @@ async def _metrics_loop(collector: MetricsCollector, manager: LlamaServerManager
 
 
 def _enrich_inference(data: dict, tracker: PrintTimingTracker) -> None:
-    """Show real per-request speeds when idle; live counter deltas when busy.
+    """Show real per-request speeds when idle; live slot deltas when busy.
 
-    The /metrics counters are lifetime-smoothed averages (prompt_tokens /
-    prompt_tokens_seconds), useless as a live gauge. While a slot is busy the
-    1.5s counter deltas are the only live signal; once idle we fall back to
-    the exact tok/s parsed from the print_timing block of the last completed
-    request (``tracker.latest``). External servers emit no such lines, so
-    ``latest`` stays None and the delta values are kept. A delta of exactly 0
-    (no tokens moved in the window) is not a speed measurement — it is
-    nulled so the UI renders "—" instead of a misleading 0.0.
+    Recent llama.cpp updates its /metrics token counters only when a request
+    completes, so while a slot is busy the live gauge comes from /slots token
+    progress (n_decoded / n_prompt_tokens deltas, see MetricsCollector).
+    Once idle we fall back to the exact tok/s parsed from the print_timing
+    block of the last completed request (``tracker.latest``). External
+    servers emit no such lines, so ``latest`` stays None and the delta values
+    are kept. A delta of exactly 0 (no tokens moved in the window) is not a
+    speed measurement — it is nulled so the UI renders "—" instead of a
+    misleading 0.0.
     """
     inf = data.get("inference")
     if not isinstance(inf, dict) or not inf.get("ok"):

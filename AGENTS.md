@@ -155,7 +155,17 @@ To stay focused on the current work:
   by hash; SmartScreen warns on any unsigned exe. Known environment caveat,
   not a code bug.
 - **llama-server logs**: print_timing lines are right-aligned / space-padded in
-  current builds — all log-parsing regexes must be whitespace-tolerant. A print
+  current builds — all log-parsing regexes must be whitespace-tolerant.
+- **/metrics token counters are per-request, not live** (recent llama.cpp,
+  verified @ a035a888 + master): `llamacpp:tokens_predicted_total` only updates
+  when a slot is released (request done) — `metrics_on_prediction` runs in
+  `callback_on_release`; `prompt_tokens_total` jumps once when prompt
+  processing finishes. Counter deltas over a 1.5s poll therefore read 0 for
+  the whole generation. Live tok/s must come from `/slots` per-slot progress:
+  `next_token.n_decoded` (every accepted token, spec-decode aware) and
+  `n_prompt_tokens` (= `prompt.tokens.size()`, grows while the prompt
+  processes — the server's own /progress endpoint uses it). See
+  `MetricsCollector._inference()`. A print
   timing block is several `print_timing` lines (prompt/eval/total, and for
   spec-decode a `draft acceptance` line); newer builds insert extra
   `print_timing` continuation lines (e.g. `graphs reused = N`) inside the
