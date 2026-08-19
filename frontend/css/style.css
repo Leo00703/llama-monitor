@@ -941,6 +941,48 @@ fieldset.fieldset legend {
   flex-wrap: wrap;
 }
 
+/* self-update progress modal (centered, dimmed backdrop) */
+.update-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.62);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 120;
+}
+.update-overlay[hidden] { display: none; }
+.update-modal {
+  background: #161616;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 28px 30px;
+  width: min(420px, 100%);
+  text-align: center;
+}
+.update-modal-spinner {
+  width: 34px;
+  height: 34px;
+  margin: 0 auto 14px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: lm-upd-spin 0.9s linear infinite;
+}
+.update-modal-spinner[hidden] { display: none; }
+@keyframes lm-upd-spin { to { transform: rotate(360deg); } }
+.update-modal-title { font-size: 15px; font-weight: 600; }
+.update-modal-status {
+  margin-top: 8px;
+  font-size: 12.5px;
+  color: var(--muted);
+  word-break: break-word;
+}
+.update-modal-status[data-error] { color: var(--err); }
+.update-modal-close { margin-top: 18px; }
+.update-modal-close[hidden] { display: none; }
+
 /* settings: app version & updates */
 .set-update-actions {
   display: flex;

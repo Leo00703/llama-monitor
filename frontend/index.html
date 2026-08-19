@@ -481,6 +481,16 @@
   </div>
 </div>
 
+<!-- self-update progress: dimmed backdrop + centered card while applying -->
+<div id="update-overlay" class="update-overlay" hidden>
+  <div class="update-modal" role="dialog" aria-modal="true" aria-labelledby="update-modal-title">
+    <div class="update-modal-spinner" id="update-modal-spinner"></div>
+    <div class="update-modal-title" id="update-modal-title">Updating llama-monitor…</div>
+    <div class="update-modal-status" id="update-modal-status">Applying update</div>
+    <button type="button" id="update-modal-close" class="btn update-modal-close" hidden>Close</button>
+  </div>
+</div>
+
 <datalist id="models-datalist"></datalist>
 <datalist id="mmproj-datalist"></datalist>
 

@@ -10,6 +10,23 @@ const Update = (() => {
 
   const toast = () => document.getElementById("update-toast");
   const btn = () => document.getElementById("update-toast-apply");
+  const overlay = () => document.getElementById("update-overlay");
+
+  function openModal({ title, status, spinner = true, error = false, closable = false }) {
+    document.getElementById("update-modal-title").textContent = title;
+    const st = document.getElementById("update-modal-status");
+    st.textContent = status;
+    if (error) st.setAttribute("data-error", ""); else st.removeAttribute("data-error");
+    document.getElementById("update-modal-spinner").hidden = !spinner;
+    document.getElementById("update-modal-close").hidden = !closable;
+    overlay().hidden = false;
+  }
+
+  function closeModal() {
+    overlay().hidden = true;
+    // an update is still pending → let the user retry from the toast
+    if (currentSha) toast().classList.remove("hidden");
+  }
 
   async function healthUp() {
     try { await API.get("/api/health"); return true; } catch (_) { return false; }
@@ -68,9 +85,8 @@ const Update = (() => {
   async function apply() {
     if (busy) return;
     busy = true;
-    const b = btn();
-    b.disabled = true;
-    b.textContent = "Updating…";
+    toast().classList.add("hidden");
+    openModal({ title: "Updating llama-monitor…", status: "Applying update (git fast-forward)" });
     let resp = null;
     try {
       resp = await API.post("/api/update/apply");
@@ -78,28 +94,22 @@ const Update = (() => {
       // expected: the server shuts down and may drop the response
     }
     if (resp && resp.ok === false) {
-      UI.toast(resp.error || "update failed", "err");
-      b.textContent = "Update now";
-      b.disabled = false;
       busy = false;
+      openModal({ title: "Update failed", status: resp.error || "update failed", spinner: false, error: true, closable: true });
       return;
     }
     if (resp && resp.restarting === false) {
       // dev mode: pulled, but no auto-restart hook
-      b.textContent = "Update now";
-      b.disabled = false;
       busy = false;
-      UI.toast(resp.note || "update pulled — restart the panel", "ok");
+      openModal({ title: "Update pulled", status: resp.note || "restart the panel to finish the update", spinner: false, closable: true });
       return;
     }
-    b.textContent = "Restarting…";
+    openModal({ title: "Updating llama-monitor…", status: "Restarting the panel — it reopens automatically" });
     const ok = await waitPanelBack();
     if (ok) location.reload();
     else {
-      b.textContent = "Update now";
-      b.disabled = false;
       busy = false;
-      UI.toast("the panel did not come back in time — reload manually", "err");
+      openModal({ title: "Update finished", status: "the panel did not come back in time — reload the page manually", spinner: false, error: true, closable: true });
     }
   }
 
@@ -109,6 +119,7 @@ const Update = (() => {
       toast().classList.add("hidden");
     });
     btn().addEventListener("click", apply);
+    document.getElementById("update-modal-close").addEventListener("click", closeModal);
     check(false); // initial check on load
   }
 

@@ -5,9 +5,25 @@
 const Settings = {
   init() {
     document.getElementById("btn-save-settings").addEventListener("click", () => this.save());
-    document.getElementById("btn-check-updates").addEventListener("click", () => {
-      this.refreshUpdateStatus(true);
-      Update.check(true);
+    document.getElementById("btn-check-updates").addEventListener("click", async () => {
+      const b = document.getElementById("btn-check-updates");
+      const label = b.textContent;
+      b.disabled = true;
+      b.textContent = "Checking…";
+      let d = null;
+      try {
+        d = await Update.check(true); // fetches + shows the update toast if behind
+        await this.refreshUpdateStatus(true, d);
+        if (!d) UI.toast("update check failed", "err");
+        else if (d.behind > 0) UI.toast(`${d.behind} new commit${d.behind > 1 ? "s" : ""} available`, "ok");
+        else if (d.error) UI.toast(`update check failed: ${d.error}`, "err");
+        else if (!d.git) UI.toast("git is not installed — auto-updates unavailable", "err");
+        else if (!d.repo) UI.toast("not running from a git checkout — auto-updates unavailable", "err");
+        else UI.toast("✓ You're up to date", "ok");
+      } finally {
+        b.disabled = false;
+        b.textContent = label;
+      }
     });
     document.getElementById("btn-apply-update").addEventListener("click", async () => {
       await Update.apply();
@@ -37,12 +53,13 @@ const Settings = {
     this.refreshUpdateStatus();
   },
 
-  async refreshUpdateStatus(force = false) {
+  async refreshUpdateStatus(force = false, data = null) {
     const ver = document.getElementById("set-app-version");
     const status = document.getElementById("set-update-status");
     const applyBtn = document.getElementById("btn-apply-update");
     try {
-      const d = await API.get(`/api/update/check${force ? "?force=true" : ""}`);
+      const d = data || await API.get(`/api/update/check${force ? "?force=true" : ""}`);
+      const dirtyList = (paths, n = 3) => (paths || []).slice(0, n).join(", ") + ((paths || []).length > n ? "…" : "");
       const cur = d.current || {};
       const when = cur.date ? " · " + cur.date.replace("T", " ").slice(0, 16) : "";
       ver.textContent = cur.sha
@@ -59,14 +76,14 @@ const Settings = {
         applyBtn.disabled = true;
       } else if (d.behind > 0) {
         const issues = [];
-        if (d.dirty) issues.push("the repo has local changes");
+        if (d.dirty) issues.push(`local changes: ${dirtyList(d.dirty_paths)}`);
         if (d.ahead > 0) issues.push(`${d.ahead} local commit(s) to push`);
         status.textContent = `${d.behind} commit${d.behind > 1 ? "s" : ""} behind origin${issues.length ? " — " + issues.join(", ") : ""}`;
         applyBtn.disabled = issues.length > 0;
       } else {
         const notes = [];
         if (d.ahead > 0) notes.push(`${d.ahead} local commit(s) to push`);
-        if (d.dirty) notes.push("local changes present");
+        if (d.dirty) notes.push(`local changes: ${dirtyList(d.dirty_paths)}`);
         const base = d.origin
           ? `Up to date (${(d.latest || {}).sha || "HEAD"})`
           : "Up to date";

@@ -203,6 +203,11 @@ To stay focused on the current work:
   remote — the bundled exe at the repo root is what makes `git pull` ship
   both code and exe. `apply_update()` is `git merge --ff-only` only and
   refuses a dirty tree or local divergence (never rewrites local work).
+  "Dirty" = changed TRACKED files only (`_dirty_lines()`), the same in
+  `check()` and `apply_update()` — untracked strays can't block a ff-only
+  merge, and the error/status list the offending paths (a classic trigger:
+  the bundled exe left half-replaced by a pull while the tray app held it
+  open).
   Restart handoff: `tray.py` registers `set_restart_hook(_restart_app)` in
   `backend.main`; the hook spawns the launcher with `--restarting` (new
   process retries the single-instance mutex + waits for the old panel's

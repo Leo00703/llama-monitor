@@ -162,9 +162,28 @@ def _check_now() -> dict[str, Any]:
                 sha, _, subject = line.partition("\x1f")
                 if sha:
                     out["commits"].append({"sha": sha, "subject": subject})
-    rc, dirty, _ = _git(root, "status", "--porcelain", "--untracked-files=no")
-    out["dirty"] = bool(rc == 0 and dirty.strip())
+    dirty_lines = _dirty_lines(root)
+    out["dirty"] = bool(dirty_lines)
+    out["dirty_paths"] = dirty_lines[:8]
     return out
+
+
+def _dirty_lines(root: Path) -> list[str]:
+    """Changed TRACKED files (untracked strays don't block a ff-only merge,
+    so they are excluded here and in apply_update())."""
+    rc, out, _ = _git(root, "status", "--porcelain", "--untracked-files=no")
+    if rc != 0:
+        return []
+    paths = []
+    for line in out.splitlines():
+        if not line.strip() or line.startswith("??"):
+            continue
+        # "XY path" (XY = two status chars; the leading space of a
+        # worktree-only change is stripped away by _git, so split rather
+        # than slice by a fixed offset).
+        parts = line.split(None, 2)
+        paths.append(parts[-1] if len(parts) > 1 else line.strip())
+    return paths
 
 
 def check(force: bool = False) -> dict[str, Any]:
@@ -183,7 +202,7 @@ def check(force: bool = False) -> dict[str, Any]:
             data = {
                 "ok": False, "git": True, "repo": False, "origin": "",
                 "current": current_version(), "latest": None, "behind": 0,
-                "ahead": 0, "dirty": False, "commits": [],
+                "ahead": 0, "dirty": False, "dirty_paths": [], "commits": [],
                 "error": str(exc), "checked_at": time.time(),
             }
         _cache["ts"] = time.time()
@@ -213,9 +232,12 @@ def apply_update() -> dict[str, Any]:
     ref = _remote_ref(root)
     if ref is None:
         return {"ok": False, "error": "could not determine the remote default branch"}
-    rc, dirty, _ = _git(root, "status", "--porcelain", "--untracked-files=no")
-    if rc == 0 and dirty.strip():
-        return {"ok": False, "error": "the repo has local changes — commit or revert them first"}
+    dirty = _dirty_lines(root)
+    if dirty:
+        return {"ok": False, "error": "the repo has local changes — "
+                                      "commit or revert them first: "
+                                      + ", ".join(dirty[:5])
+                                      + "  (git status shows the details)"}
     rc, ahead, _ = _git(root, "rev-list", "--count", f"{ref}..HEAD")
     if rc == 0 and ahead.isdigit() and int(ahead) > 0:
         return {"ok": False, "error": "local commits are ahead of the remote — push them first"}
