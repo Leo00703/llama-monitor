@@ -155,7 +155,13 @@ To stay focused on the current work:
   by hash; SmartScreen warns on any unsigned exe. Known environment caveat,
   not a code bug.
 - **llama-server logs**: print_timing lines are right-aligned / space-padded in
-  current builds — all log-parsing regexes must be whitespace-tolerant.
+  current builds — all log-parsing regexes must be whitespace-tolerant. A print
+  timing block is several `print_timing` lines (prompt/eval/total, and for
+  spec-decode a `draft acceptance` line); newer builds insert extra
+  `print_timing` continuation lines (e.g. `graphs reused = N`) inside the
+  block. The tracker must therefore treat the block as open until a
+  NON-`print_timing` line arrives — finalizing on the `total` line (or any
+  single line) silently drops the later `draft acceptance` line.
 - **Headless Chrome** clamps window width to ~500px — size the viewport with an
   iframe inside the page, not with the browser window.
 - **CI commits the exe back to `main`**: `build-exe.yml` pushes the built exe
