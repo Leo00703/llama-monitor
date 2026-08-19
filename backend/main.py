@@ -57,11 +57,16 @@ def _enrich_inference(data: dict, tracker: PrintTimingTracker) -> None:
     1.5s counter deltas are the only live signal; once idle we fall back to
     the exact tok/s parsed from the print_timing block of the last completed
     request (``tracker.latest``). External servers emit no such lines, so
-    ``latest`` stays None and the delta values are kept.
+    ``latest`` stays None and the delta values are kept. A delta of exactly 0
+    (no tokens moved in the window) is not a speed measurement — it is
+    nulled so the UI renders "—" instead of a misleading 0.0.
     """
     inf = data.get("inference")
     if not isinstance(inf, dict) or not inf.get("ok"):
         return
+    for key in ("prompt_tps", "gen_tps"):
+        if inf.get(key) == 0:
+            inf[key] = None
     latest = tracker.latest
     busy = any(s.get("busy") for s in inf.get("slots") or [])
     if not busy and latest is not None:
@@ -147,6 +152,21 @@ def create_app() -> FastAPI:
 
     tracker = PrintTimingTracker(_complete_request)
     manager.add_log_hook(tracker.feed)
+    # Seed the sticky last-request speeds from the analytics DB so the
+    # inference card doesn't read "no data" until the next request completes.
+    _last = analytics.latest_record()
+    if _last is not None:
+        # seq=-1 (not 0): the frontend only refreshes the draft row when
+        # last_seq changes from its initial 0, so a 0 seed would hide the
+        # seeded draft rate. Live requests start at seq=1, so -1 never
+        # collides with a real one.
+        tracker.latest = {
+            "seq": -1,
+            "prompt_tps": _last.get("prompt_tps"),
+            "gen_tps": _last.get("gen_tps"),
+            "draft_proposed": _last.get("draft_proposed"),
+            "draft_accepted": _last.get("draft_accepted"),
+        }
 
     def _launch_for(preset_id: Optional[str]) -> Optional[dict[str, Any]]:
         if not preset_id:

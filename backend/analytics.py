@@ -114,7 +114,10 @@ class PrintTimingTracker:
             self._pending["draft_proposed"] = int(m.group(4))
             self._finalize()
             return
-        if self._pending.get("total_seen"):
+        # Newer builds print extra print_timing lines (e.g. "graphs reused")
+        # between the total line and the draft line — those must not close
+        # the block, only a non-print_timing line may.
+        if self._pending.get("total_seen") and "print_timing" not in line:
             self._finalize()
 
     def _finalize(self) -> None:
@@ -257,6 +260,16 @@ class AnalyticsStore:
     # ------------------------------------------------------------------
     # read
     # ------------------------------------------------------------------
+
+    def latest_record(self) -> Optional[dict[str, Any]]:
+        """Most recent completed request, or None. Seeds the live inference
+        card's sticky value so it survives a panel restart."""
+        with self._conn() as conn:
+            row = conn.execute(
+                """SELECT prompt_tps, gen_tps, draft_proposed, draft_accepted
+                   FROM generation_records ORDER BY ts DESC, id DESC LIMIT 1"""
+            ).fetchone()
+        return dict(row) if row else None
 
     def failed_count(self, range_name: str) -> int:
         start = self.range_start(range_name if range_name in RANGES else "all")

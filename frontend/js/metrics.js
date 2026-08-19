@@ -13,7 +13,8 @@ const Metrics = (() => {
   const $ = (id) => document.getElementById(id);
 
   function push(arr, v) {
-    if (v === null || v === undefined || Number.isNaN(v)) v = 0;
+    // null = "no data" → gap in the sparkline (0 would read as flat zero)
+    if (v === undefined || Number.isNaN(v)) v = null;
     arr.push(v);
     if (arr.length > HISTORY) arr.shift();
   }
@@ -35,33 +36,50 @@ const Metrics = (() => {
     ctx.clearRect(0, 0, w, h);
     if (values.length < 2) return;
 
-    const max = opts.max != null ? opts.max : Math.max(...values, 0.001);
+    // nulls are gaps: draw each contiguous run of values as its own segment
+    const runs = [];
+    let run = [];
+    values.forEach((v, i) => {
+      if (v == null) {
+        if (run.length) runs.push(run);
+        run = [];
+      } else {
+        run.push([i, v]);
+      }
+    });
+    if (run.length) runs.push(run);
+    if (!runs.length) return;
+
+    const nums = runs.flat().map((p) => p[1]);
+    const max = opts.max != null ? opts.max : Math.max(...nums, 0.001);
     const span = max || 1;
     const stepX = w / (HISTORY - 1);
     const x0 = w - (values.length - 1) * stepX;
     const yOf = (v) => h - 1 - (Math.min(Math.max(v, 0), max) / span) * (h - 3);
 
-    ctx.beginPath();
-    values.forEach((v, i) => {
-      const x = x0 + i * stepX;
-      if (i === 0) ctx.moveTo(x, yOf(v));
-      else ctx.lineTo(x, yOf(v));
-    });
-    ctx.lineTo(x0 + (values.length - 1) * stepX, h);
-    ctx.lineTo(x0, h);
-    ctx.closePath();
-    ctx.fillStyle = opts.fill || "rgba(125, 162, 255, 0.14)";
-    ctx.fill();
+    for (const r of runs) {
+      ctx.beginPath();
+      r.forEach(([i, v], k) => {
+        const x = x0 + i * stepX;
+        if (k === 0) ctx.moveTo(x, yOf(v));
+        else ctx.lineTo(x, yOf(v));
+      });
+      ctx.lineTo(x0 + r[r.length - 1][0] * stepX, h);
+      ctx.lineTo(x0 + r[0][0] * stepX, h);
+      ctx.closePath();
+      ctx.fillStyle = opts.fill || "rgba(125, 162, 255, 0.14)";
+      ctx.fill();
 
-    ctx.beginPath();
-    values.forEach((v, i) => {
-      const x = x0 + i * stepX;
-      if (i === 0) ctx.moveTo(x, yOf(v));
-      else ctx.lineTo(x, yOf(v));
-    });
-    ctx.strokeStyle = opts.color || "#7da2ff";
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
+      ctx.beginPath();
+      r.forEach(([i, v], k) => {
+        const x = x0 + i * stepX;
+        if (k === 0) ctx.moveTo(x, yOf(v));
+        else ctx.lineTo(x, yOf(v));
+      });
+      ctx.strokeStyle = opts.color || "#7da2ff";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
   }
 
   /* ------------------------------ GPU cards ------------------------------ */
@@ -199,15 +217,15 @@ const Metrics = (() => {
     updateGpus(data.gpus || []);
 
     const inf = data.inference && data.inference.ok ? data.inference : null;
-    push(hist.prompt, inf ? inf.prompt_tps : 0);
-    push(hist.gen, inf ? inf.gen_tps : 0);
+    push(hist.prompt, inf ? inf.prompt_tps : null);
+    push(hist.gen, inf ? inf.gen_tps : null);
     drawSpark(
       $("prompt-spark"), hist.prompt,
-      { max: Math.max(...hist.prompt, 1), color: "#6ee7b7", fill: "rgba(110, 231, 183, 0.12)" },
+      { max: Math.max(...hist.prompt.filter((v) => v != null), 1), color: "#6ee7b7", fill: "rgba(110, 231, 183, 0.12)" },
     );
     drawSpark(
       $("gen-spark"), hist.gen,
-      { max: Math.max(...hist.gen, 1), color: "#f5a524", fill: "rgba(245, 165, 36, 0.12)" },
+      { max: Math.max(...hist.gen.filter((v) => v != null), 1), color: "#f5a524", fill: "rgba(245, 165, 36, 0.12)" },
     );
     const promptEl = $("prompt-tps");
     const genEl = $("gen-tps");
@@ -253,11 +271,11 @@ const Metrics = (() => {
     }
     drawSpark(
       $("prompt-spark"), hist.prompt,
-      { max: Math.max(...hist.prompt, 1), color: "#6ee7b7", fill: "rgba(110, 231, 183, 0.12)" },
+      { max: Math.max(...hist.prompt.filter((v) => v != null), 1), color: "#6ee7b7", fill: "rgba(110, 231, 183, 0.12)" },
     );
     drawSpark(
       $("gen-spark"), hist.gen,
-      { max: Math.max(...hist.gen, 1), color: "#f5a524", fill: "rgba(245, 165, 36, 0.12)" },
+      { max: Math.max(...hist.gen.filter((v) => v != null), 1), color: "#f5a524", fill: "rgba(245, 165, 36, 0.12)" },
     );
     drawSpark(
       $("draft-spark"), hist.draft,
