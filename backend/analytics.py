@@ -149,6 +149,63 @@ class PrintTimingTracker:
         self.latest = None
 
 
+# Newer builds (b10xxx) print live progress to the log while a request is
+# running:
+#   slot print_timing: id  0 | task 124 | prompt processing, n_tokens =  42470, progress = 1.00, t =  54.96 s / 772.68 tokens per second
+#   slot print_timing: id  0 | task 124 | n_gen =    107, tg =  34.36 t/s, tg_3s =  34.68 t/s
+_PROMPT_PROGRESS_RE = re.compile(
+    r"task\s+(-?\d+)\s*\|\s*prompt processing, n_tokens =\s*(\d+)"
+    r", progress = [\d.]+, t =\s*[\d.]+ s /\s*([\d.]+) tokens per second"
+)
+_N_GEN_RE = re.compile(
+    r"task\s+(-?\d+)\s*\|\s*n_gen =\s*(\d+), tg =\s*([\d.]+) t/s"
+    r"(?:,\s*tg_3s =\s*([\d.]+) t/s)?"
+)
+
+
+class LiveLogStats:
+    """Live tok/s from the server's own progress log lines.
+
+    These are the server's own measurements and stay stable across builds,
+    unlike /slots or /metrics deltas whose JSON shape changes. A value only
+    counts as live while lines are actually being printed (about once a
+    second during prompt processing, every ~3s during generation); the
+    "stop processing" release line resets the state when a request ends.
+    """
+
+    def __init__(self) -> None:
+        self.reset()
+
+    def reset(self) -> None:
+        self.task: Optional[int] = None
+        self.prompt_tps: Optional[float] = None
+        self.prompt_tokens: Optional[int] = None
+        self.prompt_ts: float = 0.0
+        self.gen_tps: Optional[float] = None
+        self.gen_tokens: Optional[int] = None
+        self.gen_ts: float = 0.0
+
+    def feed(self, line: str) -> None:
+        m = _PROMPT_PROGRESS_RE.search(line)
+        if m:
+            self.task = int(m.group(1))
+            self.prompt_tokens = int(m.group(2))
+            self.prompt_tps = float(m.group(3))
+            self.prompt_ts = time.monotonic()
+            return
+        m = _N_GEN_RE.search(line)
+        if m:
+            self.task = int(m.group(1))
+            self.gen_tokens = int(m.group(2))
+            # Prefer the 3-second window (current speed) over the
+            # whole-generation average.
+            self.gen_tps = float(m.group(4) if m.group(4) is not None else m.group(3))
+            self.gen_ts = time.monotonic()
+            return
+        if "stop processing" in line:  # slot release: request finished
+            self.reset()
+
+
 class PowerSampler:
     """Ring buffer of (ts, total_power_w) samples; estimates Wh over a window."""
 

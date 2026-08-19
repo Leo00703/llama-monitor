@@ -16,7 +16,13 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 
-from .analytics import AnalyticsStore, PowerSampler, PrintTimingTracker, RANGES
+from .analytics import (
+    AnalyticsStore,
+    LiveLogStats,
+    PowerSampler,
+    PrintTimingTracker,
+    RANGES,
+)
 from .config import DATA_DIR, PRESETS_DIR, AppConfig, load_config, save_config
 from .flags import build_args, parse_supported_flags, validate_settings
 from .metrics import MetricsCollector
@@ -78,7 +84,8 @@ def _update_loop(manager: LlamaServerManager, loop: asyncio.AbstractEventLoop,
 
 
 async def _metrics_loop(collector: MetricsCollector, manager: LlamaServerManager,
-                        power: PowerSampler, tracker: PrintTimingTracker) -> None:
+                        power: PowerSampler, tracker: PrintTimingTracker,
+                        live_log: LiveLogStats) -> None:
     """Poll system + inference metrics and push them to WebSocket listeners."""
     while True:
         await asyncio.sleep(METRICS_INTERVAL)
@@ -89,23 +96,32 @@ async def _metrics_loop(collector: MetricsCollector, manager: LlamaServerManager
             continue
         total_w = sum(g["power_w"] for g in data.get("gpus", []) if g.get("power_w") is not None)
         power.add(float(data.get("ts") or time.time()), total_w if total_w > 0 else None)
-        _enrich_inference(data, tracker)
+        _enrich_inference(data, tracker, live_log)
         tracker.tick()
         manager.broadcast({"type": "metrics", "data": data})
 
 
-def _enrich_inference(data: dict, tracker: PrintTimingTracker) -> None:
-    """Show real per-request speeds when idle; live slot deltas when busy.
+# A log rate older than this is stale, not live (progress lines come about
+# once a second / every 3s; allow slack for a slow server).
+_LIVE_LOG_STALE = 10.0
 
+
+def _enrich_inference(data: dict, tracker: PrintTimingTracker,
+                      live_log: Optional[LiveLogStats] = None) -> None:
+    """Show real per-request speeds when idle; live speeds when busy.
+
+    While a slot is busy the live gauge prefers the server's own progress
+    lines from the log (newer builds print them, see LiveLogStats) — they
+    are immune to /slots and /metrics shape changes — and falls back to
+    /slots token progress (n_decoded / n_prompt_tokens deltas, see
+    MetricsCollector), then to /metrics counter deltas for older builds.
     Recent llama.cpp updates its /metrics token counters only when a request
-    completes, so while a slot is busy the live gauge comes from /slots token
-    progress (n_decoded / n_prompt_tokens deltas, see MetricsCollector).
-    Once idle we fall back to the exact tok/s parsed from the print_timing
-    block of the last completed request (``tracker.latest``). External
-    servers emit no such lines, so ``latest`` stays None and the delta values
-    are kept. A delta of exactly 0 (no tokens moved in the window) is not a
-    speed measurement — it is nulled so the UI renders "—" instead of a
-    misleading 0.0.
+    completes, so the deltas are only a last resort. Once idle we show the
+    exact tok/s parsed from the print_timing block of the last completed
+    request (``tracker.latest``). External servers emit no log lines, so
+    ``latest`` stays None and the delta values are kept. A delta of exactly 0
+    (no tokens moved in the window) is not a speed measurement — it is
+    nulled so the UI renders "—" instead of a misleading 0.0.
     """
     inf = data.get("inference")
     if not isinstance(inf, dict) or not inf.get("ok"):
@@ -125,6 +141,14 @@ def _enrich_inference(data: dict, tracker: PrintTimingTracker) -> None:
     inf["last_gen_tps"] = round(latest["gen_tps"], 2) if latest and latest.get("gen_tps") is not None else None
     inf["draft_proposed"] = latest.get("draft_proposed") if latest else None
     inf["draft_accepted"] = latest.get("draft_accepted") if latest else None
+    if busy and live_log is not None:
+        # The server's own live measurements override the /slots and
+        # /metrics deltas while they are fresh.
+        now = time.monotonic()
+        if live_log.prompt_tps is not None and now - live_log.prompt_ts < _LIVE_LOG_STALE:
+            inf["prompt_tps"] = round(live_log.prompt_tps, 2)
+        if live_log.gen_tps is not None and now - live_log.gen_ts < _LIVE_LOG_STALE:
+            inf["gen_tps"] = round(live_log.gen_tps, 2)
 
 
 class StartRequest(BaseModel):
@@ -197,7 +221,9 @@ def create_app() -> FastAPI:
             log.exception("failed to record failed request")
 
     tracker = PrintTimingTracker(_complete_request)
+    live_log = LiveLogStats()
     manager.add_log_hook(tracker.feed)
+    manager.add_log_hook(live_log.feed)
     # Seed the sticky last-request speeds from the analytics DB so the
     # inference card doesn't read "no data" until the next request completes.
     _last = analytics.latest_record()
@@ -231,7 +257,7 @@ def create_app() -> FastAPI:
         await manager.on_startup()
         log.info("panel ready (state=%s)", manager.snapshot()["state"])
         loop = asyncio.get_running_loop()
-        task = asyncio.create_task(_metrics_loop(collector, manager, power, tracker))
+        task = asyncio.create_task(_metrics_loop(collector, manager, power, tracker, live_log))
         updater = threading.Thread(
             target=_update_loop, args=(manager, loop, config),
             daemon=True, name="update-checker")
@@ -309,6 +335,7 @@ def create_app() -> FastAPI:
     async def server_stop() -> dict:
         result = await manager.stop()
         tracker.reset()
+        live_log.reset()
         return result
 
     @app.post("/api/server/restart")
@@ -324,6 +351,7 @@ def create_app() -> FastAPI:
             response_extra = {}
         result = await manager.restart(args)
         tracker.reset()
+        live_log.reset()
         if result.get("ok"):
             manager.set_preset_id((body.preset_id if body and body.preset_id else None))
             proxy.invalidate_props_cache()
