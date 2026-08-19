@@ -26,6 +26,9 @@ from PIL import Image, ImageDraw
 from backend.config import DATA_DIR, AppConfig, load_config
 from backend.main import create_app
 
+# Named for the historical exe (llama-monitor-tray.exe); the exe was renamed
+# to llama-monitor.exe but the name is kept so old + new builds still count
+# as one instance (a renamed mutex would let both run and fight over the port).
 MUTEX_NAME = "Local\\llama-monitor-tray"
 POLL_INTERVAL = 2.0
 HEALTH_TIMEOUT = 30.0

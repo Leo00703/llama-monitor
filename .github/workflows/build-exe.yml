@@ -62,7 +62,7 @@ jobs:
       - name: Build single-file exe
         if: steps.skip.outputs.skip != 'true'
         run: |
-          pyinstaller --noconfirm --onefile --noconsole --name llama-monitor-tray `
+          pyinstaller --noconfirm --onefile --noconsole --name llama-monitor `
             --icon assets/tray/icon.ico `
             --add-data "frontend;frontend" `
             --add-data "config.example.json;." `
@@ -86,14 +86,14 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          new_sha=$(sha256sum dist/llama-monitor-tray.exe | cut -d' ' -f1)
-          old_sha=$(git show HEAD:llama-monitor-tray.exe 2>/dev/null | sha256sum | cut -d' ' -f1 || true)
+          new_sha=$(sha256sum dist/llama-monitor.exe | cut -d' ' -f1)
+          old_sha=$(git show HEAD:llama-monitor.exe 2>/dev/null | sha256sum | cut -d' ' -f1 || true)
           if [ "$new_sha" = "$old_sha" ]; then
             echo "exe bytes unchanged — nothing to commit"
             exit 0
           fi
-          cp dist/llama-monitor-tray.exe llama-monitor-tray.exe
-          git add llama-monitor-tray.exe
+          cp dist/llama-monitor.exe llama-monitor.exe
+          git add llama-monitor.exe
           git commit -m "Build: refresh bundled tray exe"
           git push
 
@@ -101,5 +101,5 @@ jobs:
         if: steps.skip.outputs.skip != 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: llama-monitor-tray
-          path: dist/llama-monitor-tray.exe
+          name: llama-monitor
+          path: dist/llama-monitor.exe

@@ -25,8 +25,8 @@ llama-monitor: a lightweight web control panel for a local `llama-server`
 - `frontend/` — single-page vanilla app: `index.html`, `css/style.css`,
   `js/` (app shell + `pages/`)
 - `tray.py` — Windows tray launcher (embeds the panel; `--smoke` headless self-test)
-- `build_exe.bat` — local PyInstaller build → `dist\llama-monitor-tray.exe`
-- `llama-monitor-tray.exe` — latest CI-built tray exe, **tracked at the repo root**
+- `build_exe.bat` — local PyInstaller build → `dist\llama-monitor.exe`
+- `llama-monitor.exe` — latest CI-built tray exe, **tracked at the repo root**
   so `git pull` always ships it (refreshed by CI, see Gotchas)
 - `requirements-tray.txt` — tray-only deps (pystray, Pillow, pyinstaller)
 - `assets/tray/` — tray mark PNGs + exe icon
@@ -42,7 +42,7 @@ python -m venv .venv
 pip install -r requirements.txt        # + requirements-tray.txt for the tray launcher
 python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000   # run the panel
 python tray.py                         # tray launcher (Windows); --smoke = headless self-test
-build_exe.bat                          # build dist\llama-monitor-tray.exe (Windows)
+build_exe.bat                          # build dist\llama-monitor.exe (Windows)
 ```
 
 There is **no test framework, linter, or formatter** configured. Verification is
@@ -58,7 +58,7 @@ manual/ad-hoc (see Verification below).
   (destination wins name collisions; conflicting files are kept + warned,
   never deleted). Frozen builds resolve the legacy root from the **exe's own
   folder** (PyInstaller onefile `__file__` points at `_MEIPASS`), so a pulled
-  repo with legacy data next to `llama-monitor-tray.exe` migrates on first
+  repo with legacy data next to `llama-monitor.exe` migrates on first
   start.
 - `config.example.json` is the source of truth for config keys.
 - The panel only manages `llama-server` processes it started itself; a server

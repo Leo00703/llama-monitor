@@ -17,9 +17,9 @@ pip install -r requirements.txt -r requirements-tray.txt || exit /b 1
 echo Running smoke test ...
 python tray.py --smoke || exit /b 1
 
-echo Building dist\llama-monitor-tray.exe ...
-pyinstaller --noconfirm --onefile --noconsole --name llama-monitor-tray --icon assets\tray\icon.ico --add-data "frontend;frontend" --add-data "config.example.json;." --add-data "assets/tray;assets/tray" --hidden-import pystray._win32 --hidden-import six --hidden-import uvicorn.loops.auto --hidden-import uvicorn.loops.asyncio --hidden-import uvicorn.protocols.http.auto --hidden-import uvicorn.protocols.http.h11_impl --hidden-import uvicorn.protocols.websockets.auto --hidden-import uvicorn.protocols.websockets.wsproto_impl --hidden-import uvicorn.protocols.websockets.websockets_impl --hidden-import websockets --hidden-import wsproto tray.py || exit /b 1
+echo Building dist\llama-monitor.exe ...
+pyinstaller --noconfirm --onefile --noconsole --name llama-monitor --icon assets\tray\icon.ico --add-data "frontend;frontend" --add-data "config.example.json;." --add-data "assets/tray;assets/tray" --hidden-import pystray._win32 --hidden-import six --hidden-import uvicorn.loops.auto --hidden-import uvicorn.loops.asyncio --hidden-import uvicorn.protocols.http.auto --hidden-import uvicorn.protocols.http.h11_impl --hidden-import uvicorn.protocols.websockets.auto --hidden-import uvicorn.protocols.websockets.wsproto_impl --hidden-import uvicorn.protocols.websockets.websockets_impl --hidden-import websockets --hidden-import wsproto tray.py || exit /b 1
 
 echo.
-echo Done: dist\llama-monitor-tray.exe
+echo Done: dist\llama-monitor.exe
 endlocal

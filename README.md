@@ -103,7 +103,7 @@ the same process (uvicorn in a daemon thread) on the configured
   (or run the workflow manually).
 - **Build locally** — `build_exe.bat` (creates/updates `.venv`, installs deps,
   runs a headless smoke test, then PyInstaller) produces
-  `dist\llama-monitor-tray.exe`.
+  `dist\llama-monitor.exe`.
 - **Run from source** — `python tray.py` (Windows only; `--smoke` runs the
   headless self-test used by CI).
 
@@ -129,7 +129,7 @@ frontend/
    js/            app shell (app.js), api/ui/metrics helpers, pages/ (dashboard,
                   generation, presets, models, settings)
 tray.py          Windows system-tray launcher (embeds the panel, --smoke self-test)
-build_exe.bat    local PyInstaller build of dist\llama-monitor-tray.exe
+build_exe.bat    local PyInstaller build of dist\llama-monitor.exe
 requirements-tray.txt   extra deps for the tray launcher (pystray, Pillow, pyinstaller)
 assets/tray/     tray mark (PNG) + exe icon (ICO)
 .github/workflows/build-exe.yml   CI: smoke test + PyInstaller + artifact upload
