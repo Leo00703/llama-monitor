@@ -17,6 +17,8 @@ data/
 build/
 dist/
 *.spec
+# Baked at build time (GITHUB_SHA / local HEAD) — never source-tracked
+backend/_buildinfo.json
 
 # Local scratchpad / to-do (never committed)
 TODO.md

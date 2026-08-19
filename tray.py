@@ -11,6 +11,7 @@ import argparse
 import ctypes
 import logging
 import os
+import subprocess
 import sys
 import threading
 import time
@@ -23,8 +24,8 @@ import pystray
 import uvicorn
 from PIL import Image, ImageDraw
 
-from backend.config import DATA_DIR, AppConfig, load_config
-from backend.main import create_app
+from backend.config import DATA_DIR, AppConfig, load_config, no_window_kwargs
+from backend.main import create_app, set_restart_hook
 
 # Named for the historical exe (llama-monitor-tray.exe); the exe was renamed
 # to llama-monitor.exe but the name is kept so old + new builds still count
@@ -240,6 +241,31 @@ def _message_box(title: str, text: str) -> None:
     ctypes.windll.user32.MessageBoxW(0, text, title, 0x10)
 
 
+def _restart_app() -> None:
+    """Relaunch this launcher and quit cleanly (update handoff).
+
+    The new process retries the single-instance mutex and waits for this
+    panel to release its port. The llama-server child is stopped by the
+    panel's clean shutdown (lifespan) before this process exits.
+    """
+    log.info("update: relaunching the launcher")
+    try:
+        if getattr(sys, "frozen", False):
+            cmd = [sys.executable, "--restarting"]
+        else:
+            cmd = [sys.executable, str(Path(__file__).resolve()), "--restarting"]
+        kwargs = dict(no_window_kwargs())
+        if os.name == "nt":
+            kwargs["creationflags"] = kwargs.get("creationflags", 0) | subprocess.DETACHED_PROCESS
+        subprocess.Popen(cmd, **kwargs)
+    except Exception:
+        log.exception("update: failed to spawn the relaunch process — staying up")
+        return
+    _stop.set()
+    if _icon is not None:
+        _icon.stop()
+
+
 def _install_stdout_stderr() -> None:
     # In a --noconsole frozen build sys.stdout/sys.stderr are None. uvicorn's
     # default logging config builds StreamHandlers off sys.stderr, so the first
@@ -292,11 +318,23 @@ def run_smoke() -> int:
     return 0
 
 
-def run_tray() -> int:
+def run_tray(restarting: bool = False) -> int:
     global _icon, _config_ref, _panel_browser_url, _preset_id
     _install_stdout_stderr()
     setup_logging()
-    if not acquire_single_instance():
+    if restarting:
+        log.info("restart handoff: waiting for the previous instance to exit")
+        deadline = time.time() + 60.0
+        acquired = False
+        while time.time() < deadline:
+            if acquire_single_instance():
+                acquired = True
+                break
+            time.sleep(0.5)
+        if not acquired:
+            _message_box("llama-monitor", "The previous instance did not release its lock in time.")
+            return 1
+    elif not acquire_single_instance():
         _message_box("llama-monitor", "llama-monitor is already running (see system tray).")
         return 0
 
@@ -309,6 +347,20 @@ def run_tray() -> int:
     _config_ref = config
     _panel_browser_url = panel_url(config)
     url = panel_url(config)
+
+    set_restart_hook(_restart_app)
+
+    if restarting:
+        # The old process releases its port before its mutex (the panel
+        # shuts down before the process exits); wait for the port to be
+        # free before binding our own.
+        deadline = time.time() + 60.0
+        while time.time() < deadline:
+            try:
+                httpx.get(f"{url}/api/health", timeout=1.0)
+            except httpx.HTTPError:
+                break
+            time.sleep(0.5)
 
     log.info("starting panel on %s", url)
     thread, server = start_panel(config)
@@ -368,6 +420,11 @@ def main() -> int:
         action="store_true",
         help="headless self-test: boot the panel, check health, exit",
     )
+    parser.add_argument(
+        "--restarting",
+        action="store_true",
+        help="internal: relaunched after an update — wait for the previous instance",
+    )
     args = parser.parse_args()
 
     if args.smoke:
@@ -377,7 +434,7 @@ def main() -> int:
         print("The tray launcher is only available on Windows.")
         return 2
 
-    return run_tray()
+    return run_tray(restarting=args.restarting)
 
 
 if __name__ == "__main__":

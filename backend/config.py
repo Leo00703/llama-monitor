@@ -187,6 +187,7 @@ class AppConfig(BaseModel):
     active_preset_id: str = ""
     energy_price_eur_kwh: float = 0.20
     energy_overhead_w: float = 0.0
+    update_check_minutes: int = Field(default=5, ge=0, le=1440)  # 0 = off
 
     def model_root(self) -> Optional[Path]:
         """Resolved models root directory, or None if unset."""

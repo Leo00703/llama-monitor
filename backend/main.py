@@ -5,10 +5,11 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import threading
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, AsyncIterator, Optional
+from typing import Any, AsyncIterator, Callable, Optional
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, Response, StreamingResponse
@@ -24,12 +25,56 @@ from .process import LlamaServerManager
 from .presets import PresetStore
 from .proxy import INJECT_PATHS, ProxyOffline, ServerProxy
 from .schema import LaunchSettings, Preset
+from . import update as app_update
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-7s %(name)s: %(message)s")
 log = logging.getLogger("llama-monitor")
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 METRICS_INTERVAL = 1.5
+
+# Set by the tray launcher (set_restart_hook) to relaunch the app after an
+# update is pulled. None in dev/uvicorn mode: the pull still works, the
+# restart is reported as manual.
+RESTART_HOOK: Optional[Callable[[], None]] = None
+
+
+def set_restart_hook(hook: Optional[Callable[[], None]]) -> None:
+    global RESTART_HOOK
+    RESTART_HOOK = hook
+
+
+_updater_stop = threading.Event()
+
+
+def _update_loop(manager: LlamaServerManager, loop: asyncio.AbstractEventLoop,
+                 config: AppConfig) -> None:
+    """Periodically fetch the git origin and toast about new commits.
+
+    The interval is read from the live config on every pass (settings can
+    change it at runtime); 0 disables the background checks.
+    """
+    last_notified: Optional[str] = None
+    time.sleep(15.0)  # don't slow down startup with a possibly slow fetch
+    while not _updater_stop.wait(1.0):
+        try:
+            minutes = int(config.update_check_minutes)
+        except (TypeError, ValueError):
+            minutes = 0
+        if minutes <= 0:
+            continue
+        try:
+            res = app_update.check(force=True)
+        except Exception:
+            log.exception("background update check failed")
+            res = None
+        if res and res.get("repo") and res.get("behind", 0) > 0:
+            latest = (res.get("latest") or {}).get("sha") or ""
+            if latest and latest != last_notified:
+                last_notified = latest
+                loop.call_soon_threadsafe(
+                    manager.broadcast, {"type": "update.available", "data": res})
+        _updater_stop.wait(max(minutes, 1) * 60.0)
 
 
 async def _metrics_loop(collector: MetricsCollector, manager: LlamaServerManager,
@@ -185,8 +230,14 @@ def create_app() -> FastAPI:
         log.info("llama-monitor panel starting")
         await manager.on_startup()
         log.info("panel ready (state=%s)", manager.snapshot()["state"])
+        loop = asyncio.get_running_loop()
         task = asyncio.create_task(_metrics_loop(collector, manager, power, tracker))
+        updater = threading.Thread(
+            target=_update_loop, args=(manager, loop, config),
+            daemon=True, name="update-checker")
+        updater.start()
         yield
+        _updater_stop.set()
         task.cancel()
         await manager.shutdown()
 
@@ -498,6 +549,34 @@ def create_app() -> FastAPI:
             if is_generation:
                 _record_failure(503, path)
             return JSONResponse({"error": f"llama-server offline: {exc}"}, status_code=503)
+
+    # ------------------------------------------------------------------
+    # REST: app self-update (git pull + tray relaunch, see update.py)
+    # ------------------------------------------------------------------
+
+    @app.get("/api/update/check")
+    async def update_check(force: bool = False) -> dict:
+        return await asyncio.to_thread(app_update.check, force)
+
+    @app.post("/api/update/apply")
+    async def update_apply() -> dict:
+        res = await asyncio.to_thread(app_update.apply_update)
+        if not res.get("ok"):
+            return res
+        if RESTART_HOOK is None:
+            return {
+                **res, "restarting": False,
+                "note": "update pulled — restart the dev server manually",
+            }
+        # The hook spawns the relaunched launcher and shuts this process
+        # down; the response can be lost in that race, so the frontend
+        # recovers by polling /api/health and reloading.
+        try:
+            RESTART_HOOK()
+        except Exception:
+            log.exception("restart hook failed")
+            return {"ok": False, "error": "restart failed — try again"}
+        return {**res, "restarting": True}
 
     # ------------------------------------------------------------------
     # WebSockets

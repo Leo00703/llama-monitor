@@ -59,6 +59,11 @@ jobs:
         if: steps.skip.outputs.skip != 'true'
         run: python tray.py --smoke
 
+      - name: Write build info (commit baked into the exe)
+        if: steps.skip.outputs.skip != 'true'
+        run: |
+          python -c "import json,os,datetime;json.dump({'sha':os.environ.get('GITHUB_SHA','unknown')[:9],'date':datetime.datetime.now().astimezone().isoformat(timespec='seconds')},open('backend/_buildinfo.json','w'))"
+
       - name: Build single-file exe
         if: steps.skip.outputs.skip != 'true'
         run: |
@@ -66,6 +71,7 @@ jobs:
             --icon assets/tray/icon.ico `
             --add-data "frontend;frontend" `
             --add-data "config.example.json;." `
+            --add-data "backend/_buildinfo.json;backend" `
             --add-data "assets/tray;assets/tray" `
             --hidden-import pystray._win32 `
             --hidden-import six `
