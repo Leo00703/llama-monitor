@@ -147,8 +147,6 @@ const Metrics = (() => {
       if (g.power_w != null) {
         bits.push(`${g.power_w.toFixed(0)} W${g.power_limit_w ? ` / ${g.power_limit_w.toFixed(0)}` : ""}`);
       }
-      if (g.clock_core_mhz != null) bits.push(`${g.clock_core_mhz.toFixed(0)} MHz`);
-      if (g.clock_mem_mhz != null) bits.push(`mem ${g.clock_mem_mhz.toFixed(0)} MHz`);
       els.detail.textContent = bits.join(" · ");
     }
   }
