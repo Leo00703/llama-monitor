@@ -683,7 +683,7 @@ body.nav-locked { overflow: hidden; }
     height: 100%;
     min-height: 0;
     padding: 14px 14px 24px;
-    background: #0d0f14;
+    background: var(--bg);
     border-right: 1px solid var(--border-strong);
     box-shadow: 14px 0 44px rgba(0, 0, 0, 0.55);
     transform: translateX(-105%);
