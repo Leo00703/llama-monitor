@@ -272,8 +272,12 @@ def create_app() -> FastAPI:
             new_config = AppConfig.model_validate(body)
         except ValidationError as exc:
             return {"ok": False, "error": str(exc)}
-        # mutate the live object in place: the manager holds a reference to it
+        # Merge only the keys present in the body: partial clients (e.g. the
+        # settings page, which never sends active_preset_id) must not reset
+        # fields they didn't submit — a full-replace wiped the active preset.
         for name in new_config.model_fields:
+            if name not in body:
+                continue
             setattr(config, name, getattr(new_config, name))
         save_config(config)
         return {"ok": True, "config": config.model_dump()}
