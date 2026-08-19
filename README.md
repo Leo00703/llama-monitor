@@ -23,6 +23,16 @@ line:
 - **Model browser** — recursive scan of `models_root` for `.gguf` files with
   size/sort, plus automatic mmproj (vision) projectors detection per model.
 
+## Screenshots
+
+Desktop view:
+
+![llama-monitor — desktop view](docs/llama-monitor-desktop.png)
+
+Mobile view:
+
+![llama-monitor — mobile view](docs/llama-monitor-mobile.jpg)
+
 ## Requirements
 
 - Python 3.10+ (tested on 3.11/3.14)
