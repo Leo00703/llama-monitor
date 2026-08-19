@@ -231,13 +231,17 @@ body {
   height: 100%;
   min-height: 0;
   overflow-y: auto;
-  transition: flex-basis 0.18s ease, width 0.18s ease;
+  transition: flex-basis 0.18s ease, width 0.18s ease, padding 0.18s ease;
 }
 
-/* desktop collapse button lives at the top-right of the sidebar */
+/* desktop collapse button: top-right when expanded; slides to the rail's
+   center when collapsed (aligns with the nav icons) via margin-right,
+   since align-self is not animatable */
 .nav-collapse {
   align-self: flex-end;
+  margin-right: 0;
   margin-bottom: 10px;
+  transition: margin-right 0.18s ease;
 }
 
 /* hamburger (drawer opener) only shows on mobile */
@@ -259,7 +263,8 @@ body {
   border-radius: var(--radius-sm);
   padding: 8px 10px;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: background 0.15s ease, color 0.15s ease,
+             padding 0.18s ease, gap 0.18s ease;
 }
 
 .nav-icon {
@@ -267,6 +272,15 @@ body {
   height: 19px;
   flex: none;
   opacity: 0.9;
+}
+
+/* labels fade + shrink away on collapse so the icons settle instead of
+   jumping (max-width/opacity/transform are animatable, display is not) */
+.nav-label {
+  max-width: 120px;
+  overflow: hidden;
+  white-space: nowrap;
+  transition: max-width 0.18s ease, opacity 0.14s ease, transform 0.18s ease;
 }
 
 .nav-item:hover { background: var(--panel); color: var(--text); }
@@ -283,13 +297,17 @@ body {
   padding: 12px 8px;
 }
 
+/* collapsed rail: the label space (label + gap) is replaced by padding-left
+   so the icon stays at the same x (cx 30.5 -> 30) while everything else
+   animates; the collapse button slides over to the same center */
 .sidebar.collapsed .nav-item {
-  justify-content: center;
-  padding: 10px 0;
+  padding: 10px 0 10px 11.5px;
   gap: 0;
 }
 
-.sidebar.collapsed .nav-label { display: none; }
+.sidebar.collapsed .nav-label { max-width: 0; opacity: 0; transform: translateX(-6px); }
+
+.sidebar.collapsed .nav-collapse { margin-right: 6px; }
 
 .content {
   flex: 1;
@@ -675,7 +693,8 @@ body.nav-locked { overflow: hidden; }
   .sidebar.open { transform: translateX(0); }
   .sidebar.collapsed { width: 272px; max-width: 85vw; padding: 14px 14px 24px; }
   .sidebar.collapsed .nav-item { justify-content: flex-start; padding: 10px 12px; gap: 11px; }
-  .sidebar.collapsed .nav-label { display: inline; }
+  /* the drawer never uses the collapsed rail look: restore the labels */
+  .sidebar.collapsed .nav-label { display: inline; max-width: none; opacity: 1; transform: none; }
   .drawer-head {
     display: flex;
     align-items: center;
