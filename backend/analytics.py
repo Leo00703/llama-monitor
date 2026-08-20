@@ -14,6 +14,7 @@ import io
 import logging
 import re
 import sqlite3
+import threading
 import time
 from contextlib import contextmanager
 from collections import deque
@@ -270,6 +271,9 @@ class AnalyticsStore:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_gen_ts ON generation_records(ts)")
             conn.execute(_FAILED_SCHEMA)
             conn.execute("CREATE INDEX IF NOT EXISTS idx_failed_ts ON failed_requests(ts)")
+        # range_name -> (start_bucket, max_ts, count, rows); see _fetch()
+        self._fetch_cache: dict[str, tuple] = {}
+        self._fetch_lock = threading.Lock()
 
     @contextmanager
     def _conn(self):
@@ -353,15 +357,34 @@ class AnalyticsStore:
         return 0.0
 
     def _fetch(self, range_name: str) -> list[dict[str, Any]]:
-        start = self.range_start(range_name if range_name in RANGES else "all")
-        with self._conn() as conn:
-            rows = conn.execute(
-                """SELECT ts, preset_name, model, prompt_tokens, gen_tokens,
-                          prompt_tps, gen_tps, total_ms, energy_wh
-                   FROM generation_records WHERE ts >= ? ORDER BY ts""",
-                (start,),
-            ).fetchall()
-        return [dict(r) for r in rows]
+        """Rows within the range, cached per range name.
+
+        The analytics page refreshes summary/timeseries/models/records in
+        parallel, so without a cache every refresh would re-scan the range
+        four times. The cache is invalid when the table fingerprint
+        (max ts, row count) changes or the sliding range window moves to a
+        new minute bucket."""
+        name = range_name if range_name in RANGES else "all"
+        start = self.range_start(name)
+        bucket = int(start // 60)
+        with self._fetch_lock:
+            with self._conn() as conn:
+                max_ts, count = conn.execute(
+                    "SELECT MAX(ts), COUNT(*) FROM generation_records"
+                ).fetchone()
+            cached = self._fetch_cache.get(name)
+            if cached and cached[0] == bucket and cached[1] == max_ts and cached[2] == count:
+                return cached[3]
+            with self._conn() as conn:
+                rows = conn.execute(
+                    """SELECT ts, preset_name, model, prompt_tokens, gen_tokens,
+                              prompt_tps, gen_tps, total_ms, energy_wh
+                       FROM generation_records WHERE ts >= ? ORDER BY ts""",
+                    (start,),
+                ).fetchall()
+            result = [dict(r) for r in rows]
+            self._fetch_cache[name] = (bucket, max_ts, count, result)
+            return result
 
     def summary(self, range_name: str, price: float) -> dict:
         rows = self._fetch(range_name)
