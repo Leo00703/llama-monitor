@@ -69,10 +69,18 @@ manual/ad-hoc (see Verification below).
 ## Git workflow
 
 - Branch `main`. Commit style: `Fix: <short imperative subject>` /
-  `Feat: <short imperative subject>`.
-- One commit per fix; **push after every fix**.
+  `Feat: <short imperative subject>` / `Docs: <short imperative subject>`.
+- One commit per fix; **push after every fix**. Docs updates are separate
+  commits, never mixed with code changes.
 - Never commit: `TODO.md`, `config.json`, `data/`, `*.log`, `build/`, `dist/`,
   `*.spec`, `.venv/`.
+- **Keep `README.md` current**: it describes the product (feature bullets,
+  config keys, project layout, commands, tray exe). Re-check it and fix stale
+  spots — in a separate `Docs:` commit — whenever a change alters what it
+  describes (feature, config key, layout, command, tray/exe behavior) AND at
+  least at the end of every work batch, even if the batch was fixes-only. When
+  updating, verify each claim against the actual code (grep the module), don't
+  just append.
 
 ## Working with the user (task tracking)
 
@@ -119,7 +127,8 @@ To stay focused on the current work:
   are the map of the current work.
 - After finishing an item: commit + push, close the Issue with a short
   outcome comment (sha + verification), then update this file if anything
-  permanent changed (new command, module, convention, or gotcha).
+  permanent changed (new command, module, convention, or gotcha), and
+  re-check `README.md` if the change is user-facing (see Git workflow).
 
 ## Verification
 
