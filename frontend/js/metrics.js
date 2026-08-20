@@ -73,7 +73,7 @@ const Metrics = (() => {
       ctx.lineTo(x0 + r[r.length - 1][0] * stepX, h);
       ctx.lineTo(x0 + r[0][0] * stepX, h);
       ctx.closePath();
-      ctx.fillStyle = opts.fill || "rgba(125, 162, 255, 0.14)";
+      ctx.fillStyle = opts.fill || "rgba(246, 94, 0, 0.14)";
       ctx.fill();
 
       ctx.beginPath();
@@ -82,7 +82,7 @@ const Metrics = (() => {
         if (k === 0) ctx.moveTo(x, yOf(v));
         else ctx.lineTo(x, yOf(v));
       });
-      ctx.strokeStyle = opts.color || "#7da2ff";
+      ctx.strokeStyle = opts.color || "#f65e00";
       ctx.lineWidth = 1.5;
       ctx.stroke();
     }
@@ -225,11 +225,11 @@ const Metrics = (() => {
     push(hist.gen, inf ? inf.gen_tps : null);
     drawSpark(
       $("prompt-spark"), hist.prompt,
-      { max: Math.max(...hist.prompt.filter((v) => v != null), 1), color: "#6ee7b7", fill: "rgba(110, 231, 183, 0.12)" },
+      { max: Math.max(...hist.prompt.filter((v) => v != null), 1), color: "#00bc7d", fill: "rgba(0, 188, 125, 0.12)" },
     );
     drawSpark(
       $("gen-spark"), hist.gen,
-      { max: Math.max(...hist.gen.filter((v) => v != null), 1), color: "#f5a524", fill: "rgba(245, 165, 36, 0.12)" },
+      { max: Math.max(...hist.gen.filter((v) => v != null), 1), color: "#fe9a00", fill: "rgba(254, 154, 0, 0.12)" },
     );
     const promptEl = $("prompt-tps");
     const genEl = $("gen-tps");
@@ -250,7 +250,7 @@ const Metrics = (() => {
             $("draft-rate").textContent = `${rate.toFixed(1)}%`;
             drawSpark(
               $("draft-spark"), hist.draft,
-              { max: 100, color: "#c084fc", fill: "rgba(192, 132, 252, 0.12)" },
+              { max: 100, color: "#ad46ff", fill: "rgba(173, 70, 255, 0.12)" },
             );
           }
         } else if (draftCell) {
@@ -275,15 +275,15 @@ const Metrics = (() => {
     }
     drawSpark(
       $("prompt-spark"), hist.prompt,
-      { max: Math.max(...hist.prompt.filter((v) => v != null), 1), color: "#6ee7b7", fill: "rgba(110, 231, 183, 0.12)" },
+      { max: Math.max(...hist.prompt.filter((v) => v != null), 1), color: "#00bc7d", fill: "rgba(0, 188, 125, 0.12)" },
     );
     drawSpark(
       $("gen-spark"), hist.gen,
-      { max: Math.max(...hist.gen.filter((v) => v != null), 1), color: "#f5a524", fill: "rgba(245, 165, 36, 0.12)" },
+      { max: Math.max(...hist.gen.filter((v) => v != null), 1), color: "#fe9a00", fill: "rgba(254, 154, 0, 0.12)" },
     );
     drawSpark(
       $("draft-spark"), hist.draft,
-      { max: 100, color: "#c084fc", fill: "rgba(192, 132, 252, 0.12)" },
+      { max: 100, color: "#ad46ff", fill: "rgba(173, 70, 255, 0.12)" },
     );
   }
 

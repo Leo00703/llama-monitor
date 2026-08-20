@@ -77,7 +77,7 @@ const Analytics = (() => {
 
     ctx.font = "11px " + getComputedStyle(document.body).fontFamily;
     ctx.textBaseline = "middle";
-    ctx.fillStyle = "#9aa0a6";
+    ctx.fillStyle = "#a1a1a1";
     ctx.strokeStyle = "rgba(255,255,255,0.07)";
     ctx.lineWidth = 1;
     for (let g = 0; g <= 3; g++) {
@@ -97,14 +97,14 @@ const Analytics = (() => {
 
     if (opts.mode === "bar") {
       const bw = Math.max(1, stepX * 0.62);
-      ctx.fillStyle = opts.color || "#5b8cff";
+      ctx.fillStyle = opts.color || "#1447e6";
       values.forEach((v, i) => {
         if (v == null) return;
         const y = yOf(v);
         ctx.fillRect(xOf(i) + (stepX - bw) / 2, y, bw, padT + ch - y);
       });
     } else {
-      ctx.strokeStyle = opts.color || "#5b8cff";
+      ctx.strokeStyle = opts.color || "#1447e6";
       ctx.lineWidth = 1.5;
       ctx.beginPath();
       let started = false;
@@ -119,7 +119,7 @@ const Analytics = (() => {
     }
 
     const shown = Math.min(Math.max(2, Math.floor(w / 72)), n);
-    ctx.fillStyle = "#9aa0a6";
+    ctx.fillStyle = "#a1a1a1";
     ctx.textAlign = "center";
     for (let k = 0; k < shown; k++) {
       const i = Math.round((k * (n - 1)) / Math.max(1, shown - 1));
@@ -138,13 +138,13 @@ const Analytics = (() => {
       $("an-tokens-chart"),
       buckets.map((b) => b.gen_tokens || null),
       labels,
-      { mode: "bar", color: "#5b8cff" },
+      { mode: "bar", color: "#1447e6" },
     );
     drawChart(
       $("an-speed-chart"),
       buckets.map((b) => b.avg_gen_tps != null ? b.avg_gen_tps : null),
       labels,
-      { mode: "line", color: "#f5a524" },
+      { mode: "line", color: "#fe9a00" },
     );
   }
 
