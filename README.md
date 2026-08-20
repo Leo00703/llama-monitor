@@ -13,20 +13,26 @@ line:
   installed version via `llama-server --help` — unknown flags are reported as
   warnings instead of blocking the start.
 - **Resource monitoring** — CPU (per-core), RAM, and one card per detected GPU
-  (utilization, VRAM, temperature, power draw, clocks) via `nvidia-smi`,
-  plus inference metrics (prompt/generation tok/s, per-slot context usage)
-  read from the server's own `/metrics` and `/slots` endpoints.
+  (utilization, VRAM, temperature, power draw) via `nvidia-smi`,
+  plus inference metrics (prompt/generation tok/s, per-slot context usage,
+  draft acceptance for spec decode) sourced from the server's own log lines,
+  with `/slots` and `/metrics` as fallbacks.
 - **Generation parameters** — sampling / penalties / control fields that are
   *not* launch flags: they are injected into every proxied
   `/v1/chat/completions` and `/completion` request, so they can be changed at
   any time without restarting the server.
 - **Model browser** — recursive scan of `models_root` for `.gguf` files with
   size/sort, plus automatic mmproj (vision) projectors detection per model.
+- **Analytics** — per-request history (tokens, latency, energy estimate) in
+  SQLite: summary cards, token/speed charts, model breakdown, a request
+  table, and CSV export, all with a day/week/month/year/all range picker.
 - **Self-updating** — the panel checks the git remote in the background and
   offers a one-click **Update now** (bottom-right toast, also in Settings):
-  it pulls the latest commits from the repo (which ships the code *and* the
-  bundled tray exe) and restarts the app. Fast-forward only — local changes
-  or unpushed commits block the update with a clear message.
+  it pulls the latest commits from the repo and restarts the app. The repo
+  ships the code *and* the bundled tray exe (CI commits the latest
+  `llama-monitor.exe` back to the repo root, so a plain `git pull` updates
+  both). Fast-forward only — local changes or unpushed commits block the
+  update with a clear message.
 
 ## Screenshots
 
@@ -79,6 +85,9 @@ in-app **Settings** page (which shows the data directory in use):
 | `default_server_port` | Port assumed for external/ready checks when nothing else is known |
 | `panel.host` / `panel.port` | Bind address/port of the panel itself (default `0.0.0.0:8000`, so it is reachable over Tailscale) |
 | `active_preset_id` | Preset currently selected for launches |
+| `energy_price_eur_kwh` | € per kWh, used for the cost estimates on the Analytics page |
+| `energy_overhead_w` | Constant idle-system wattage added to the GPU power estimate |
+| `update_check_minutes` | Self-update background poll interval (0 disables the check) |
 
 ## Run
 
@@ -103,9 +112,11 @@ icon mirrors the server state (colored status dot + tooltip) and its menu has
 the same process (uvicorn in a daemon thread) on the configured
 `panel.host:panel.port`, so OpenAI-compatible proxying works exactly as above.
 
-- **Download** — the latest build is uploaded as an artifact by the
-  `Build Windows tray exe` GitHub Actions workflow on every push to `main`
-  (or run the workflow manually).
+- **Get it** — `llama-monitor.exe` at the repo root is the latest CI build:
+  `git clone` (or `git pull` / the in-app **Update now**) and run it. A fresh
+  build is also uploaded as an artifact by the `Build Windows tray exe`
+  GitHub Actions workflow on every push to `main` (or run the workflow
+  manually).
 - **Build locally** — `build_exe.bat` (creates/updates `.venv`, installs deps,
   runs a headless smoke test, then PyInstaller) produces
   `dist\llama-monitor.exe`.
@@ -130,17 +141,23 @@ backend/
   proxy.py       /v1/chat/completions & /completion proxy with settings injection
   analytics.py   print_timing parser + SQLite request/energy history
   update.py      git self-update (fetch/ff-only pull of origin, version info)
+llama-monitor.exe    latest CI-built tray exe, tracked at the repo root so
+                     `git pull` always ships it
+config.example.json  template documenting every config key
 frontend/
   index.html     single-page app (vanilla HTML/CSS/JS, no build step)
-  css/style.css  dark frosted-glass theme
-   js/            app shell (app.js), api/ui/metrics/update helpers, pages/
-                  (dashboard, generation, presets, models, settings)
+  css/style.css  official llama.cpp dark theme
+  js/            app shell (app.js), api/ui/metrics/update helpers, pages/
+                 (dashboard, generation, presets, models, analytics, settings)
+  fonts/         bundled Geist Mono (woff2)
 tray.py          Windows system-tray launcher (embeds the panel, --smoke self-test,
                  --restarting handoff for the update relaunch)
 build_exe.bat    local PyInstaller build of dist\llama-monitor.exe
 requirements-tray.txt   extra deps for the tray launcher (pystray, Pillow, pyinstaller)
 assets/tray/     tray mark (PNG) + exe icon (ICO)
-.github/workflows/build-exe.yml   CI: smoke test + PyInstaller + artifact upload
+docs/            README screenshots
+.github/workflows/build-exe.yml   CI: smoke test + PyInstaller + artifact upload +
+                     commit the refreshed exe back to the repo root
 ```
 
 Persistent data lives outside the repo (see Configure): config.json,
