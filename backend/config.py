@@ -207,20 +207,23 @@ def resolve_exe_path(exe: str) -> Optional[str]:
     """Resolve an executable path, tolerating a directory that *contains* it.
 
     Users often paste the folder an extracted llama.cpp build lives in
-    (e.g. ``C:\\llama-b10448-...\\``) instead of the ``llama-server.exe``
-    inside it. Windows' CreateProcess cannot launch a directory (it fails
-    with WinError 5, "access denied"), so we resolve to the exe within it.
+    (e.g. ``C:\\llama-b10448-...\\``) instead of the server exe inside it.
+    Windows' CreateProcess cannot launch a directory (it fails with WinError
+    5, "access denied"), so we resolve to the exe within it — both the
+    Windows (``llama-server.exe``) and the Linux/macOS (``llama-server``)
+    names.
     """
     path = Path(exe).expanduser()
     if path.is_dir():
-        candidate = path / "llama-server.exe"
-        if candidate.exists():
-            log.warning(
-                "llama_server_exe points at a directory; using %s", candidate
-            )
-            return str(candidate)
+        for name in ("llama-server.exe", "llama-server"):
+            candidate = path / name
+            if candidate.exists():
+                log.warning(
+                    "llama_server_exe points at a directory; using %s", candidate
+                )
+                return str(candidate)
         log.error(
-            "llama_server_exe points at a directory without llama-server.exe: %s",
+            "llama_server_exe points at a directory without llama-server: %s",
             path,
         )
         return None
