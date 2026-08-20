@@ -24,7 +24,7 @@ llama-monitor: a lightweight web control panel for a local `llama-server`
   - `analytics.py` print_timing parser + SQLite request/energy history
   - `update.py` git self-update (fetch/ff-only pull of origin, version info)
 - `frontend/` — single-page vanilla app: `index.html`, `css/style.css`,
-  `js/` (app shell + `pages/`)
+  `js/` (app shell + `pages/`), `fonts/` (bundled Geist Mono woff2)
 - `tray.py` — Windows tray launcher (embeds the panel; `--smoke` headless
   self-test; `--restarting` internal flag for the update relaunch handoff)
 - `build_exe.bat` — local PyInstaller build → `dist\llama-monitor.exe`
@@ -127,8 +127,14 @@ To stay focused on the current work:
 - Python: `pathlib` everywhere, no hardcoded absolute paths; stay
   cross-platform (Windows primary, Linux must keep working; `nvidia-smi` is
   optional — GPU cards are hidden when absent).
-- Theme: dark, solid `--bg: #0d0d0d` (official llama.cpp background), **no
-  gradients**, blue accent.
+- Theme: **official llama.cpp dark design language** — solid `--bg: #0d0d0d`,
+  brand-orange accent `#f65e00` (not #ff6467 — that's the official *error*
+  color), semantics ok `#00bc7d` / warn `#fe9a00` / err `#ff6467` / info
+  `#ad46ff`, cards `rgba(38,38,38,.75)` + backdrop blur, pill buttons, **no
+  gradients** (the `<select>` chevron arrows are the one sanctioned
+  gradient). Font: system sans stack + bundled **Geist Mono**
+  (`frontend/fonts/geist-mono-latin.woff2`, variable 400–600) for logs/code/
+  metrics — do not add a Google Fonts CDN dependency.
 - Comments: minimal; add a comment only for a non-obvious "why".
 
 ## Gotchas
