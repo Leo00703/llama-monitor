@@ -216,6 +216,18 @@ To stay focused on the current work:
   single line) silently drops the later `draft acceptance` line.
 - **Headless Chrome** clamps window width to ~500px — size the viewport with an
   iframe inside the page, not with the browser window.
+- **Headless Chrome CDP + caching**: the persistent profile keeps its disk
+  cache between runs — when verifying a JS change, send `Network.enable` +
+  `Network.setCacheDisabled` BEFORE navigating, or the page loads the old
+  cached script (symptom: `ReferenceError` for a symbol you just added).
+- **Inspecting the frozen exe**: `PyInstaller.archive.readers.CArchiveReader`.
+  App modules live in the PYZ (`a.open_embedded_archive("PYZ.pyz")`, then
+  `pyz.extract("backend.flags")` → code object; list with `pyz.toc`). The
+  main script `tray.py` is NOT in the PYZ — it's the CArchive entry named
+  `tray` (first TOC entry; `marshal.loads(a.extract("tray"))`). Data files
+  are CArchive entries with Windows backslash names (`frontend\index.html`).
+  `backend\_buildinfo.json` in the archive carries the built commit sha —
+  compare it with `git log` to know which fix the bundled exe contains.
 - **CI commits the exe back to `main`**: `build-exe.yml` pushes the built exe
   to the repo root as bot commit `"Build: refresh bundled tray exe"` (sha256
   skip when unchanged). Loop prevention = the workflow skips the whole build
