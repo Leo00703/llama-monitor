@@ -278,9 +278,22 @@ To stay focused on the current work:
   Restart handoff: `tray.py` registers `set_restart_hook(_restart_app)` in
   `backend.main`; direct updates: the hook spawns the launcher with
   `--restarting` (new process retries the single-instance mutex + waits for
-  the old panel's port) and then quits via the normal clean path (lifespan
-  stops llama-server). Dev/uvicorn mode has no hook: the pull succeeds, the
-  restart is reported as manual. Version of the running app: frozen builds
+  the old panel's port) and then quits via the normal clean path. Dev/uvicorn
+  mode has no hook: the pull succeeds, the restart is reported as manual.
+  **Update relaunch keeps the llama-server child running**: `_restart_app`
+  calls `set_linger_server()` (backend.process), which makes
+  `LlamaServerManager.shutdown()` skip stopping the child — the relaunched
+  panel adopts it as an EXTERNAL server, so an in-flight inference survives
+  the update AND the old process exits fast (no STOP/KILL_TIMEOUT waits) so
+  the bootstrap helper's PID wait stays short. Normal quit (tray menu) does
+  NOT linger — the server is stopped as before.
+  **Client restart wait = 300 s** (update.js `waitPanelBack`, with live
+  elapsed seconds + hint, closable modal): the deferred chain is
+  old-exit → helper PID-wait → merge → `Start-Process`, where the relaunched
+  onefile exe RE-EXTRACTS its ~25MB bundle on first launch (Windows Defender
+  scans it) — commonly 1–3 min, machine-dependent. 120 s timed out this in
+  practice (issue #12). Each health probe is abort-bounded (4 s) so a hung
+  TCP probe can't eat the budget. Version of the running app: frozen builds
   read `_MEIPASS/backend/_buildinfo.json` (CI bakes `GITHUB_SHA`); dev
   reports live `git HEAD`.
 - **Detached helper processes on Windows**: `tasklist`/`timeout` silently
