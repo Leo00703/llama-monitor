@@ -102,11 +102,21 @@ def dot_image(color) -> Image.Image:
     return img
 
 
+def tray_title(state: str, label: str, error: str = "") -> str:
+    title = f"llama-monitor — {label}"
+    if state == "error" and error:
+        e = error.strip()
+        if len(e) > 200:
+            e = e[:197] + "…"
+        title += f": {e}"
+    return title
+
+
 def apply_state(icon: pystray.Icon, state: str, error: str = "") -> None:
     label, color = STATE_META.get(state, STATE_META["stopped"])
     _state.update({"state": state, "label": label, "error": error or ""})
     icon.icon = dot_image(color)
-    icon.title = f"llama-monitor — {label}"
+    icon.title = tray_title(state, label, error or "")
     icon.update_menu()
 
 
@@ -154,7 +164,9 @@ def poll_loop(config: AppConfig, icon: pystray.Icon) -> None:
             state = httpx.get(f"{base}/api/state", timeout=3.0).json()
             cfg = httpx.get(f"{base}/api/config", timeout=3.0).json()
             preset_id = cfg.get("active_preset_id") or ""
-            key = (state.get("state"), preset_id)
+            # the error text is part of the key: a changed error while the
+            # state stays "error" must refresh the tooltip
+            key = (state.get("state"), preset_id, state.get("error") or "")
             if key != last:
                 _preset_id = preset_id
                 apply_state(icon, state.get("state") or "stopped", state.get("error") or "")
@@ -410,7 +422,7 @@ def run_tray(restarting: bool = False) -> int:
     icon = pystray.Icon(
         "llama-monitor",
         dot_image(color),
-        f"llama-monitor — {label}",
+        tray_title(initial.get("state", "stopped"), label, initial.get("error") or ""),
         pystray.Menu(_menu_items),
     )
     _icon = icon
