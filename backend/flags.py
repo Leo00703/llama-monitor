@@ -309,6 +309,20 @@ FLAG_RULES: list[tuple[str, Callable[[LaunchSettings, FlagContext], Optional[lis
 ]
 
 
+# a CLI flag starts with '-' or '--' followed by a letter; tokens like
+# '-0.5' or '-1' are negative *values*, not flags
+_FLAG_TOKEN_RE = re.compile(r"^--?[A-Za-z]")
+
+
+def _is_flag(token: str) -> bool:
+    return bool(_FLAG_TOKEN_RE.match(token))
+
+
+def _flag_name(token: str) -> str:
+    # '--temp=0.7' style: the documented name is the part before '='
+    return token.split("=", 1)[0]
+
+
 def build_args(
     s: LaunchSettings,
     models_root: Optional[Path] = None,
@@ -330,7 +344,7 @@ def build_args(
         if not tokens:
             continue
         if supported is not None:
-            unknown = [t for t in tokens if t.startswith("-") and t not in supported]
+            unknown = [t for t in tokens if _is_flag(t) and _flag_name(t) not in supported]
             if unknown:
                 warnings.append(
                     f"flag(s) {', '.join(unknown)} (setting: {key}) are not supported by "
