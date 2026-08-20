@@ -19,6 +19,10 @@ const MAX_DOM_LINES = 2000;
 
 let serverState = "stopped";
 let busy = false;
+// last non-empty server version: re-applies (setBusy) carry it through so
+// the top-bar label doesn't blink empty between an action and the next
+// state event
+let lastVersion = "";
 
 const STATE_LABELS = {
   stopped: "stopped",
@@ -134,6 +138,7 @@ function applyState(state) {
   statusText.textContent = label;
   badge.className = `badge badge-${serverState}`;
   errorLabel.textContent = state.error || "";
+  if (state.version) lastVersion = state.version;
   versionLabel.textContent = state.version ? `llama-server ${state.version}` : "";
 
   const running = serverState === "running" || serverState === "external";
@@ -160,7 +165,13 @@ function setBusy(b) {
   btnStart.disabled = b || btnStart.disabled;
   btnStop.disabled = b || btnStop.disabled;
   btnRestart.disabled = b || btnRestart.disabled;
-  if (!b) applyState({ state: serverState, error: errorLabel.textContent, version: "" });
+  if (!b) {
+    // only carry the version while a server is actually up — after a stop
+    // the label must stay empty (there is no running version to show)
+    const alive = serverState === "running" || serverState === "external" ||
+      serverState === "starting" || serverState === "restarting";
+    applyState({ state: serverState, error: errorLabel.textContent, version: alive ? lastVersion : "" });
+  }
 }
 
 /* ---------------------------------------------------------------- */
@@ -191,7 +202,7 @@ async function doStart() {
     }
     if (!res.ok) {
       appendLogLine(`[panel] start failed: ${res.errors ? res.errors.join("; ") : res.error}`);
-      applyState({ state: "error", error: res.error || (res.errors || []).join("; "), version: versionLabel.textContent });
+      applyState({ state: "error", error: res.error || (res.errors || []).join("; "), version: lastVersion });
     }
   } catch (e) {
     appendLogLine(`[panel] start failed: ${e}`);
