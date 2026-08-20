@@ -100,25 +100,24 @@ const Metrics = (() => {
     for (const g of gpus) {
       const i = Math.round(g.index);
       const card = document.createElement("div");
-      card.className = "card metric-card";
+      card.className = "card metric-card metric-card--graph";
       card.innerHTML = `
         <div class="card-head">
-          <h2>GPU ${i}</h2>
-          <span class="muted small gpu-name"></span>
+          <div class="gpu-id">
+            <h2>GPU ${i}</h2>
+            <span class="muted small gpu-name"></span>
+          </div>
+          <span class="metric-value gpu-util">—</span>
         </div>
-        <div class="metric-big">
-          <span class="metric-value">—</span>
-          <span class="muted small">util %</span>
-        </div>
-        <canvas class="spark"></canvas>
-        <div class="metric-detail muted small"></div>`;
+        <canvas class="spark spark-fill"></canvas>
+        <div class="metric-foot gpu-foot"></div>`;
       wrap.appendChild(card);
       gpuHist[i] = { util: [] };
       gpuEls[i] = {
         name: card.querySelector(".gpu-name"),
-        util: card.querySelector(".metric-value"),
+        util: card.querySelector(".gpu-util"),
         spark: card.querySelector("canvas"),
-        detail: card.querySelector(".metric-detail"),
+        foot: card.querySelector(".gpu-foot"),
       };
     }
   }
@@ -138,37 +137,32 @@ const Metrics = (() => {
       if (g.name) els.name.textContent = g.name;
       els.util.textContent = `${(g.util_percent ?? 0).toFixed(0)}%`;
 
-      const bits = [];
+      let vram = "";
       if (g.vram_total_mb) {
-        const pct = Math.round(((g.vram_used_mb ?? 0) / g.vram_total_mb) * 100);
-        bits.push(`VRAM ${(g.vram_used_mb / 1024).toFixed(1)}/${(g.vram_total_mb / 1024).toFixed(1)} GB (${pct}%)`);
+        const used = (g.vram_used_mb ?? 0) / 1024;
+        const tot = g.vram_total_mb / 1024;
+        const pct = Math.round((g.vram_used_mb / g.vram_total_mb) * 100);
+        vram =
+          `<span class="gpu-stat"><span class="gpu-lbl">VRAM</span>` +
+          `<span class="gpu-val">${used.toFixed(1)} / ${tot.toFixed(1)} GB</span>` +
+          `<span class="gpu-pct${pct >= 90 ? " hot" : ""}">${pct}%</span></span>`;
       }
-      if (g.temperature_c != null) bits.push(`${g.temperature_c.toFixed(0)} °C`);
+      let temp = "";
+      if (g.temperature_c != null) {
+        temp =
+          `<span class="gpu-stat"><span class="gpu-lbl">Temp</span>` +
+          `<span class="gpu-val">${g.temperature_c.toFixed(0)} °C</span></span>`;
+      }
+      let power = "";
       if (g.power_w != null) {
-        bits.push(`${g.power_w.toFixed(0)} W${g.power_limit_w ? ` / ${g.power_limit_w.toFixed(0)}` : ""}`);
+        power =
+          `<span class="gpu-stat"><span class="gpu-lbl">Power</span>` +
+          `<span class="gpu-val">${g.power_w.toFixed(0)}${g.power_limit_w ? ` / ${g.power_limit_w.toFixed(0)}` : ""} W</span></span>`;
       }
-      els.detail.textContent = bits.join(" · ");
+      const row1 = vram ? `<div class="gpu-row">${vram}</div>` : "";
+      const row2 = temp || power ? `<div class="gpu-row">${temp}${power}</div>` : "";
+      els.foot.innerHTML = row1 + row2;
     }
-  }
-
-  /* ------------------------------ per-core bars --------------------------- */
-
-  function updateCores(cores) {
-    const wrap = $("cpu-cores");
-    if (!wrap) return;
-    if (wrap.childElementCount !== cores.length) {
-      wrap.innerHTML = "";
-      for (let i = 0; i < cores.length; i++) {
-        const bar = document.createElement("div");
-        bar.className = "core-bar";
-        bar.title = `core ${i}`;
-        wrap.appendChild(bar);
-      }
-    }
-    cores.forEach((v, i) => {
-      const bar = wrap.children[i];
-      if (bar) bar.style.height = `${Math.max(4, Math.min(100, v))}%`;
-    });
   }
 
   /* ------------------------------ slots ----------------------------------- */
@@ -209,7 +203,6 @@ const Metrics = (() => {
     push(hist.ram, ram.percent);
     drawSpark($("cpu-spark"), hist.cpu, { max: 100 });
     drawSpark($("ram-spark"), hist.ram, { max: 100 });
-    updateCores(cpu.per_core || []);
 
     const cpuTotal = $("cpu-total");
     const ramValue = $("ram-value");

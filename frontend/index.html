@@ -88,22 +88,21 @@
         </section>
 
         <section class="metrics-grid" id="metrics-grid">
-          <div class="card metric-card">
+          <div class="card metric-card metric-card--graph">
             <div class="card-head">
               <h2>CPU</h2>
               <span id="cpu-total" class="metric-value">—</span>
             </div>
-            <canvas id="cpu-spark" class="spark"></canvas>
-            <div id="cpu-cores" class="core-bars"></div>
+            <canvas id="cpu-spark" class="spark spark-fill"></canvas>
           </div>
 
-          <div class="card metric-card">
+          <div class="card metric-card metric-card--graph">
             <div class="card-head">
               <h2>RAM</h2>
               <span id="ram-value" class="metric-value">—</span>
             </div>
-            <canvas id="ram-spark" class="spark"></canvas>
-            <div id="ram-detail" class="muted small"></div>
+            <canvas id="ram-spark" class="spark spark-fill"></canvas>
+            <div class="metric-foot"><span id="ram-detail" class="metric-foot-val"></span></div>
           </div>
 
           <div id="gpu-cards" class="gpu-cards"></div>

@@ -384,7 +384,7 @@ details[open] .card-summary { margin-bottom: 8px; }
 .log {
   flex: 1;
   margin: 0;
-  padding: 14px;
+  padding: 10px 12px;
   min-height: 220px;
   max-height: 52vh;
   overflow-y: auto;
@@ -402,7 +402,14 @@ details[open] .card-summary { margin-bottom: 8px; }
 .log .panel-line { color: #4de2a8; }
 
 .log-card.collapsed .log { display: none; }
-.log-card.collapsed { min-height: 0; }
+.log-card.collapsed { min-height: 0; justify-content: center; padding-top: 10px; padding-bottom: 10px; }
+.log-card.collapsed .card-head { margin-bottom: 0; }
+.log-card .card-head { margin-bottom: 8px; }
+
+/* server card: keep the preset picker on a single line (the select must not
+   stretch to 100% width and wrap the label above it) */
+#page-dashboard .card .card-head .row { flex-wrap: nowrap; }
+#page-dashboard .card .card-head .row select { width: auto; min-width: 170px; }
 
 /* launch-command preview: keep it off the button */
 #flag-preview { margin-top: 12px; }
@@ -430,7 +437,13 @@ select option { background: #1a1a1a; color: var(--text); }
 
 .gpu-cards { display: contents; }
 
-.metric-card { padding: 14px 16px; }
+.metric-card { padding: 14px 16px; display: flex; flex-direction: column; }
+
+/* resource cards (CPU/RAM/GPU): name + % on top, the graph fills the card
+   down to the bottom edge, optional detail row at the bottom */
+.metric-card--graph { min-height: 180px; }
+.metric-card--graph .card-head { margin-bottom: 6px; }
+.spark-fill { flex: 1 1 auto; min-height: 72px; margin: 2px 0 0; }
 
 .metric-value {
   font-size: 19px;
@@ -442,12 +455,33 @@ select option { background: #1a1a1a; color: var(--text); }
 
 .metric-value.err { color: var(--err); }
 
-.metric-big {
+/* bottom detail row of graph cards (RAM GB, GPU VRAM/temp/power) */
+.metric-foot {
+  margin-top: 8px;
+  min-height: 22px;
   display: flex;
-  align-items: baseline;
-  gap: 8px;
-  margin-bottom: 4px;
+  align-items: center;
+  gap: 6px 14px;
+  flex-wrap: wrap;
 }
+.metric-foot-val {
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+/* GPU detail chips: VRAM / temp / power */
+.gpu-foot { flex-direction: column; align-items: flex-start; gap: 4px; }
+.gpu-row { display: flex; align-items: baseline; gap: 14px; }
+.gpu-stat { display: inline-flex; align-items: baseline; gap: 6px; }
+.gpu-lbl { font-size: 10.5px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; color: var(--muted); }
+.gpu-val { font-family: var(--mono); font-size: 13px; font-variant-numeric: tabular-nums; color: var(--text); }
+.gpu-pct { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.gpu-pct.hot { color: var(--warn); }
+.gpu-id { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.gpu-id .gpu-name { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .spark {
   display: block;
@@ -458,23 +492,6 @@ select option { background: #1a1a1a; color: var(--text); }
 
 .spark-small { height: 26px; margin: 4px 0; }
 
-.metric-detail { margin-top: 2px; min-height: 16px; }
-
-.core-bars {
-  display: flex;
-  align-items: flex-end;
-  gap: 3px;
-  height: 34px;
-  padding-top: 4px;
-}
-
-.core-bar {
-  flex: 1;
-  min-height: 2px;
-  background: rgba(246, 94, 0, 0.65);
-  border-radius: 2px 2px 0 0;
-  transition: height 0.4s ease;
-}
 
 .infer-grid {
   display: grid;
