@@ -24,7 +24,9 @@ import pystray
 import uvicorn
 from PIL import Image, ImageDraw
 
-from backend.config import DATA_DIR, AppConfig, load_config, no_window_kwargs
+from backend.config import (
+    DATA_DIR, AppConfig, load_config, no_window_kwargs, onefile_relaunch_env
+)
 from backend.main import create_app, set_restart_hook
 
 # Named for the historical exe (llama-monitor-tray.exe); the exe was renamed
@@ -246,7 +248,7 @@ def _restart_app(deferred: bool = False) -> None:
 
     deferred=False: spawn the relaunched launcher (direct update — it
     retries the single-instance mutex and waits for this panel to release
-    its port). deferred=True: the update-bootstrap bat performs the merge
+    its port). deferred=True: the update-bootstrap ps1 performs the merge
     AFTER this process exits and relaunches the app itself — spawn nothing,
     just shut down (the llama-server child is stopped by the panel's clean
     shutdown (lifespan) before this process exits either way).
@@ -266,6 +268,10 @@ def _restart_app(deferred: bool = False) -> None:
         kwargs = dict(no_window_kwargs())
         if os.name == "nt":
             kwargs["creationflags"] = kwargs.get("creationflags", 0) | subprocess.DETACHED_PROCESS
+        # The frozen app's env carries onefile _PYI_* role vars — a fresh
+        # copy of the exe must start as a top-level launcher (see
+        # onefile_relaunch_env()).
+        kwargs["env"] = onefile_relaunch_env()
         subprocess.Popen(cmd, **kwargs)
     except Exception:
         log.exception("update: failed to spawn the relaunch process — staying up")

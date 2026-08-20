@@ -252,6 +252,24 @@ def no_window_kwargs() -> dict:
     return {}
 
 
+def onefile_relaunch_env() -> dict[str, str]:
+    """Environment for (re)launching the frozen onefile exe.
+
+    PyInstaller >= 6.22 infers the onefile role (launcher vs application
+    child) purely from the inherited ``_PYI_*`` variables and validates
+    that a child's parent process is the same executable — so a running
+    frozen app must never pass its own environment to a fresh copy of
+    itself, or the new instance dies with "Security validation failure:
+    parent process has different executable!". Strip the ``_PYI_*``
+    variables and set the documented PYINSTALLER_RESET_ENVIRONMENT escape
+    hatch (unconditional environment reset in the bootloader).
+    """
+    env = {k: v for k, v in os.environ.items() if not k.startswith("_PYI_")}
+    if getattr(sys, "frozen", False):
+        env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+    return env
+
+
 def load_config() -> AppConfig:
     """Load config.json, seeding it from the example file on first run."""
     if not CONFIG_PATH.exists():

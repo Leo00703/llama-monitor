@@ -18,7 +18,7 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
-from .config import DATA_DIR, no_window_kwargs
+from .config import DATA_DIR, no_window_kwargs, onefile_relaunch_env
 
 log = logging.getLogger("llama-monitor")
 
@@ -269,6 +269,12 @@ def _write_bootstrap_ps1(
         "  'RESULT:ok' | Out-File -LiteralPath $result -Append -Encoding utf8\r\n"
         "  \"SHA:$sha\" | Out-File -LiteralPath $result -Append -Encoding utf8\r\n"
         "}\r\n"
+        "# The old app's env carries PyInstaller onefile role vars (_PYI_*);\r\n"
+        "# PyInstaller >= 6.22 would treat the relaunched exe as a spoofed\r\n"
+        "# onefile child and refuse to start (security validation). Strip\r\n"
+        "# them and force the documented environment reset.\r\n"
+        "Remove-Item Env:_PYI_* -ErrorAction SilentlyContinue\r\n"
+        "$env:PYINSTALLER_RESET_ENVIRONMENT = '1'\r\n"
         "try { Start-Process -FilePath $app } catch {}\r\n"
         "Remove-Item -LiteralPath $PSCommandPath -ErrorAction SilentlyContinue\r\n"
     )
@@ -290,6 +296,9 @@ def _start_deferred(
         # (verified: no script execution, rc 0, no output).
         kwargs["creationflags"] = kwargs.get("creationflags", 0) | subprocess.CREATE_NEW_PROCESS_GROUP
     kwargs.update(close_fds=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # Never hand the frozen app's environment (which carries the onefile
+    # _PYI_* role vars) to the helper — see onefile_relaunch_env().
+    kwargs["env"] = onefile_relaunch_env()
     try:
         subprocess.Popen(
             ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
