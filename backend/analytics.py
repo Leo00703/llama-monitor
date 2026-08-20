@@ -210,7 +210,11 @@ class LiveLogStats:
 
 
 class PowerSampler:
-    """Ring buffer of (ts, total_power_w) samples; estimates Wh over a window."""
+    """Ring buffer of (ts, total_power_w) samples; estimates Wh over a window.
+
+    ``max_samples`` must cover the longest window callers can query — if a
+    window is older than the ring, only its tail is sampled and the estimate
+    is wrong (main.py sizes the ring to its 1-day clamp)."""
 
     def __init__(self, max_samples: int = 3600) -> None:
         self._samples: deque[tuple[float, float]] = deque(maxlen=max_samples)

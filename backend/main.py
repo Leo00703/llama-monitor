@@ -198,7 +198,10 @@ def create_app() -> FastAPI:
     store = PresetStore(PRESETS_DIR)
     collector = MetricsCollector()
     analytics = AnalyticsStore(DATA_DIR / "analytics.db")
-    power = PowerSampler()
+    # the per-request energy window is clamped to 1 day (see _complete_request)
+    # — the ring must hold at least that many samples or long requests lose
+    # their head (the high-power prompt phase) and the estimate under-counts
+    power = PowerSampler(max_samples=int(86400 / METRICS_INTERVAL) + 60)
 
     def _model_for_request() -> str:
         """Best-effort model name for the currently launched server."""
