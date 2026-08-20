@@ -24,6 +24,17 @@ LOG_BUFFER_SIZE = 4000
 STOP_TIMEOUT = 10.0
 KILL_TIMEOUT = 5.0
 
+# When set (update relaunch handoff), panel exit leaves the llama-server
+# child running: the relaunched panel adopts it as an external server, so
+# an in-flight inference survives the update and the old process exits
+# without the stop-timeout waits.
+_linger_server = False
+
+
+def set_linger_server(linger: bool = True) -> None:
+    global _linger_server
+    _linger_server = linger
+
 
 class ServerState(str, Enum):
     STOPPED = "stopped"
@@ -69,6 +80,12 @@ class LlamaServerManager:
 
     async def shutdown(self) -> None:
         if self._proc is not None and self._proc.returncode is None:
+            if _linger_server:
+                log.info(
+                    "panel exit: leaving llama-server running (pid %s) — the relaunched panel adopts it",
+                    self._proc.pid,
+                )
+                return
             await self.stop()
 
     # ------------------------------------------------------------------

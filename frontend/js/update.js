@@ -8,9 +8,16 @@ const Update = (() => {
   let dismissedSha = "";
   let busy = false;
 
+  // Restart chain on the panel host (old process exit → bootstrap merge →
+  // relaunch, where the onefile exe re-extracts its bundle, antivirus
+  // included) can take a few minutes — budget accordingly.
+  const RESTART_TIMEOUT_MS = 300000;
+  const SLOW_HINT_AFTER_S = 45;
+
   const toast = () => document.getElementById("update-toast");
   const btn = () => document.getElementById("update-toast-apply");
   const overlay = () => document.getElementById("update-overlay");
+  const statusEl = () => document.getElementById("update-modal-status");
 
   function openModal({ title, status, spinner = true, error = false, closable = false }) {
     document.getElementById("update-modal-title").textContent = title;
@@ -29,7 +36,21 @@ const Update = (() => {
   }
 
   async function healthUp() {
-    try { await API.get("/api/health"); return true; } catch (_) { return false; }
+    // Bounded probe: a hung TCP connection (e.g. a firewall dropping
+    // packets to the dead port) must not eat the restart wait budget.
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 4000);
+    try {
+      await fetch("/api/health", {
+        signal: ctrl.signal,
+        headers: { Accept: "application/json" },
+      });
+      return true;
+    } catch (_) {
+      return false;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   function fill(data) {
@@ -66,7 +87,7 @@ const Update = (() => {
     }
   }
 
-  async function waitPanelBack(timeoutMs = 120000) {
+  async function waitPanelBack(timeoutMs = RESTART_TIMEOUT_MS, onTick = null) {
     // The old panel dies (port closes) before the new one binds: wait for
     // the up → down → up transition.
     const t0 = Date.now();
@@ -74,6 +95,7 @@ const Update = (() => {
     while (Date.now() - t0 < timeoutMs) {
       await sleep(1000);
       const now = await healthUp();
+      if (onTick) onTick(Math.floor((Date.now() - t0) / 1000));
       if (up && now) continue; // still the old panel
       if (!up && !now) continue; // gap: new panel not up yet
       up = now;
@@ -104,8 +126,17 @@ const Update = (() => {
       openModal({ title: "Update pulled", status: resp.note || "restart the panel to finish the update", spinner: false, closable: true });
       return;
     }
-    openModal({ title: "Updating llama-monitor…", status: "Restarting the panel — it reopens automatically" });
-    const ok = await waitPanelBack();
+    openModal({
+      title: "Updating llama-monitor…",
+      status: "Restarting the panel — it reopens automatically",
+      closable: true, // first launch after an update can be slow — allow bail-out
+    });
+    const ok = await waitPanelBack(RESTART_TIMEOUT_MS, (s) => {
+      const base = `Restarting the panel — it reopens automatically · ${s}s`;
+      statusEl().textContent = s > SLOW_HINT_AFTER_S
+        ? `${base} — first launch after an update is slow (the panel re-extracts its bundle); keep waiting`
+        : base;
+    });
     if (ok) location.reload();
     else {
       busy = false;

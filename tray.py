@@ -28,6 +28,7 @@ from backend.config import (
     DATA_DIR, AppConfig, load_config, no_window_kwargs, onefile_relaunch_env
 )
 from backend.main import create_app, set_restart_hook
+from backend.process import set_linger_server
 
 # Named for the historical exe (llama-monitor-tray.exe); the exe was renamed
 # to llama-monitor.exe but the name is kept so old + new builds still count
@@ -262,9 +263,12 @@ def _restart_app(deferred: bool = False) -> None:
     retries the single-instance mutex and waits for this panel to release
     its port). deferred=True: the update-bootstrap ps1 performs the merge
     AFTER this process exits and relaunches the app itself — spawn nothing,
-    just shut down (the llama-server child is stopped by the panel's clean
-    shutdown (lifespan) before this process exits either way).
+    just shut down. In both cases the llama-server child is left running
+    (set_linger_server): the relaunched panel adopts it as an external
+    server, so an in-flight inference survives the update and this process
+    exits without the stop-timeout waits.
     """
+    set_linger_server()
     if deferred:
         log.info("update: deferred bootstrap relaunch — exiting without spawning")
         _stop.set()
