@@ -211,17 +211,37 @@ To stay focused on the current work:
   refuses a dirty tree or local divergence (never rewrites local work).
   "Dirty" = changed TRACKED files only (`_dirty_lines()`), the same in
   `check()` and `apply_update()` — untracked strays can't block a ff-only
-  merge, and the error/status list the offending paths (a classic trigger:
-  the bundled exe left half-replaced by a pull while the tray app held it
-  open).
+  merge, and the error/status list the offending paths.
+  **Frozen on Windows the merge is DEFERRED**: a running exe is locked by
+  Windows, so `git merge` could never replace `llama-monitor.exe` in-process
+  (and every CI refresh ships a new exe). `apply_update()` then fetches,
+  writes `<data-dir>/update-bootstrap.ps1` and launches it detached; the
+  helper waits for the old PID to die (`Get-Process -Id`), merges, and
+  relaunches the app itself (success OR failure — the user always gets a
+  running panel). The restart hook is called with `deferred=True` and must
+  NOT spawn `--restarting` (the helper is the relauncher). The outcome lands
+  in `<data-dir>/update-result.txt` (`pending`, git output, `RESULT:ok` +
+  `SHA:` or `RESULT:fail`; no RESULT line = interrupted) and is consumed
+  one-shot at next startup via `/api/update/result` → toast. Read it with
+  `utf-8-sig` (PowerShell 5.1 `-Encoding utf8` writes a BOM). Dev mode and
+  Linux keep the direct in-process merge.
   Restart handoff: `tray.py` registers `set_restart_hook(_restart_app)` in
-  `backend.main`; the hook spawns the launcher with `--restarting` (new
-  process retries the single-instance mutex + waits for the old panel's
-  port) and then quits via the normal clean path (lifespan stops
-  llama-server). Dev/uvicorn mode has no hook: the pull succeeds, the
+  `backend.main`; direct updates: the hook spawns the launcher with
+  `--restarting` (new process retries the single-instance mutex + waits for
+  the old panel's port) and then quits via the normal clean path (lifespan
+  stops llama-server). Dev/uvicorn mode has no hook: the pull succeeds, the
   restart is reported as manual. Version of the running app: frozen builds
   read `_MEIPASS/backend/_buildinfo.json` (CI bakes `GITHUB_SHA`); dev
   reports live `git HEAD`.
+- **Detached helper processes on Windows**: `tasklist`/`timeout` silently
+  kill a console-less detached `cmd /c` (empirically) — use a PowerShell
+  script instead (`powershell -NoProfile -ExecutionPolicy Bypass -File
+  x.ps1`); `Get-Process`, `Start-Sleep`, `git`, `Start-Process` all work
+  detached. `DETACHED_PROCESS` (0x8) makes powershell.exe die at startup
+  with rc 0 and no output — launch with `CREATE_NO_WINDOW |
+  CREATE_NEW_PROCESS_GROUP` + devnull stdout/stderr only. `Start-Process`
+  takes `-FilePath` (there is no `-LiteralPath`). PID 0 is the system idle
+  process (always alive) — never use it as a "dead PID" in tests.
 - **Update-checker thread**: `create_app()`'s lifespan starts a daemon
   thread (`_update_loop`) that polls `update_check_minutes` (live config,
   0 = off) and broadcasts `update.available` over WS via
