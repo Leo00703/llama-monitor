@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import subprocess
 import sys
 import threading
@@ -17,13 +18,14 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
-from .config import no_window_kwargs
+from .config import DATA_DIR, no_window_kwargs
 
 log = logging.getLogger("llama-monitor")
 
 CHECK_TTL = 60.0        # seconds; /api/update/check reuses results within this
 FETCH_TIMEOUT = 300.0   # updates download the bundled exe (~25MB) on slow lines
 MAX_COMMITS = 10        # commit subjects surfaced to the UI
+BOOTSTRAP_WAIT_SECONDS = 90  # max wait for the old process to exit (helper)
 
 _lock = threading.Lock()
 _cache: dict[str, Any] = {"ts": 0.0, "data": None}
@@ -216,11 +218,148 @@ def _invalidate() -> None:
         _cache["data"] = None
 
 
+# ---------------------------------------------------------------------------
+# Deferred update (frozen Windows): the bootstrap helper
+#
+# Windows locks a running exe, so `git merge` cannot replace
+# llama-monitor.exe while this process is alive — and every CI refresh
+# commit ships a new exe. The merge therefore runs in a helper that is NOT
+# the app: this process stages it (fetch + PowerShell script below), exits,
+# and the helper waits for the PID to die, merges, and relaunches the app
+# (success or failure, so the user always gets a running panel + a result
+# toast). PowerShell (not .bat): `tasklist`/`timeout` silently die in a
+# detached console-less process, while PowerShell and git work fine there.
+# ---------------------------------------------------------------------------
+
+
+def _result_path() -> Path:
+    return DATA_DIR / "update-result.txt"
+
+
+def _ps_str(value: str) -> str:
+    """Quote a value for a double-quoted PowerShell string literal."""
+    return value.replace('"', '`"').replace("$", "`$")
+
+
+def _write_bootstrap_ps1(
+    root: Path, app_path: Path, old_pid: int, result_path: Path, ref: str
+) -> Path:
+    """Write the update bootstrap script (run detached by _start_deferred)."""
+    ps = (
+        "$ErrorActionPreference = 'Continue'\r\n"
+        f"$oldPid = {old_pid}\r\n"
+        f"$repo = \"{_ps_str(str(root))}\"\r\n"
+        f"$app = \"{_ps_str(str(app_path))}\"\r\n"
+        f"$result = \"{_ps_str(str(result_path))}\"\r\n"
+        f"$ref = \"{_ps_str(ref)}\"\r\n"
+        f"$waitMax = {BOOTSTRAP_WAIT_SECONDS}\r\n"
+        "while ($waitMax -gt 0) {\r\n"
+        "  $p = Get-Process -Id $oldPid -ErrorAction SilentlyContinue\r\n"
+        "  if (-not $p) { break }\r\n"
+        "  $waitMax -= 1\r\n"
+        "  Start-Sleep -Seconds 1\r\n"
+        "}\r\n"
+        "'pending' | Set-Content -LiteralPath $result -Encoding utf8\r\n"
+        "$gitOut = & git -C $repo merge --ff-only $ref 2>&1\r\n"
+        "$gitOut | Out-File -LiteralPath $result -Append -Encoding utf8\r\n"
+        "if ($LASTEXITCODE -ne 0) {\r\n"
+        "  'RESULT:fail' | Out-File -LiteralPath $result -Append -Encoding utf8\r\n"
+        "} else {\r\n"
+        "  $sha = & git -C $repo rev-parse --short HEAD 2>$null\r\n"
+        "  'RESULT:ok' | Out-File -LiteralPath $result -Append -Encoding utf8\r\n"
+        "  \"SHA:$sha\" | Out-File -LiteralPath $result -Append -Encoding utf8\r\n"
+        "}\r\n"
+        "try { Start-Process -FilePath $app } catch {}\r\n"
+        "Remove-Item -LiteralPath $PSCommandPath -ErrorAction SilentlyContinue\r\n"
+    )
+    ps_path = DATA_DIR / "update-bootstrap.ps1"
+    ps_path.write_text(ps, encoding="ascii")
+    return ps_path
+
+
+def _start_deferred(
+    root: Path, ref: str, app_path: Path, old_pid: int
+) -> dict[str, Any]:
+    """Stage the bootstrap helper and launch it detached; caller must exit."""
+    result_path = _result_path()
+    ps_path = _write_bootstrap_ps1(root, app_path, old_pid, result_path, ref)
+    kwargs = dict(no_window_kwargs())
+    if os.name == "nt":
+        # NO_WINDOW + NEW_PROCESS_GROUP, NOT DETACHED_PROCESS: empirically a
+        # powershell launched DETACHED dies silently at startup on Windows
+        # (verified: no script execution, rc 0, no output).
+        kwargs["creationflags"] = kwargs.get("creationflags", 0) | subprocess.CREATE_NEW_PROCESS_GROUP
+    kwargs.update(close_fds=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        subprocess.Popen(
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
+             "-File", str(ps_path)],
+            **kwargs,
+        )
+    except OSError as exc:
+        return {"ok": False, "error": f"failed to start the update helper: {exc}"}
+    log.info("update: deferred bootstrap started (%s, old pid %s)", ps_path, old_pid)
+    return {"ok": True, "ref": ref, "deferred": True}
+
+
+def consume_update_result() -> Optional[dict[str, Any]]:
+    """One-shot outcome of a deferred bootstrap update, if pending.
+
+    The helper writes ``<data-dir>/update-result.txt`` (``pending``, the git
+    output, then ``RESULT:ok`` + ``SHA:`` or ``RESULT:fail``); this reads and
+    deletes it. Returns ``None`` when there is nothing to report.
+    """
+    path = _result_path()
+    try:
+        if not path.exists():
+            return None
+        # utf-8-sig: PowerShell 5.1 writes a UTF-8 BOM with -Encoding utf8
+        text = path.read_text(encoding="utf-8-sig", errors="replace")
+    except OSError:
+        return None
+    try:
+        path.unlink()
+    except OSError:
+        pass
+    ok: Optional[bool] = None
+    sha = ""
+    git_lines: list[str] = []
+    for line in text.splitlines():
+        s = line.strip()
+        if s.startswith("RESULT:ok"):
+            ok = True
+        elif s.startswith("RESULT:fail"):
+            ok = False
+        elif s.startswith("SHA:"):
+            sha = s[4:].strip()
+        elif s and s != "pending":
+            git_lines.append(s)
+    if ok is None:
+        return {
+            "ok": False,
+            "error": "the update was interrupted before it finished — check "
+                     "`git status` in the repo folder and run `git pull` manually",
+        }
+    if ok:
+        return {"ok": True, "sha": sha}
+    err = next(
+        (
+            l
+            for l in git_lines
+            if l.startswith("fatal") or "error" in l.lower()
+        ),
+        git_lines[-1] if git_lines else "git merge failed",
+    )
+    return {"ok": False, "error": err[:300]}
+
+
 def apply_update() -> dict[str, Any]:
     """Fast-forward pull of the remote default branch.
 
     Refuses a dirty tree or local divergence — the update never rewrites or
-    discards local work.
+    discards local work. Frozen on Windows the merge is deferred to the
+    bootstrap helper (the running exe is locked by Windows until this
+    process exits; the helper merges and relaunches the app).
     """
     root = repo_root()
     if not _is_worktree(root):
@@ -241,6 +380,11 @@ def apply_update() -> dict[str, Any]:
     rc, ahead, _ = _git(root, "rev-list", "--count", f"{ref}..HEAD")
     if rc == 0 and ahead.isdigit() and int(ahead) > 0:
         return {"ok": False, "error": "local commits are ahead of the remote — push them first"}
+    # Frozen on Windows: the running exe is locked by Windows, so the merge
+    # must run in the bootstrap helper AFTER this process exits (it
+    # relaunches the app itself — the restart hook must not spawn anything).
+    if _frozen() and os.name == "nt":
+        return _start_deferred(root, ref, Path(sys.executable), os.getpid())
     rc, out, err = _git(root, "merge", "--ff-only", ref, "--quiet", timeout=180.0)
     if rc != 0:
         return {"ok": False, "error": f"git merge failed: {err or out or 'unknown error'}"}

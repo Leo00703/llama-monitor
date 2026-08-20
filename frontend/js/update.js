@@ -121,6 +121,17 @@ const Update = (() => {
     btn().addEventListener("click", apply);
     document.getElementById("update-modal-close").addEventListener("click", closeModal);
     check(false); // initial check on load
+    // Surface the outcome of a deferred update from the previous launch:
+    // the bootstrap bat merged the repo after the old panel exited and
+    // relaunched this instance, and left its result in update-result.txt.
+    API.get("/api/update/result")
+      .then((r) => {
+        const res = r && r.result;
+        if (!res) return;
+        if (res.ok) UI.toast(`panel updated to ${res.sha || "the latest version"} — you're running the new build`, "ok");
+        else UI.toast(`update failed: ${res.error}`, "err");
+      })
+      .catch(() => {});
   }
 
   return { init, check, apply, maybeShow };

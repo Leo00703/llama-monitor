@@ -41,11 +41,13 @@ METRICS_INTERVAL = 1.5
 
 # Set by the tray launcher (set_restart_hook) to relaunch the app after an
 # update is pulled. None in dev/uvicorn mode: the pull still works, the
-# restart is reported as manual.
-RESTART_HOOK: Optional[Callable[[], None]] = None
+# restart is reported as manual. Called with deferred=True when the
+# bootstrap bat (not the hook) performs the relaunch — the hook must then
+# only shut the process down.
+RESTART_HOOK: Optional[Callable[..., None]] = None
 
 
-def set_restart_hook(hook: Optional[Callable[[], None]]) -> None:
+def set_restart_hook(hook: Optional[Callable[..., None]]) -> None:
     global RESTART_HOOK
     RESTART_HOOK = hook
 
@@ -614,15 +616,26 @@ def create_app() -> FastAPI:
                 **res, "restarting": False,
                 "note": "update pulled — restart the dev server manually",
             }
-        # The hook spawns the relaunched launcher and shuts this process
-        # down; the response can be lost in that race, so the frontend
-        # recovers by polling /api/health and reloading.
+        # The hook spawns the relaunched launcher (direct update) or only
+        # shuts this process down (deferred: the bootstrap helper merges
+        # after exit and relaunches the app itself). Either way the response
+        # can be lost in the shutdown race, so the frontend recovers by
+        # polling /api/health and reloading.
         try:
-            RESTART_HOOK()
+            if res.get("deferred"):
+                RESTART_HOOK(deferred=True)
+            else:
+                RESTART_HOOK()
         except Exception:
             log.exception("restart hook failed")
             return {"ok": False, "error": "restart failed — try again"}
         return {**res, "restarting": True}
+
+    @app.get("/api/update/result")
+    async def update_result() -> dict:
+        # One-shot outcome of a deferred update from the previous launch
+        # (None when there is nothing to report).
+        return {"result": await asyncio.to_thread(app_update.consume_update_result)}
 
     # ------------------------------------------------------------------
     # WebSockets

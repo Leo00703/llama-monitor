@@ -241,13 +241,22 @@ def _message_box(title: str, text: str) -> None:
     ctypes.windll.user32.MessageBoxW(0, text, title, 0x10)
 
 
-def _restart_app() -> None:
-    """Relaunch this launcher and quit cleanly (update handoff).
+def _restart_app(deferred: bool = False) -> None:
+    """Quit cleanly after an update (the relaunch handoff).
 
-    The new process retries the single-instance mutex and waits for this
-    panel to release its port. The llama-server child is stopped by the
-    panel's clean shutdown (lifespan) before this process exits.
+    deferred=False: spawn the relaunched launcher (direct update — it
+    retries the single-instance mutex and waits for this panel to release
+    its port). deferred=True: the update-bootstrap bat performs the merge
+    AFTER this process exits and relaunches the app itself — spawn nothing,
+    just shut down (the llama-server child is stopped by the panel's clean
+    shutdown (lifespan) before this process exits either way).
     """
+    if deferred:
+        log.info("update: deferred bootstrap relaunch — exiting without spawning")
+        _stop.set()
+        if _icon is not None:
+            _icon.stop()
+        return
     log.info("update: relaunching the launcher")
     try:
         if getattr(sys, "frozen", False):
