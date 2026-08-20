@@ -175,6 +175,20 @@ To stay focused on the current work:
   `uvicorn.protocols.websockets.auto`, `uvicorn.protocols.websockets.wsproto_impl`,
   `uvicorn.protocols.websockets.websockets_impl`, `websockets`, `wsproto`,
   `six`, `pystray._win32`).
+- **PyInstaller ≥ 6.22 onefile relaunch = environment poisoning**: an onefile
+  exe determines its process role *solely* from inherited env vars
+  (`_PYI_ARCHIVE_FILE`, `_PYI_PARENT_PROCESS_LEVEL`, `_PYI_APPLICATION_HOME_DIR`).
+  A relaunched exe (e.g. the updater's bootstrap `Start-Process`, or
+  `tray.py`'s `Popen([sys.executable, ...])`) inherits the running app's
+  `_PYI_*` vars, takes the CHILD path, and 6.22+ then validates that the
+  parent process runs the same executable — parent is powershell.exe, so it
+  dies with the modal "Security validation failure: parent process has
+  different executable!" dialog (issue #11). Fix: every relaunch point must
+  use `onefile_relaunch_env()` (config.py) — environment minus all `_PYI_*`
+  plus the documented `PYINSTALLER_RESET_ENVIRONMENT=1` escape hatch (the
+  generated bootstrap ps1 repeats both before `Start-Process` as
+  defense-in-depth). Do NOT "fix" by pinning PyInstaller: the validation is
+  legitimate, the inherited role vars are the bug.
 - **Unsigned exes**: Smart App Control (enforce mode) blocks freshly built exes
   by hash; SmartScreen warns on any unsigned exe. Known environment caveat,
   not a code bug.
