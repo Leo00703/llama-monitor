@@ -36,7 +36,6 @@ llama-monitor: a lightweight web control panel for a local `llama-server`
 - `.github/workflows/build-exe.yml` — CI: smoke test + bake
   `backend/_buildinfo.json` (commit + date, gitignored) + PyInstaller +
   artifact upload + commit refreshed exe back to the repo root
-- `TODO.md` — local scratchpad, **gitignored, never committed**
 
 ## Commands
 
@@ -77,17 +76,34 @@ manual/ad-hoc (see Verification below).
 
 ## Working with the user (task tracking)
 
-- **Any bugfix, new feature, or change the user reports → immediately add it to
-  `TODO.md`** as a new item, even in the middle of other work.
-- **At every step: check `TODO.md` and update the state of the active task**
-  (`[ ]` todo / `[~]` in progress / `[x]` done) with short notes (progress,
-  decisions, verification results). Keep it organized at all times.
-- `TODO.md` is the session scratchpad: **read it at session start and after any
-  compaction, update it after each step**. Never commit it.
-- Work through TODO items **in order**; verify each item before moving to the next.
-- Verify before committing (see Verification). Ask when a requirement is ambiguous.
-- **Future: task tracking moves from `TODO.md` to GitHub Issues**; until then
-  `TODO.md` is the single source of truth for open work.
+- **Open work is tracked in GitHub Issues, not a local file.** The old
+  `TODO.md` local scratchpad is **retired** (still gitignored — do not
+  recreate or commit it).
+- **Any bugfix, new feature, or change the user reports → immediately create a
+  GitHub Issue**, even in the middle of other work.
+- **At session start (and after any compaction): `gh issue list` and work
+  through the open Issues in order** (lowest number first, unless the user
+  re-prioritizes). Verify each item before closing it.
+- **Close the Issue when done** with a short comment recording the outcome
+  (commit sha + verification). Add progress/decision notes as Issue comments
+  while working.
+- Verify before committing (see Verification). Ask when a requirement is
+  ambiguous.
+
+### GitHub Issues (`gh` CLI, authenticated as `Leo00703`)
+
+```bash
+gh issue list                                   # the open work queue
+gh issue list --json number,title,labels        # compact queue view
+gh issue view <n>                               # full body of one issue
+gh issue create --title "..." --body-file f.md --label bug   # new work item
+gh issue close <n> --comment "done: <sha> — verified ..."    # finish an item
+gh issue edit <n> --label enhancement           # relabel
+```
+
+Labels: `bug` (defect, incl. minor/edge-case findings) and `enhancement`
+(feature / optimization / cross-platform gap). The grouped "Backlog / future
+ideas" issue holds the out-of-scope plan §7 items.
 
 ## Context resilience (compaction)
 
@@ -95,16 +111,15 @@ This repo is developed by a **local model (Qwen 3.8 27B Q4_K_S, ~100k context)
 in opencode / pi**, where **conversations are compacted mid-work frequently**.
 To stay focused on the current work:
 
-- `AGENTS.md` (this file) + `TODO.md` are the durable memory. Keep both current:
-  this file holds the stable rules/conventions/gotchas (update it when any of
-  those change), `TODO.md` holds the volatile work state.
-- **Re-read `TODO.md` (and this file) at the start of a turn or right after a
-  compaction, before acting.** The "Next up" section is the map of the current
-  work: in-progress item first (state, what is verified, what is pending),
-  then pending items in order.
-- After finishing an item: mark `[x]` in `TODO.md` with the outcome, commit +
-  push, then update this file if anything permanent changed (new command,
-  module, convention, or gotcha).
+- `AGENTS.md` (this file) + **the open GitHub Issues** are the durable
+  memory. This file holds the stable rules/conventions/gotchas (update it
+  when any of those change); the open Issues hold the volatile work queue.
+- **Re-read this file and `gh issue list` at the start of a turn or right
+  after a compaction, before acting.** The open Issues (lowest number first)
+  are the map of the current work.
+- After finishing an item: commit + push, close the Issue with a short
+  outcome comment (sha + verification), then update this file if anything
+  permanent changed (new command, module, convention, or gotcha).
 
 ## Verification
 
