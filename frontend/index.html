@@ -88,54 +88,52 @@
         </section>
 
         <section class="metrics-grid" id="metrics-grid">
-          <div class="card metric-card metric-card--graph">
+          <div class="card metric-card metric-card--graph" id="cpu-card">
+            <canvas id="cpu-spark" class="spark spark-bleed"></canvas>
             <div class="card-head">
               <h2>CPU</h2>
               <span id="cpu-total" class="metric-value">—</span>
             </div>
-            <canvas id="cpu-spark" class="spark spark-fill"></canvas>
           </div>
 
-          <div class="card metric-card metric-card--graph">
+          <div class="card metric-card metric-card--graph" id="ram-card">
+            <canvas id="ram-spark" class="spark spark-bleed"></canvas>
             <div class="card-head">
               <h2>RAM</h2>
               <span id="ram-value" class="metric-value">—</span>
             </div>
-            <canvas id="ram-spark" class="spark spark-fill"></canvas>
             <div class="metric-foot"><span id="ram-detail" class="metric-foot-val"></span></div>
           </div>
 
           <div id="gpu-cards" class="gpu-cards"></div>
 
-          <div class="card metric-card">
+          <div class="card metric-card metric-card--infer">
             <div class="card-head">
-              <h2>Inference</h2>
-              <span id="infer-state" class="muted small">no server</span>
+              <div class="infer-title">
+                <h2>Inference</h2>
+                <span id="infer-state" class="muted small">no server</span>
+              </div>
+              <span class="infer-head-value">
+                <span id="gen-tps" class="metric-value">—</span><span class="infer-unit">tok/s</span>
+              </span>
             </div>
-            <div class="infer-grid">
-              <div class="infer-cell">
-                <span class="muted small">prompt tok/s</span>
-                <div class="infer-line">
-                  <span id="prompt-tps" class="metric-value">—</span>
-                  <canvas id="prompt-spark" class="spark spark-small"></canvas>
-                </div>
+            <div class="infer-chips">
+              <div class="infer-chip">
+                <span class="infer-chip-lbl">prompt tok/s</span>
+                <span id="prompt-tps" class="infer-chip-val">—</span>
               </div>
-              <div class="infer-cell">
-                <span class="muted small">generation tok/s</span>
-                <div class="infer-line">
-                  <span id="gen-tps" class="metric-value">—</span>
-                  <canvas id="gen-spark" class="spark spark-small"></canvas>
-                </div>
-              </div>
-              <div class="infer-cell" id="draft-cell" hidden>
-                <span class="muted small">draft acceptance</span>
-                <div class="infer-line">
-                  <span id="draft-rate" class="metric-value">—</span>
-                  <canvas id="draft-spark" class="spark spark-small"></canvas>
-                </div>
+              <div class="infer-chip" id="draft-cell" hidden>
+                <span class="infer-chip-lbl">draft acceptance</span>
+                <span id="draft-rate" class="infer-chip-val">—</span>
               </div>
             </div>
-            <div id="ctx-detail" class="muted small"></div>
+            <div class="ctx-block">
+              <div class="ctx-head">
+                <span class="ctx-lbl">context</span>
+                <span class="ctx-nums" id="ctx-detail">—</span>
+              </div>
+              <div class="ctx-track"><div class="ctx-fill" id="ctx-fill"></div></div>
+            </div>
             <div id="slot-list" class="slot-list"></div>
           </div>
         </section>

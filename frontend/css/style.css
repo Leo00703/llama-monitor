@@ -439,11 +439,17 @@ select option { background: #1a1a1a; color: var(--text); }
 
 .metric-card { padding: 14px 16px; display: flex; flex-direction: column; }
 
-/* resource cards (CPU/RAM/GPU): name + % on top, the graph fills the card
-   down to the bottom edge, optional detail row at the bottom */
-.metric-card--graph { min-height: 180px; }
-.metric-card--graph .card-head { margin-bottom: 6px; }
-.spark-fill { flex: 1 1 auto; min-height: 72px; margin: 2px 0 0; }
+/* resource cards (CPU/RAM/GPU): the canvas covers the whole card
+   edge-to-edge; the name/value head and the detail foot overlay it, and
+   the data is drawn from the bottom edge up to just below the head row
+   (see drawSpark topPad) */
+.metric-card.metric-card--graph { min-height: 180px; padding: 0; position: relative; overflow: hidden; }
+.metric-card--graph > .card-head {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  padding: 14px 16px 0;
+}
 
 .metric-value {
   font-size: 19px;
@@ -455,10 +461,16 @@ select option { background: #1a1a1a; color: var(--text); }
 
 .metric-value.err { color: var(--err); }
 
-/* bottom detail row of graph cards (RAM GB, GPU VRAM/temp/power) */
+/* bottom detail row of graph cards (RAM GB, GPU VRAM/temp/power):
+   overlaid on the bottom edge of the graph */
 .metric-foot {
-  margin-top: 8px;
-  min-height: 22px;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  padding: 8px 16px 12px;
+  background: rgba(13, 13, 13, 0.55);
   display: flex;
   align-items: center;
   gap: 6px 14px;
@@ -490,29 +502,89 @@ select option { background: #1a1a1a; color: var(--text); }
   margin: 8px 0;
 }
 
-.spark-small { height: 26px; margin: 4px 0; }
-
-
-.infer-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px 14px;
-  margin-top: 4px;
+/* full-bleed canvas: the whole card (used by .metric-card--graph).
+   Doubled class so the media-query .spark height rule can't override it. */
+.spark.spark-bleed {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
 }
 
-.infer-line {
+/* inference card: head value = generation tok/s, row 1 = prompt + draft
+   chips, main area = context usage bar (color shifts green → red with %) */
+.metric-card--infer { min-height: 180px; }
+
+.infer-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
+
+.infer-head-value { display: inline-flex; align-items: baseline; gap: 5px; }
+.infer-unit { font-size: 11px; color: var(--muted); }
+
+.infer-chips {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 4px 0 14px;
+}
+.infer-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 12px;
+  background: var(--panel-strong);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+.infer-chip-lbl {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.infer-chip-val {
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
 }
 
-.infer-line .metric-value { font-size: 16px; min-width: 46px; }
-/* min-width:0 lets the canvas shrink below its intrinsic (dpr-scaled) width */
-.infer-line .spark { flex: 1; min-width: 0; }
-
-#draft-cell { grid-column: 1 / -1; }
-
-.ctx-detail { margin-top: 8px; min-height: 16px; }
+.ctx-block { margin-top: 2px; }
+.ctx-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 7px;
+}
+.ctx-lbl {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.ctx-nums {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.ctx-track {
+  height: 16px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.ctx-fill {
+  height: 100%;
+  width: 0;
+  background: rgba(255, 255, 255, 0.22);
+  border-radius: 8px;
+  transition: width 0.5s ease, background-color 0.5s ease;
+}
 
 .slot-list {
   display: flex;
@@ -757,12 +829,10 @@ body.nav-locked { overflow: hidden; }
   .row input[type="number"] { flex: 1; width: auto; min-width: 0; }
   .chart { height: 170px; }
   .spark { height: 38px; }
-  .spark-small { height: 22px; }
   .log { font-size: 11.5px; max-height: 45vh; }
   .table-wrap { -webkit-overflow-scrolling: touch; }
   .table { min-width: 560px; }
   .model-bar-name { flex-basis: 104px; }
-  .infer-grid { grid-template-columns: 1fr; }
   .gen-panel { grid-template-columns: 1fr; gap: 12px; }
   .gen-saved { position: static; align-self: flex-end; margin-top: 2px; }
   .range-group { flex-wrap: wrap; border-radius: 12px; }

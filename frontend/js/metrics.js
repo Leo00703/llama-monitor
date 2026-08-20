@@ -4,7 +4,7 @@
 
 const Metrics = (() => {
   const HISTORY = 120;
-  const hist = { cpu: [], ram: [], prompt: [], gen: [], draft: [] };
+  const hist = { cpu: [], ram: [] };
   const gpuHist = {};
   const gpuEls = {};
   let lastGpuCount = -1;
@@ -61,7 +61,11 @@ const Metrics = (() => {
     const span = max || 1;
     const stepX = w / (HISTORY - 1);
     const x0 = w - (values.length - 1) * stepX;
-    const yOf = (v) => h - 1 - (Math.min(Math.max(v, 0), max) / span) * (h - 3);
+    // topPad: px reserved at the top of the canvas where data does not reach
+    // (full-bleed cards: the name/value head row overlays that space)
+    const topPad = opts.topPad || 0;
+    const areaH = Math.max(h - topPad - 3, 1);
+    const yOf = (v) => topPad + 1 + (1 - Math.min(Math.max(v, 0), max) / span) * areaH;
 
     for (const r of runs) {
       ctx.beginPath();
@@ -90,6 +94,13 @@ const Metrics = (() => {
 
   /* ------------------------------ GPU cards ------------------------------ */
 
+  // head-row height (+ gap) of a full-bleed card: the graph data stops
+  // just below the name/value row
+  function bleedTopPad(card) {
+    const head = card.querySelector(":scope > .card-head");
+    return (head ? head.clientHeight : 30) + 8;
+  }
+
   function buildGpuCards(gpus) {
     const wrap = $("gpu-cards");
     if (!wrap) return;
@@ -102,6 +113,7 @@ const Metrics = (() => {
       const card = document.createElement("div");
       card.className = "card metric-card metric-card--graph";
       card.innerHTML = `
+        <canvas class="spark spark-bleed"></canvas>
         <div class="card-head">
           <div class="gpu-id">
             <h2>GPU ${i}</h2>
@@ -109,11 +121,11 @@ const Metrics = (() => {
           </div>
           <span class="metric-value gpu-util">—</span>
         </div>
-        <canvas class="spark spark-fill"></canvas>
         <div class="metric-foot gpu-foot"></div>`;
       wrap.appendChild(card);
       gpuHist[i] = { util: [] };
       gpuEls[i] = {
+        card: card,
         name: card.querySelector(".gpu-name"),
         util: card.querySelector(".gpu-util"),
         spark: card.querySelector("canvas"),
@@ -133,7 +145,7 @@ const Metrics = (() => {
       const h = gpuHist[i];
       if (!els || !h) continue;
       push(h.util, g.util_percent);
-      drawSpark(els.spark, h.util, { max: 100 });
+      drawSpark(els.spark, h.util, { max: 100, topPad: bleedTopPad(els.card) });
       if (g.name) els.name.textContent = g.name;
       els.util.textContent = `${(g.util_percent ?? 0).toFixed(0)}%`;
 
@@ -165,29 +177,43 @@ const Metrics = (() => {
     }
   }
 
-  /* ------------------------------ slots ----------------------------------- */
+  /* ------------------------------ inference ------------------------------ */
 
-  function updateSlots(inf) {
+  // context bar color: green → yellow → orange → red as the % rises
+  function ctxColor(pct) {
+    const p = Math.min(100, Math.max(0, pct));
+    return `hsl(${Math.round(120 - 1.2 * p)}, 80%, 52%)`;
+  }
+
+  function updateInference(inf) {
     const list = $("slot-list");
-    const ctxDetail = $("ctx-detail");
-    if (!list || !ctxDetail) return;
+    const nums = $("ctx-detail");
+    const fill = $("ctx-fill");
+    if (!list || !nums || !fill) return;
     if (!inf || !inf.ok) {
       list.innerHTML = "";
-      ctxDetail.textContent = "";
+      nums.textContent = "—";
+      fill.style.width = "0%";
       return;
     }
-    ctxDetail.textContent = inf.ctx_total
-      ? `context: ${inf.ctx_used.toLocaleString()} / ${inf.ctx_total.toLocaleString()} tokens`
-      : "";
+    const pct = inf.ctx_total ? (inf.ctx_used / inf.ctx_total) * 100 : 0;
+    fill.style.width = `${pct.toFixed(1)}%`;
+    fill.style.background = ctxColor(pct);
+    nums.textContent = inf.ctx_total
+      ? `${inf.ctx_used.toLocaleString()} / ${inf.ctx_total.toLocaleString()} · ${pct.toFixed(0)}%`
+      : "—";
     list.innerHTML = "";
     for (const s of inf.slots) {
-      const pct = s.n_ctx ? Math.min(100, Math.round((s.used / s.n_ctx) * 100)) : 0;
+      const spct = s.n_ctx ? Math.min(100, (s.used / s.n_ctx) * 100) : 0;
       const row = document.createElement("div");
       row.className = "slot-item";
       row.innerHTML = `
         <span class="slot-id">slot ${s.id}${s.speculative ? " ·spec" : ""}</span>
-        <div class="slot-track"><div class="slot-fill${s.busy ? "" : " idle"}" style="width:${pct}%"></div></div>
+        <div class="slot-track"><div class="slot-fill${s.busy ? "" : " idle"}"></div></div>
         <span class="slot-nums">${s.busy ? `${s.used.toLocaleString()} / ${s.n_ctx.toLocaleString()}` : "idle"}</span>`;
+      const slotFill = row.querySelector(".slot-fill");
+      slotFill.style.width = `${spct.toFixed(1)}%`;
+      if (s.busy) slotFill.style.background = ctxColor(spct);
       list.appendChild(row);
     }
   }
@@ -201,8 +227,8 @@ const Metrics = (() => {
 
     push(hist.cpu, cpu.total);
     push(hist.ram, ram.percent);
-    drawSpark($("cpu-spark"), hist.cpu, { max: 100 });
-    drawSpark($("ram-spark"), hist.ram, { max: 100 });
+    drawSpark($("cpu-spark"), hist.cpu, { max: 100, topPad: bleedTopPad($("cpu-card")) });
+    drawSpark($("ram-spark"), hist.ram, { max: 100, topPad: bleedTopPad($("ram-card")) });
 
     const cpuTotal = $("cpu-total");
     const ramValue = $("ram-value");
@@ -214,16 +240,6 @@ const Metrics = (() => {
     updateGpus(data.gpus || []);
 
     const inf = data.inference && data.inference.ok ? data.inference : null;
-    push(hist.prompt, inf ? inf.prompt_tps : null);
-    push(hist.gen, inf ? inf.gen_tps : null);
-    drawSpark(
-      $("prompt-spark"), hist.prompt,
-      { max: Math.max(...hist.prompt.filter((v) => v != null), 1), color: "#00bc7d", fill: "rgba(0, 188, 125, 0.12)" },
-    );
-    drawSpark(
-      $("gen-spark"), hist.gen,
-      { max: Math.max(...hist.gen.filter((v) => v != null), 1), color: "#fe9a00", fill: "rgba(254, 154, 0, 0.12)" },
-    );
     const promptEl = $("prompt-tps");
     const genEl = $("gen-tps");
     const stateEl = $("infer-state");
@@ -237,14 +253,9 @@ const Metrics = (() => {
         lastSeq = inf.last_seq;
         if ((inf.draft_proposed || 0) > 0) {
           const rate = (inf.draft_accepted / inf.draft_proposed) * 100;
-          push(hist.draft, rate);
           if (draftCell) {
             draftCell.hidden = false;
             $("draft-rate").textContent = `${rate.toFixed(1)}%`;
-            drawSpark(
-              $("draft-spark"), hist.draft,
-              { max: 100, color: "#ad46ff", fill: "rgba(173, 70, 255, 0.12)" },
-            );
           }
         } else if (draftCell) {
           draftCell.hidden = true;
@@ -257,27 +268,15 @@ const Metrics = (() => {
       stateEl.classList.add("muted");
       if (draftCell) draftCell.hidden = true;
     }
-    updateSlots(inf);
+    updateInference(inf);
   }
 
   function redrawAll() {
-    drawSpark($("cpu-spark"), hist.cpu, { max: 100 });
-    drawSpark($("ram-spark"), hist.ram, { max: 100 });
+    drawSpark($("cpu-spark"), hist.cpu, { max: 100, topPad: bleedTopPad($("cpu-card")) });
+    drawSpark($("ram-spark"), hist.ram, { max: 100, topPad: bleedTopPad($("ram-card")) });
     for (const key of Object.keys(gpuEls)) {
-      drawSpark(gpuEls[key].spark, gpuHist[key].util, { max: 100 });
+      drawSpark(gpuEls[key].spark, gpuHist[key].util, { max: 100, topPad: bleedTopPad(gpuEls[key].card) });
     }
-    drawSpark(
-      $("prompt-spark"), hist.prompt,
-      { max: Math.max(...hist.prompt.filter((v) => v != null), 1), color: "#00bc7d", fill: "rgba(0, 188, 125, 0.12)" },
-    );
-    drawSpark(
-      $("gen-spark"), hist.gen,
-      { max: Math.max(...hist.gen.filter((v) => v != null), 1), color: "#fe9a00", fill: "rgba(254, 154, 0, 0.12)" },
-    );
-    drawSpark(
-      $("draft-spark"), hist.draft,
-      { max: 100, color: "#ad46ff", fill: "rgba(173, 70, 255, 0.12)" },
-    );
   }
 
   let resizeTimer = null;
