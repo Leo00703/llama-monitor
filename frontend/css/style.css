@@ -16,6 +16,7 @@
   --bg: #0d0d0d;                        /* = the site's dark --background (oklch(16% 0 0)) */
   --panel: rgba(250, 250, 250, 0.04);   /* llama.app card fill: bg-foreground/4 (4% of #fafafa) */
   --panel-strong: rgba(250, 250, 250, 0.08); /* the site's hover fill: bg-foreground/8 */
+  --panel-solid: #161616;                    /* --panel composited over --bg (opaque: sticky headers) */
   --border: rgba(255, 255, 255, 0.09);
   --border-strong: rgba(255, 255, 255, 0.30);
   --text: #fafafa;                      /* = the site's dark --foreground (oklch(98.5% 0 0)) */
@@ -949,6 +950,27 @@ fieldset.fieldset legend {
 /* ---------- table ---------- */
 
 .table-wrap { overflow-x: auto; }
+
+/* tall tables (analytics: recent requests): cap the height, scroll
+   vertically with a thin slider, and pin the header row */
+.table-scroll {
+  max-height: 340px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+.table-scroll::-webkit-scrollbar { width: 8px; }
+.table-scroll::-webkit-scrollbar-track { background: transparent; }
+.table-scroll::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
+}
+.table-scroll thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--panel-solid);
+}
 
 .table {
   width: 100%;
