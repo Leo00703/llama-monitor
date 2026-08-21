@@ -1219,51 +1219,68 @@ code {
 .chip-params { border-color: rgba(20, 71, 230, 0.55); background: rgba(20, 71, 230, 0.12); color: #8aa2ff; }
 .chip-quant  { border-color: rgba(0, 188, 125, 0.5);  background: rgba(0, 188, 125, 0.08); color: #4de2a8; }
 
-/* ---------- models page ---------- */
+/* ---------- models page (list menu) ---------- */
 
-.models-cards {
+.models-list { display: flex; flex-direction: column; }
+
+.model-row {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 10px;
-}
-
-.model-card {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--panel);
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
   cursor: pointer;
 }
-
-.model-card:hover { border-color: var(--border-strong); }
-
-.model-card.selected {
-  border-color: rgba(246, 94, 0, 0.55);
+.model-row:first-child { border-radius: var(--radius) var(--radius) 0 0; }
+.model-row:last-child { border-bottom: none; border-radius: 0 0 var(--radius) var(--radius); }
+.model-row:hover { background: var(--panel-strong); }
+.model-row.selected {
   background: rgba(246, 94, 0, 0.10);
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
-.model-card-name {
+/* provider monogram (brand color from JS, hashed fallback otherwise) */
+.model-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border-radius: 8px;
+  background: #444;
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  user-select: none;
+}
+
+.model-row-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+
+.model-row-line1 { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; min-width: 0; }
+
+.model-name {
   margin: 0;
-  font-size: 14.5px;
+  font-size: 14px;
   font-weight: 600;
-  line-height: 1.3;
-  word-break: break-all;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.model-card-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.model-row-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 
-.model-card-meta {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px 16px;
-  margin-top: auto;
+.model-row-sub {
+  font-size: 12px;
+  color: var(--muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-
-.model-card-meta > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 
 .mb-actions { align-items: center; }
 
