@@ -258,7 +258,11 @@ To stay focused on the current work:
   work only when the app runs from a real git checkout with an `origin`
   remote — the bundled exe at the repo root is what makes `git pull` ship
   both code and exe. `apply_update()` is `git merge --ff-only` only and
-  refuses a dirty tree or local divergence (never rewrites local work).
+  refuses local divergence (never rewrites local work); a dirty tree is
+  refused too — EXCEPT on the frozen-Windows deployment path, where a dirty
+  tree is by definition a leftover from an interrupted update (the deployment
+  checkout is never edited by hand) and is auto-recovered with
+  `git reset --hard HEAD` (logged, then the ff merge re-applies cleanly).
   "Dirty" = changed TRACKED files only (`_dirty_lines()`), the same in
   `check()` and `apply_update()` — untracked strays can't block a ff-only
   merge, and the error/status list the offending paths.
@@ -266,9 +270,16 @@ To stay focused on the current work:
   Windows, so `git merge` could never replace `llama-monitor.exe` in-process
   (and every CI refresh ships a new exe). `apply_update()` then fetches,
   writes `<data-dir>/update-bootstrap.ps1` and launches it detached; the
-  helper waits for the old PID to die (`Get-Process -Id`), merges, and
-  relaunches the app itself (success OR failure — the user always gets a
-  running panel). The restart hook is called with `deferred=True` and must
+  helper waits for the old PID to die (`Get-Process -Id`) AND until no
+  process runs from the exe path and the exe opens exclusively — the
+  onefile PARENT (same exe path, not the waited-for PID) keeps the exe image
+  mapped until it exits, and merging while it is locked leaves a PARTIAL
+  merge (`frontend/*` written, exe not) + a dirty tree (issue #23). If the
+  exe is still locked at the wait cap the helper writes `RESULT:fail` with
+  a clear message and skips the merge (never a partial merge). The helper
+  then relaunches the app (success OR failure — the user always gets a
+  running panel; the lock-timeout path skips the relaunch since an instance
+  is still alive). The restart hook is called with `deferred=True` and must
   NOT spawn `--restarting` (the helper is the relauncher). The outcome lands
   in `<data-dir>/update-result.txt` (`pending`, git output, `RESULT:ok` +
   `SHA:` or `RESULT:fail`; no RESULT line = interrupted) and is consumed
