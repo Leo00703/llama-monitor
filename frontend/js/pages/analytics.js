@@ -242,18 +242,24 @@ const Analytics = (() => {
   }
 
   /* sliding highlight for the range selector: a pill that follows the
-     active button (offset-based, so it also works when the group wraps
-     onto two rows on narrow screens) */
+     active button. Positioned from getBoundingClientRect deltas: the
+     absolute slider's containing block is the group's padding box, so the
+     button's border-box position minus the border width is the exact
+     translate (sub-pixel; also correct when the group wraps onto two rows
+     on narrow screens — offsetLeft/offsetTop are integer-rounded). */
   function moveRangeSlider(animate) {
     const group = $("analytics-range");
     const btn = group.querySelector(".range-btn.active");
     const slider = group.querySelector(".range-slider");
     if (!group || !btn || !slider) return;
-    const x = btn.offsetLeft - group.clientLeft;
-    const y = btn.offsetTop - group.clientTop;
+    const gr = group.getBoundingClientRect();
+    const br = btn.getBoundingClientRect();
+    const cs = getComputedStyle(group);
+    const x = br.left - gr.left - (parseFloat(cs.borderLeftWidth) || 0);
+    const y = br.top - gr.top - (parseFloat(cs.borderTopWidth) || 0);
     if (!animate) slider.style.transition = "none";
-    slider.style.width = `${btn.offsetWidth}px`;
-    slider.style.height = `${btn.offsetHeight}px`;
+    slider.style.width = `${br.width}px`;
+    slider.style.height = `${br.height}px`;
     slider.style.transform = `translate(${x}px, ${y}px)`;
     if (!animate) {
       void slider.offsetWidth; // flush the jump, then restore the CSS transition
