@@ -46,9 +46,9 @@ const Models = {
     document.getElementById("models-filter-quant").addEventListener("change", () => this.render());
     document.getElementById("models-refresh").addEventListener("click", () => this.refresh());
     document.getElementById("models-list").addEventListener("click", (e) => {
-      const row = e.target.closest(".model-row");
-      if (!row) return;
-      this.selected = row.dataset.path;
+      const card = e.target.closest(".model-card");
+      if (!card) return;
+      this.selected = card.dataset.path;
       this.render();
       this.renderDetail();
     });
@@ -86,8 +86,40 @@ const Models = {
     return q ? q[1].toUpperCase() : "";
   },
 
+  /* provider logo files in frontend/icons/ (committed 2026-08-21). Keys are
+     lowercased provider folder names; a few common aliases are mapped to the
+     same logo. Providers without an icon fall back to the monogram badge. */
+  iconFor(provider) {
+    const p = (provider || "").toLowerCase();
+    if (!p) return "";
+    const known = {
+      qwen: "qwen.webp",
+      deepseek: "deepseek.webp",
+      google: "google.webp", "google-gemma": "google.webp", gemma: "google.webp",
+      mistral: "mistral.webp", mistralai: "mistral.webp",
+      meta: "meta.webp", "meta-llama": "meta.webp",
+      microsoft: "microsoft.webp",
+      nvidia: "nvidia.webp",
+      ibm: "ibm.webp", "ibm-granite": "ibm.webp",
+      kimi: "kimi.png", moonshotai: "kimi.png", moonshot: "kimi.png",
+      glm: "glm.webp", zai: "glm.webp", "z-ai": "glm.webp",
+      hunyuan: "hunyuan.png", tencent: "hunyuan.png",
+      ernie: "ernie.png", baidu: "ernie.png", "baidu-research": "ernie.png",
+      exaone: "exaone.png", samsung: "exaone.png", "samsung-research": "exaone.png",
+      minicpm: "minicpm.png", opencpu: "minicpm.png", openbmb: "minicpm.png",
+      liquid: "liquid.webp", liquidai: "liquid.webp",
+      lmstudio: "lmstudio.webp", "lmstudio-community": "lmstudio.webp",
+      ollama: "ollama.webp",
+      bonsai: "bonsai.webp", perplexity: "bonsai.webp", perplexityai: "bonsai.webp",
+      command: "command.png", cohere: "command.png", cohereai: "command.png",
+      ornith: "ornith.jpg",
+      stablelm: "stablelm.webp",
+    };
+    return known[p] ? `/icons/${known[p]}` : "";
+  },
+
   /* provider monogram badge: known brand colors, hashed hue otherwise.
-     Simple self-authored monograms (no external logo assets/CDN). */
+     Fallback for providers without a logo file. */
   logoFor(provider) {
     const p = (provider || "").toLowerCase();
     const known = {
@@ -156,7 +188,15 @@ const Models = {
     });
     list.innerHTML = rows.map((m) => {
       const provider = this.providerOf(m);
-      const logo = this.logoFor(provider);
+      const icon = this.iconFor(provider);
+      let logo;
+      if (icon) {
+        logo = `<span class="model-logo" title="${UI.esc(provider || "no provider folder")}">` +
+               `<img class="model-icon" src="${icon}" alt="" loading="lazy"></span>`;
+      } else {
+        const l = this.logoFor(provider);
+        logo = `<span class="model-logo" style="background:${l.bg};color:${l.fg}" title="${UI.esc(provider || "no provider folder")}">${UI.esc(l.label)}</span>`;
+      }
       const subParts = [];
       if (provider) subParts.push(provider);
       if (m.path.includes("/")) subParts.push(m.path.slice(m.path.indexOf("/") + 1).replace(/\/[^/]+$/, ""));
@@ -164,14 +204,14 @@ const Models = {
       const sub = subParts.join(" · ");
       const tags = this.tags(m);
       return `
-      <div class="model-row ${m.path === this.selected ? "selected" : ""}" data-path="${UI.esc(m.path)}">
-        <span class="model-logo" style="background:${logo.bg};color:${logo.fg}" title="${UI.esc(provider || "no provider folder")}">${UI.esc(logo.label)}</span>
-        <div class="model-row-main">
-          <div class="model-row-line1">
+      <div class="model-card ${m.path === this.selected ? "selected" : ""}" data-path="${UI.esc(m.path)}">
+        ${logo}
+        <div class="model-card-main">
+          <div class="model-card-line1">
             <h3 class="model-name" title="${UI.esc(m.path)}">${UI.esc(m.name)}</h3>
-            ${tags.length ? `<span class="model-row-chips">${tags.join("")}</span>` : ""}
+            ${tags.length ? `<span class="model-card-chips">${tags.join("")}</span>` : ""}
           </div>
-          <div class="model-row-sub" title="${UI.esc(m.path)}">${UI.esc(sub)}</div>
+          <div class="model-card-sub" title="${UI.esc(m.path)}">${UI.esc(sub)}</div>
         </div>
       </div>`;
     }).join("");

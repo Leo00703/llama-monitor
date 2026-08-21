@@ -321,13 +321,13 @@
         <div class="card">
           <div class="card-head">
             <h2>Models <span id="models-root" class="muted small"></span></h2>
-            <div class="row">
-              <input type="search" id="models-search" placeholder="search name or path...">
-              <select id="models-filter-provider" aria-label="Filter by provider"></select>
-              <select id="models-filter-quant" aria-label="Filter by quantization"></select>
-              <span id="models-count" class="muted small"></span>
-              <button id="models-refresh" class="btn">Refresh</button>
-            </div>
+          </div>
+          <div class="models-toolbar">
+            <input type="search" id="models-search" placeholder="search name or path...">
+            <select id="models-filter-provider" aria-label="Filter by provider"></select>
+            <select id="models-filter-quant" aria-label="Filter by quantization"></select>
+            <span id="models-count" class="muted small models-count"></span>
+            <button id="models-refresh" class="btn">Refresh</button>
           </div>
           <div id="models-list" class="models-list"></div>
           <div id="models-empty" class="muted small hidden" style="padding:12px">

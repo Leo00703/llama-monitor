@@ -944,7 +944,6 @@ fieldset.fieldset legend {
 .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
 #preset-select { min-width: 240px; }
-#models-search { min-width: 260px; }
 #models-preset-select { min-width: 200px; }
 
 /* ---------- table ---------- */
@@ -1219,47 +1218,67 @@ code {
 .chip-params { border-color: rgba(20, 71, 230, 0.55); background: rgba(20, 71, 230, 0.12); color: #8aa2ff; }
 .chip-quant  { border-color: rgba(0, 188, 125, 0.5);  background: rgba(0, 188, 125, 0.08); color: #4de2a8; }
 
-/* ---------- models page (list menu) ---------- */
+/* ---------- models page (card list) ---------- */
 
-.models-list { display: flex; flex-direction: column; }
+/* horizontal filter bar: search + provider + quant on one row */
+.models-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: -4px 0 14px;
+}
+.models-toolbar #models-search { flex: 1 1 220px; min-width: 150px; }
+.models-toolbar select { width: auto; min-width: 150px; }
+.models-count { margin-left: auto; }
 
-.model-row {
+.models-list { display: flex; flex-direction: column; gap: 10px; }
+
+/* one card per model, stacked: app card style (12px radius, 4% fill) */
+.model-card {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: 2px 12px;
+  gap: 2px 14px;
   align-items: center;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--border);
+  padding: 12px 14px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
   cursor: pointer;
 }
-.model-row:first-child { border-radius: var(--radius) var(--radius) 0 0; }
-.model-row:last-child { border-bottom: none; border-radius: 0 0 var(--radius) var(--radius); }
-.model-row:hover { background: var(--panel-strong); }
-.model-row.selected {
-  background: rgba(246, 94, 0, 0.10);
-  box-shadow: inset 3px 0 0 var(--accent);
+.model-card:hover { background: var(--panel-strong); }
+.model-card.selected {
+  border-color: rgba(246, 94, 0, 0.55);
+  background: rgba(246, 94, 0, 0.06);
 }
 
-/* provider monogram (brand color from JS, hashed fallback otherwise) */
+/* provider logo chip: real icon on white, monogram fallback (colors from JS) */
 .model-logo {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 34px;
+  height: 34px;
   flex: none;
-  border-radius: 8px;
-  background: #444;
+  border-radius: 9px;
+  background: #fff;
   color: #fff;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.02em;
   user-select: none;
+  overflow: hidden;
+}
+.model-logo .model-icon {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+  display: block;
 }
 
-.model-row-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.model-card-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 
-.model-row-line1 { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; min-width: 0; }
+.model-card-line1 { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; min-width: 0; }
 
 .model-name {
   margin: 0;
@@ -1271,9 +1290,9 @@ code {
   white-space: nowrap;
 }
 
-.model-row-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.model-card-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 
-.model-row-sub {
+.model-card-sub {
   font-size: 12px;
   color: var(--muted);
   min-width: 0;
