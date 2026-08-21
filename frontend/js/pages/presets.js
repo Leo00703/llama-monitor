@@ -130,21 +130,32 @@ const Presets = {
     }
     const rows = data.presets || [];
     const tbody = document.getElementById("presets-tbody");
-    tbody.innerHTML = rows.map((p) => `
+    tbody.innerHTML = rows.map((p) => {
+      // compact summary line for the small-screen card layout (hidden on desktop)
+      const base = (p.model || "").split("/").pop();
+      const bits = [];
+      if (base) bits.push(UI.esc(base));
+      if (p.context_size) bits.push(`${Number(p.context_size).toLocaleString()} ctx`);
+      if (p.n_gpu_layers != null && p.n_gpu_layers !== "") bits.push(`${p.n_gpu_layers} layers`);
+      if (p.spec_type && p.spec_type !== "none") bits.push(UI.esc(p.spec_type));
+      if (p.port) bits.push(`port ${p.port}`);
+      return `
       <tr>
-        <td>${UI.esc(p.name)}</td>
-        <td class="muted" title="${UI.esc(p.model)}">${UI.esc(p.model || "—")}</td>
+        <td class="cell-name">${UI.esc(p.name)}</td>
+        <td class="muted cell-model" title="${UI.esc(p.model)}">${UI.esc(p.model || "—")}</td>
         <td>${p.context_size}</td>
         <td>${p.n_gpu_layers}</td>
         <td>${p.spec_type && p.spec_type !== "none" ? UI.esc(p.spec_type) : '<span class="muted">—</span>'}</td>
         <td>${p.port}</td>
         <td class="muted">${UI.timeAgo(p.updated_at)}</td>
+        <td class="cell-summary" title="${UI.esc(p.model)}">${bits.join(" · ")}</td>
         <td class="cell-actions">
           <button type="button" class="btn" data-act="edit" data-id="${p.id}">Edit</button>
           <button type="button" class="btn" data-act="dup" data-id="${p.id}">Duplicate</button>
           <button type="button" class="btn btn-danger" data-act="del" data-id="${p.id}">Delete</button>
         </td>
-      </tr>`).join("");
+      </tr>`;
+    }).join("");
     document.getElementById("presets-empty").classList.toggle("hidden", rows.length > 0);
     this.refreshDatalists();
   },

@@ -753,25 +753,54 @@ body.nav-locked { overflow: hidden; }
   .actions .btn { flex: 1; min-height: 40px; }
   .error-label { max-width: 45vw; }
 
-  /* presets: vertical list of name + action buttons, no horizontal slider */
+  /* presets: compact card rows — name + action buttons on one line, the
+     model/context/spec summary on a second line, no horizontal slider */
   #page-presets .table-wrap { overflow-x: visible; }
   #page-presets .table { min-width: 0; }
   #page-presets .table thead { display: none; }
   #page-presets .table,
-  #page-presets .table tbody,
-  #page-presets .table tr,
-  #page-presets .table td { display: block; width: 100%; }
-  #page-presets .table td { padding: 0; border-bottom: none; }
-  #page-presets .table td:nth-child(2),
-  #page-presets .table td:nth-child(3),
-  #page-presets .table td:nth-child(4),
-  #page-presets .table td:nth-child(5),
-  #page-presets .table td:nth-child(6),
-  #page-presets .table td:nth-child(7) { display: none; }
-  #page-presets .table tr { padding: 2px 10px; border-bottom: 1px solid var(--border); }
+  #page-presets .table tbody {
+    display: block;
+    width: 100%;
+  }
+  #page-presets .table td { display: none; padding: 0; border-bottom: none; }
+  #page-presets .table tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px 10px;
+    width: 100%;
+    padding: 9px 10px;
+    border-bottom: 1px solid var(--border);
+  }
   #page-presets .table tr:last-child { border-bottom: none; }
-  #page-presets .table td:first-child { padding: 10px 0 5px; font-size: 14.5px; font-weight: 600; }
-  #page-presets .cell-actions { justify-content: flex-start; flex-wrap: wrap; padding: 0 0 10px; }
+  #page-presets .table td.cell-name {
+    display: block;
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 14.5px;
+    font-weight: 600;
+  }
+  /* row 1: name + action buttons; row 2: the summary line */
+  #page-presets .table td.cell-summary {
+    display: block;
+    order: 2;
+    flex: 1 1 100%;
+    min-width: 0;
+    padding-top: 2px;
+    font-size: 12.5px;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #page-presets .table td.cell-actions {
+    display: flex;
+    flex: none;
+    gap: 6px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
 
   .sidebar {
     position: fixed;
@@ -951,6 +980,30 @@ fieldset.fieldset legend {
 .table .cell-actions { display: flex; gap: 6px; justify-content: flex-end; }
 
 .table .btn { padding: 4px 10px; font-size: 12.5px; }
+
+/* presets table: the model path is the only long cell — keep it on one line
+   (full path in the title tooltip) so rows stay compact at narrow widths */
+.table .cell-model {
+  max-width: 0;          /* cap min-content so the table stays 100% wide */
+  width: 28%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* width hint so the name keeps room instead of collapsing next to the
+   fixed-width columns + action buttons */
+.table .cell-name { width: 18%; }
+
+/* mobile-only summary line, hidden in the desktop table */
+.table .cell-summary { display: none; }
+
+/* narrow desktop widths: drop the least important column (Updated) to give
+   Name/Model room */
+@media (max-width: 1100px) {
+  #page-presets .table th:nth-child(7),
+  #page-presets .table td:nth-child(7) { display: none; }
+}
 
 /* ---------- toast ---------- */
 
