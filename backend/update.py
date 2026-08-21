@@ -259,6 +259,36 @@ def _write_bootstrap_ps1(
         "  $waitMax -= 1\r\n"
         "  Start-Sleep -Seconds 1\r\n"
         "}\r\n"
+        # A onefile exe runs as TWO processes (parent bootstrap + app child,\r\n"
+        # both with Path == $app); the parent keeps the exe image mapped\r\n"
+        # until it exits, and git cannot replace a mapped exe. Wait until\r\n"
+        # nothing runs from $app AND the file opens exclusively (the\r\n"
+        # definitive test that git can replace it). Merging while it is\r\n"
+        # locked leaves a PARTIAL merge (frontend/* written, exe not) and a\r\n"
+        # dirty tree - so on timeout report the failure and skip the merge.\r\n"
+        "$exeFree = $false\r\n"
+        "while ($waitMax -gt 0) {\r\n"
+        "  $live = $false\r\n"
+        "  foreach ($p in (Get-Process -ErrorAction SilentlyContinue)) {\r\n"
+        "    try { if ($p.Path -eq $app) { $live = $true; break } } catch {}\r\n"
+        "  }\r\n"
+        "  if (-not $live) {\r\n"
+        "    try {\r\n"
+        "      $h = [System.IO.File]::Open($app, 'Open', 'ReadWrite', 'None')\r\n"
+        "      $h.Close()\r\n"
+        "      $exeFree = $true\r\n"
+        "      break\r\n"
+        "    } catch {}\r\n"
+        "  }\r\n"
+        "  $waitMax -= 1\r\n"
+        "  Start-Sleep -Seconds 1\r\n"
+        "}\r\n"
+        "if (-not $exeFree) {\r\n"
+        "  'RESULT:fail' | Out-File -LiteralPath $result -Append -Encoding utf8\r\n"
+        "  'error: llama-monitor.exe is still locked (a previous instance is still running) - quit it and retry the update' | Out-File -LiteralPath $result -Append -Encoding utf8\r\n"
+        "  Remove-Item -LiteralPath $PSCommandPath -ErrorAction SilentlyContinue\r\n"
+        "  exit 0\r\n"
+        "}\r\n"
         "'pending' | Set-Content -LiteralPath $result -Encoding utf8\r\n"
         "$gitOut = & git -C $repo merge --ff-only $ref 2>&1\r\n"
         "$gitOut | Out-File -LiteralPath $result -Append -Encoding utf8\r\n"
@@ -382,10 +412,23 @@ def apply_update() -> dict[str, Any]:
         return {"ok": False, "error": "could not determine the remote default branch"}
     dirty = _dirty_lines(root)
     if dirty:
-        return {"ok": False, "error": "the repo has local changes — "
-                                      "commit or revert them first: "
-                                      + ", ".join(dirty[:5])
-                                      + "  (git status shows the details)"}
+        if not (_frozen() and os.name == "nt"):
+            return {"ok": False, "error": "the repo has local changes — "
+                                          "commit or revert them first: "
+                                          + ", ".join(dirty[:5])
+                                          + "  (git status shows the details)"}
+        # Frozen deployment checkouts are never edited by hand, so a dirty
+        # tree is a leftover from an interrupted update (the merge died
+        # mid-checkout, e.g. the exe was still locked by the onefile parent
+        # and the frontend files had already been written). Restore the tree
+        # to HEAD and let the ff merge below re-apply the changes cleanly.
+        rc, out, err = _git(root, "reset", "--hard", "HEAD")
+        if rc != 0:
+            return {"ok": False, "error": "the repo has local changes and the "
+                                          "automatic recovery failed: "
+                                          + (err or out or "git reset --hard HEAD")}
+        log.warning("update: discarded leftover local change(s) before the "
+                    "update: %s", ", ".join(dirty[:10]))
     rc, ahead, _ = _git(root, "rev-list", "--count", f"{ref}..HEAD")
     if rc == 0 and ahead.isdigit() and int(ahead) > 0:
         return {"ok": False, "error": "local commits are ahead of the remote — push them first"}
