@@ -12,14 +12,13 @@
 :root {
   /* native form popups (select lists, date pickers) render in dark mode */
   color-scheme: dark;
-  /* solid background + semi-transparent card surfaces — official llama.cpp UI */
-  --bg: #0d0d0d;
-  --panel: rgba(38, 38, 38, 0.75);
-  --panel-strong: rgba(255, 255, 255, 0.08);
-  --panel-inner: rgba(255, 255, 255, 0.035);
+  /* solid background + translucent card surfaces — llama.app design tokens */
+  --bg: #0d0d0d;                        /* = the site's dark --background (oklch(16% 0 0)) */
+  --panel: rgba(250, 250, 250, 0.04);   /* llama.app card fill: bg-foreground/4 (4% of #fafafa) */
+  --panel-strong: rgba(250, 250, 250, 0.08); /* the site's hover fill: bg-foreground/8 */
   --border: rgba(255, 255, 255, 0.09);
   --border-strong: rgba(255, 255, 255, 0.30);
-  --text: #fafafa;
+  --text: #fafafa;                      /* = the site's dark --foreground (oklch(98.5% 0 0)) */
   --muted: #a1a1a1;
   /* brand accent: official llama.cpp orange */
   --accent: #f65e00;
@@ -27,7 +26,7 @@
   --warn: #fe9a00;
   --err: #ff6467;
   --info: #ad46ff;
-  --radius: 14px;
+  --radius: 12px;   /* llama.app card radius: rounded-xl */
   --radius-sm: 10px;
   --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   --mono: "Geist Mono", ui-monospace, "Cascadia Code", Consolas, "SF Mono", monospace;
@@ -73,7 +72,7 @@ body {
   border: 1px solid var(--border-strong);
   background: var(--panel);
   color: var(--muted);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   cursor: pointer;
   transition: background .15s ease, color .15s ease;
 }
@@ -188,8 +187,8 @@ body {
   font-size: 14px;
   font-weight: 500;
   padding: 7px 16px;
-  /* pill — official llama.cpp button shape */
-  border-radius: 999px;
+  /* llama.app card radius (rounded-xl), shared by buttons and cards */
+  border-radius: var(--radius);
   cursor: pointer;
   transition: background 0.15s ease, border-color 0.15s ease, transform 0.05s ease;
   backdrop-filter: blur(8px);
@@ -349,8 +348,6 @@ main {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 18px;
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
 }
 
 .card h2 {
@@ -1162,7 +1159,7 @@ code {
   min-width: 0;
   padding: 12px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   background: var(--panel);
   cursor: pointer;
 }
@@ -1333,7 +1330,8 @@ code {
   flex: 1;
   height: 8px;
   border-radius: 999px;
-  background: var(--panel);
+  /* own track color: the 4% card fill would be invisible on the card */
+  background: var(--panel-strong);
   overflow: hidden;
 }
 
