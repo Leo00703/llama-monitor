@@ -241,12 +241,33 @@ const Analytics = (() => {
     }
   }
 
+  /* sliding highlight for the range selector: a pill that follows the
+     active button (offset-based, so it also works when the group wraps
+     onto two rows on narrow screens) */
+  function moveRangeSlider(animate) {
+    const group = $("analytics-range");
+    const btn = group.querySelector(".range-btn.active");
+    const slider = group.querySelector(".range-slider");
+    if (!group || !btn || !slider) return;
+    const x = btn.offsetLeft - group.clientLeft;
+    const y = btn.offsetTop - group.clientTop;
+    if (!animate) slider.style.transition = "none";
+    slider.style.width = `${btn.offsetWidth}px`;
+    slider.style.height = `${btn.offsetHeight}px`;
+    slider.style.transform = `translate(${x}px, ${y}px)`;
+    if (!animate) {
+      void slider.offsetWidth; // flush the jump, then restore the CSS transition
+      slider.style.transition = "";
+    }
+  }
+
   function setRange(r) {
     if (!RANGES.includes(r) || r === range) return;
     range = r;
     document.querySelectorAll("#analytics-range .range-btn").forEach((b) => {
       b.classList.toggle("active", b.dataset.range === r);
     });
+    moveRangeSlider(true);
     refresh();
   }
 
@@ -256,9 +277,15 @@ const Analytics = (() => {
     document.querySelectorAll("#analytics-range .range-btn").forEach((b) => {
       b.addEventListener("click", () => setRange(b.dataset.range));
     });
+    const group = $("analytics-range");
+    moveRangeSlider(false);
+    // reposition on layout changes (page shown, window resize, wrapping)
+    if ("ResizeObserver" in window) {
+      new ResizeObserver(() => moveRangeSlider(false)).observe(group);
+    }
     window.addEventListener("resize", () => {
       clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(drawTimeseries, 150);
+      resizeTimer = setTimeout(() => { drawTimeseries(); moveRangeSlider(false); }, 150);
     });
     $("btn-analytics-export").addEventListener("click", () => {
       if (!RANGES.includes(range)) return;
