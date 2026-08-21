@@ -86,9 +86,46 @@ const Models = {
     return q ? q[1].toUpperCase() : "";
   },
 
-  /* provider logo files in frontend/icons/ (committed 2026-08-21). Keys are
-     lowercased provider folder names; a few common aliases are mapped to the
-     same logo. Providers without an icon fall back to the monogram badge. */
+  /* icon files in frontend/icons/ (committed 2026-08-21). Chosen from the
+     model NAME first (brand patterns — quantizer folders like unsloth/
+     bartowski don't carry brand info), then the provider folder, then the
+     monogram badge. Returns { icon, label }. */
+  iconForModel(m) {
+    const name = (m.name || "").toLowerCase();
+    const byName = [
+      [/(^|[^a-z])qwen|qwq/, "qwen.webp", "qwen"],
+      [/gemma|itama/, "google.webp", "google"],
+      [/mistral|magistral|devstral|pixtral/, "mistral.webp", "mistral"],
+      [/deepseek/, "deepseek.webp", "deepseek"],
+      [/(^|[^a-z])llama|meta/, "meta.webp", "meta"],
+      [/glm/, "glm.webp", "glm"],
+      [/kimi|moonshot/, "kimi.png", "kimi"],
+      [/hunyuan|pangu/, "hunyuan.png", "hunyuan"],
+      [/ernie|wenxin/, "ernie.png", "ernie"],
+      [/exaone/, "exaone.png", "exaone"],
+      [/minicpm/, "minicpm.png", "minicpm"],
+      [/liquid|(^|[^a-z])lfm/, "liquid.webp", "liquid"],
+      [/(^|[^a-z])phi-?\d|wizardlm|smollm|orca/, "microsoft.webp", "microsoft"],
+      [/granite/, "ibm.webp", "ibm"],
+      [/command-r|command_a|c4ai/, "command.png", "cohere"],
+      [/nemotron/, "nvidia.webp", "nvidia"],
+      [/stablelm/, "stablelm.webp", "stablelm"],
+      [/ornith/, "ornith.jpg", "ornith"],
+      [/lmstudio/, "lmstudio.webp", "lmstudio"],
+      [/ollama/, "ollama.webp", "ollama"],
+      [/bonsai/, "bonsai.webp", "bonsai"],
+    ];
+    for (const [re, file, label] of byName) {
+      if (re.test(name)) return { icon: `/icons/${file}`, label };
+    }
+    const folder = this.providerOf(m);
+    const byFolder = this.iconFor(folder);
+    if (byFolder) return { icon: byFolder, label: folder };
+    return { icon: "", label: folder };
+  },
+
+  /* folder-name -> icon file (fallback when the model name is unknown),
+     incl. common org aliases. */
   iconFor(provider) {
     const p = (provider || "").toLowerCase();
     if (!p) return "";
@@ -188,10 +225,10 @@ const Models = {
     });
     list.innerHTML = rows.map((m) => {
       const provider = this.providerOf(m);
-      const icon = this.iconFor(provider);
+      const { icon, label } = this.iconForModel(m);
       let logo;
       if (icon) {
-        logo = `<span class="model-logo" title="${UI.esc(provider || "no provider folder")}">` +
+        logo = `<span class="model-logo" title="${UI.esc(label || provider || "brand")}">` +
                `<img class="model-icon" src="${icon}" alt="" loading="lazy"></span>`;
       } else {
         const l = this.logoFor(provider);
