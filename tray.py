@@ -11,6 +11,7 @@ import argparse
 import ctypes
 import logging
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -297,6 +298,31 @@ def _restart_app(deferred: bool = False) -> None:
         _icon.stop()
 
 
+def _cleanup_stale_mei_dirs() -> None:
+    """Remove leftover PyInstaller onefile temp dirs (_MEI*) older than a day.
+
+    A stuck bootloader parent that the update helper had to force-kill (the
+    "Failed to remove temporary directory" dialog) — or a crash — leaves its
+    _MEI* extraction dir behind (~25MB each). A live instance's dir is always
+    fresh, so anything older than 24h is safe to remove. Best-effort.
+    """
+    if os.name != "nt":
+        return
+    try:
+        temp = Path(os.environ.get("TEMP") or os.environ.get("TMP") or "")
+        if not temp.is_dir():
+            return
+        cutoff = time.time() - 86400
+        for d in temp.glob("_MEI*"):
+            try:
+                if d.is_dir() and d.stat().st_mtime < cutoff:
+                    shutil.rmtree(d, ignore_errors=True)
+            except OSError:
+                pass
+    except Exception:
+        log.exception("stale _MEI cleanup failed")
+
+
 def _install_stdout_stderr() -> None:
     # In a --noconsole frozen build sys.stdout/sys.stderr are None. uvicorn's
     # default logging config builds StreamHandlers off sys.stderr, so the first
@@ -352,6 +378,7 @@ def run_smoke() -> int:
 def run_tray(restarting: bool = False) -> int:
     global _icon, _config_ref, _panel_browser_url, _preset_id
     _install_stdout_stderr()
+    _cleanup_stale_mei_dirs()
     setup_logging()
     if restarting:
         log.info("restart handoff: waiting for the previous instance to exit")

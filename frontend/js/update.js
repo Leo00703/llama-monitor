@@ -140,7 +140,13 @@ const Update = (() => {
     if (ok) location.reload();
     else {
       busy = false;
-      openModal({ title: "Update finished", status: "the panel did not come back in time — reload the page manually", spinner: false, error: true, closable: true });
+      openModal({
+        title: "Update finished",
+        status: "the panel did not come back in time — if it runs on another machine, check that machine: the update helper's outcome is in update-result.txt in the data folder (e.g. %APPDATA%\\llama-monitor), and a 'Failed to remove temporary directory' dialog on that machine may still need dismissing; reload once the panel is back",
+        spinner: false,
+        error: true,
+        closable: true,
+      });
     }
   }
 
