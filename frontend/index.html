@@ -75,15 +75,10 @@
         <section class="card">
           <div class="card-head">
             <h2>Server</h2>
-            <div class="row">
-              <label class="field-label" for="preset-select">Preset</label>
-              <select id="preset-select"></select>
-            </div>
+            <button id="btn-preview" class="btn btn-small" type="button">Preview launch command</button>
           </div>
-          <div id="preset-summary" class="muted small"></div>
-          <div class="card-actions">
-            <button id="btn-preview" class="btn">Preview launch command</button>
-          </div>
+          <div id="preset-pick" role="button" tabindex="0" aria-expanded="false" aria-controls="preset-pick-list"></div>
+          <div id="preset-pick-list" class="preset-pick-list hidden" role="listbox"></div>
           <pre id="flag-preview" class="log hidden"></pre>
         </section>
 

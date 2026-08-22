@@ -146,6 +146,46 @@ const Presets = {
     await this.load();
   },
 
+  /* info chips for a preset card (shared with the dashboard picker) */
+  chipsFor(p) {
+    const chips = [];
+    if (p.id === this.activeId) chips.push('<span class="chip chip-ok">active</span>');
+    if (p.alias) chips.push(`<span class="chip">${UI.esc(p.alias)}</span>`);
+    if (p.context_size) chips.push(`<span class="chip chip-params">${Number(p.context_size).toLocaleString()} ctx</span>`);
+    if (p.n_gpu_layers != null && p.n_gpu_layers !== "") chips.push(`<span class="chip chip-quant">${p.n_gpu_layers} ngl</span>`);
+    if (p.spec_type && p.spec_type !== "none") chips.push(`<span class="chip chip-vision">${UI.esc(p.spec_type)}</span>`);
+    if (p.port) chips.push(`<span class="chip">port ${p.port}</span>`);
+    return chips;
+  },
+
+  /* the card body (logo / name + chips / sub + trailing cell) — shared with
+     the dashboard picker, which passes its own chevron/check as trailing */
+  cardInner(p, trailingHtml) {
+    const chips = this.chipsFor(p);
+    const sub = `${UI.esc(p.model || "no model set")} · updated ${UI.timeAgo(p.updated_at)}`;
+    return `
+        ${this.logoForPreset(p)}
+        <div class="preset-main">
+          <div class="preset-line1">
+            <h3 class="preset-name" title="${UI.esc(p.name)}">${UI.esc(p.name)}</h3>
+            ${chips.length ? `<span class="preset-chips">${chips.join("")}</span>` : ""}
+          </div>
+          <div class="preset-sub" title="${UI.esc(p.model)}">${sub}</div>
+        </div>
+        ${trailingHtml}`;
+  },
+
+  /* one preset card; the trailing cell defaults to the action buttons */
+  cardHtml(p, { trailing = null } = {}) {
+    const t = trailing === null ? `
+        <div class="preset-actions">
+          <button type="button" class="btn" data-act="edit" data-id="${p.id}">Edit</button>
+          <button type="button" class="btn" data-act="dup" data-id="${p.id}">Duplicate</button>
+          <button type="button" class="btn btn-danger" data-act="del" data-id="${p.id}">Delete</button>
+        </div>` : trailing;
+    return `<div class="preset-card" data-id="${p.id}">` + this.cardInner(p, t) + `</div>`;
+  },
+
   async load() {
     let data;
     try {
@@ -157,31 +197,7 @@ const Presets = {
     const rows = data.presets || [];
     this.activeId = data.active_id || "";
     const list = document.getElementById("presets-list");
-    list.innerHTML = rows.map((p) => {
-      const chips = [];
-      if (p.id === this.activeId) chips.push('<span class="chip chip-ok">active</span>');
-      if (p.context_size) chips.push(`<span class="chip chip-params">${Number(p.context_size).toLocaleString()} ctx</span>`);
-      if (p.n_gpu_layers != null && p.n_gpu_layers !== "") chips.push(`<span class="chip chip-quant">${p.n_gpu_layers} ngl</span>`);
-      if (p.spec_type && p.spec_type !== "none") chips.push(`<span class="chip chip-vision">${UI.esc(p.spec_type)}</span>`);
-      if (p.port) chips.push(`<span class="chip">port ${p.port}</span>`);
-      const sub = `${UI.esc(p.model || "no model set")} · updated ${UI.timeAgo(p.updated_at)}`;
-      return `
-      <div class="preset-card" data-id="${p.id}">
-        ${this.logoForPreset(p)}
-        <div class="preset-main">
-          <div class="preset-line1">
-            <h3 class="preset-name" title="${UI.esc(p.name)}">${UI.esc(p.name)}</h3>
-            ${chips.length ? `<span class="preset-chips">${chips.join("")}</span>` : ""}
-          </div>
-          <div class="preset-sub" title="${UI.esc(p.model)}">${sub}</div>
-        </div>
-        <div class="preset-actions">
-          <button type="button" class="btn" data-act="edit" data-id="${p.id}">Edit</button>
-          <button type="button" class="btn" data-act="dup" data-id="${p.id}">Duplicate</button>
-          <button type="button" class="btn btn-danger" data-act="del" data-id="${p.id}">Delete</button>
-        </div>
-      </div>`;
-    }).join("");
+    list.innerHTML = rows.map((p) => this.cardHtml(p)).join("");
     document.getElementById("presets-count").textContent =
       rows.length ? `${rows.length} preset${rows.length > 1 ? "s" : ""}` : "";
     document.getElementById("presets-empty").classList.toggle("hidden", rows.length > 0);
