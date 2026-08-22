@@ -399,9 +399,10 @@ details[open] .card-summary { margin-bottom: 8px; }
 
 .log .panel-line { color: #4de2a8; }
 
+/* hide/show: only the terminal goes away — the card padding and the head
+   margin stay identical in both states so the title + buttons never move */
 .log-card.collapsed .log { display: none; }
-.log-card.collapsed { min-height: 0; justify-content: center; padding-top: 10px; padding-bottom: 10px; }
-.log-card.collapsed .card-head { margin-bottom: 0; }
+.log-card.collapsed { min-height: 0; }
 .log-card .card-head { margin-bottom: 8px; }
 
 /* server card: keep the preset picker on a single line (the select must not
