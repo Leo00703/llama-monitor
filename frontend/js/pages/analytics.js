@@ -75,6 +75,13 @@ const Analytics = (() => {
     if (!nums.length) return;
     const max = opts.max != null ? opts.max : Math.max(...nums) * 1.1 || 1;
 
+    // geometry kept for the hover tooltip (nearest-point lookup + anchor)
+    canvas._chart = {
+      padL, padT, padR, padB, cw, ch, n, stepX: cw / n,
+      values, labels, max, w, h,
+      mode: opts.mode || "line", color: opts.color || "#1447e6", hoverColor: opts.hoverColor || null,
+    };
+
     ctx.font = "11px " + getComputedStyle(document.body).fontFamily;
     ctx.textBaseline = "middle";
     ctx.fillStyle = "#a1a1a1";
@@ -118,6 +125,36 @@ const Analytics = (() => {
       ctx.stroke();
     }
 
+    // hover highlight: dashed guide + brightened bar / point dot
+    const hov = opts.hover != null && values[opts.hover] != null ? opts.hover : null;
+    if (hov != null) {
+      const hx = xOf(hov) + stepX / 2;
+      ctx.save();
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.2)";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(hx, padT);
+      ctx.lineTo(hx, padT + ch);
+      ctx.stroke();
+      ctx.restore();
+      if (opts.mode === "bar") {
+        const bw = Math.max(1, stepX * 0.62);
+        const y = yOf(values[hov]);
+        ctx.fillStyle = opts.hoverColor || opts.color || "#1447e6";
+        ctx.fillRect(hx - bw / 2, y, bw, padT + ch - y);
+      } else {
+        const y = yOf(values[hov]);
+        ctx.beginPath();
+        ctx.arc(hx, y, 3.5, 0, Math.PI * 2);
+        ctx.fillStyle = opts.hoverColor || opts.color || "#fe9a00";
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = "#0d0d0d";
+        ctx.stroke();
+      }
+    }
+
     const shown = Math.min(Math.max(2, Math.floor(w / 72)), n);
     ctx.fillStyle = "#a1a1a1";
     ctx.textAlign = "center";
@@ -129,6 +166,7 @@ const Analytics = (() => {
   }
 
   let lastTs = null;
+  const hoverClears = [];
 
   function drawTimeseries() {
     if (!lastTs) return;
@@ -138,18 +176,92 @@ const Analytics = (() => {
       $("an-tokens-chart"),
       buckets.map((b) => b.gen_tokens || null),
       labels,
-      { mode: "bar", color: "#1447e6" },
+      { mode: "bar", color: "#1447e6", hoverColor: "#6d8dff" },
     );
     drawChart(
       $("an-speed-chart"),
       buckets.map((b) => b.avg_gen_tps != null ? b.avg_gen_tps : null),
       labels,
-      { mode: "line", color: "#fe9a00" },
+      { mode: "line", color: "#fe9a00", hoverColor: "#ffb84d" },
     );
+  }
+
+  /* hover: nearest data point -> brightened bar/dot + a tooltip chip that
+     fades in, then glides between points. Returns a clear() for refreshes. */
+  function setupChartHover(canvasId, tipId, fmtVal) {
+    const canvas = $(canvasId);
+    const tip = $(tipId);
+    if (!canvas || !tip) return () => {};
+    const tipLbl = tip.querySelector(".chart-tip-lbl");
+    const tipVal = tip.querySelector(".chart-tip-val");
+    let cur = -1;
+    let resetT = 0;
+
+    function hide() {
+      if (cur === -1 && !tip.classList.contains("on")) return;
+      cur = -1;
+      tip.classList.remove("on");
+      // park the chip in the top-left corner once the fade-out is done —
+      // a stale left/top from a wider layout would widen the page scroll
+      clearTimeout(resetT);
+      resetT = setTimeout(() => { tip.style.left = "0px"; tip.style.top = "0px"; }, 200);
+      const c = canvas._chart;
+      if (c) drawChart(canvas, c.values, c.labels,
+        { mode: c.mode, color: c.color, hoverColor: c.hoverColor, max: c.max });
+    }
+
+    canvas.addEventListener("pointermove", (e) => {
+      const c = canvas._chart;
+      if (!c) return;
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      if (x < c.padL - 6 || x > c.w - c.padR + 6 || y < 0 || y > c.h) { hide(); return; }
+      let i = Math.max(0, Math.min(c.n - 1, Math.floor((x - c.padL) / c.stepX)));
+      if (c.values[i] == null) {
+        // gap in the series: snap to the nearest non-null neighbor
+        let lo = i, hi = i;
+        while (lo > 0 && c.values[lo] == null) lo--;
+        while (hi < c.n - 1 && c.values[hi] == null) hi++;
+        i = c.values[lo] != null && (c.values[hi] == null || i - lo <= hi - i) ? lo : hi;
+        if (c.values[i] == null) { hide(); return; }
+      }
+      cur = i;
+      const v = c.values[i];
+      const px = c.padL + i * c.stepX + c.stepX / 2;
+      const py = c.padT + c.ch - (Math.max(0, Math.min(v, c.max)) / c.max) * c.ch;
+      tipLbl.textContent = c.labels[i] != null ? c.labels[i] : "";
+      tipVal.textContent = fmtVal(v);
+      const card = canvas.parentElement;
+      let cx = canvas.offsetLeft + px;
+      const cy = canvas.offsetTop + py;
+      const half = tip.offsetWidth / 2;
+      cx = Math.max(half + 2, Math.min(cx, card.clientWidth - half - 2));
+      const wasOn = tip.classList.contains("on");
+      tip.classList.toggle("below", cy < 64);
+      if (!wasOn) {
+        // first show: land in place, then fade in (no glide from the corner)
+        tip.style.transition = "none";
+        tip.style.left = `${cx}px`;
+        tip.style.top = `${cy}px`;
+        void tip.offsetWidth;
+        tip.style.transition = "";
+      } else {
+        tip.style.left = `${cx}px`;
+        tip.style.top = `${cy}px`;
+      }
+      tip.classList.add("on");
+      drawChart(canvas, c.values, c.labels,
+        { mode: c.mode, color: c.color, hoverColor: c.hoverColor, max: c.max, hover: i });
+    });
+
+    canvas.addEventListener("pointerleave", hide);
+    return hide;
   }
 
   function renderTimeseries(ts) {
     lastTs = ts;
+    hoverClears.forEach((f) => f());
     drawTimeseries();
     const buckets = ts.buckets || [];
     const total = buckets.reduce((a, b) => a + (b.gen_tokens || 0), 0);
@@ -289,9 +401,17 @@ const Analytics = (() => {
     if ("ResizeObserver" in window) {
       new ResizeObserver(() => moveRangeSlider(false)).observe(group);
     }
+    hoverClears.push(
+      setupChartHover("an-tokens-chart", "an-tokens-tip", (v) => `${fmtNum(v)} tokens`),
+      setupChartHover("an-speed-chart", "an-speed-tip", (v) => `${v.toFixed(1)} tok/s`),
+    );
     window.addEventListener("resize", () => {
       clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(() => { drawTimeseries(); moveRangeSlider(false); }, 150);
+      resizeTimer = setTimeout(() => {
+        hoverClears.forEach((f) => f());
+        drawTimeseries();
+        moveRangeSlider(false);
+      }, 150);
     });
     $("btn-analytics-export").addEventListener("click", () => {
       if (!RANGES.includes(range)) return;
