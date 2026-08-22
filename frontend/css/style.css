@@ -410,8 +410,9 @@ details[open] .card-summary { margin-bottom: 8px; }
 #page-dashboard .card .card-head .row { flex-wrap: nowrap; }
 #page-dashboard .card .card-head .row select { width: auto; min-width: 170px; }
 
-/* launch-command preview: keep it off the button */
-#flag-preview { margin-top: 12px; }
+/* launch-command preview: keep it off the button and fit the command
+   height (the .log 220px floor is for the server terminal, not a command) */
+#flag-preview { margin-top: 12px; min-height: 0; }
 
 /* dashboard fills the viewport: the log card absorbs the remaining height,
    so the latest log lines are visible without scrolling (page still scrolls
