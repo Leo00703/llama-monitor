@@ -185,20 +185,10 @@
       <section id="page-presets" class="page hidden">
         <div id="presets-list-view" class="card">
           <div class="card-head">
-            <h2>Presets</h2>
+            <h2>Presets <span id="presets-count" class="muted small"></span></h2>
             <button id="btn-new-preset" class="btn btn-primary">New preset</button>
           </div>
-          <div class="table-wrap">
-            <table class="table">
-              <thead>
-                <tr>
-                  <th>Name</th><th>Model</th><th>Ctx</th><th>NGl</th><th>Spec</th>
-                  <th>Port</th><th>Updated</th><th></th>
-                </tr>
-              </thead>
-              <tbody id="presets-tbody"></tbody>
-            </table>
-          </div>
+          <div id="presets-list" class="models-list"></div>
           <div id="presets-empty" class="muted small hidden" style="padding:12px">
             No presets yet. Create one to configure the server launch.
           </div>

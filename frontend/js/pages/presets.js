@@ -61,14 +61,18 @@ const Presets = {
       e.preventDefault();
       this.save();
     });
-    document.getElementById("presets-tbody").addEventListener("click", (e) => {
+    document.getElementById("presets-list").addEventListener("click", (e) => {
       const btn = e.target.closest("button[data-act]");
-      if (!btn) return;
-      const act = btn.dataset.act;
-      const id = btn.dataset.id;
-      if (act === "edit") this.openForm(id);
-      else if (act === "dup") this.duplicate(id);
-      else if (act === "del") this.remove(id);
+      if (btn) {
+        const act = btn.dataset.act;
+        const id = btn.dataset.id;
+        if (act === "edit") this.openForm(id);
+        else if (act === "dup") this.duplicate(id);
+        else if (act === "del") this.remove(id);
+        return;
+      }
+      const card = e.target.closest(".preset-card");
+      if (card) this.openForm(card.dataset.id);
     });
     document.getElementById("pf-spectype").addEventListener("change", (e) => {
       const needsDrafter = ["draft-simple", "draft-eagle3", "draft-dflash", "draft-dspark"].includes(e.target.value);
@@ -113,6 +117,28 @@ const Presets = {
 
   /* ---------------- list ---------------- */
 
+  /* logo chip: the preset's model (brand icon / provider monogram, same
+     rules as the models page); a monogram of the preset name when it has
+     no model yet */
+  logoForPreset(p) {
+    const model = p.model || "";
+    if (model && typeof Models !== "undefined") {
+      const m = { name: model.split("/").pop() || model, path: model, mmproj: [] };
+      const { icon, label } = Models.iconForModel(m);
+      if (icon) {
+        return `<span class="model-logo preset-logo" title="${UI.esc(label || model)}">` +
+               `<img class="model-icon" src="${icon}" alt="" loading="lazy"></span>`;
+      }
+      const provider = Models.providerOf(m);
+      const l = Models.logoFor(provider);
+      return `<span class="model-logo preset-logo" style="background:${l.bg};color:${l.fg}" title="${UI.esc(provider || "no provider folder")}">${UI.esc(l.label)}</span>`;
+    }
+    const l = typeof Models !== "undefined" && typeof monogram === "function"
+      ? Models.logoFor(p.name)
+      : { label: p.name.slice(0, 2).toUpperCase(), bg: "#444", fg: "#fff" };
+    return `<span class="model-logo preset-logo" style="background:${l.bg};color:${l.fg}" title="${UI.esc(p.name)}">${UI.esc(l.label)}</span>`;
+  },
+
   async showList() {
     this.editingId = "";
     document.getElementById("presets-list-view").classList.remove("hidden");
@@ -129,33 +155,35 @@ const Presets = {
       return;
     }
     const rows = data.presets || [];
-    const tbody = document.getElementById("presets-tbody");
-    tbody.innerHTML = rows.map((p) => {
-      // compact summary line for the small-screen card layout (hidden on desktop)
-      const base = (p.model || "").split("/").pop();
-      const bits = [];
-      if (base) bits.push(UI.esc(base));
-      if (p.context_size) bits.push(`${Number(p.context_size).toLocaleString()} ctx`);
-      if (p.n_gpu_layers != null && p.n_gpu_layers !== "") bits.push(`${p.n_gpu_layers} layers`);
-      if (p.spec_type && p.spec_type !== "none") bits.push(UI.esc(p.spec_type));
-      if (p.port) bits.push(`port ${p.port}`);
+    this.activeId = data.active_id || "";
+    const list = document.getElementById("presets-list");
+    list.innerHTML = rows.map((p) => {
+      const chips = [];
+      if (p.id === this.activeId) chips.push('<span class="chip chip-ok">active</span>');
+      if (p.context_size) chips.push(`<span class="chip chip-params">${Number(p.context_size).toLocaleString()} ctx</span>`);
+      if (p.n_gpu_layers != null && p.n_gpu_layers !== "") chips.push(`<span class="chip chip-quant">${p.n_gpu_layers} ngl</span>`);
+      if (p.spec_type && p.spec_type !== "none") chips.push(`<span class="chip chip-vision">${UI.esc(p.spec_type)}</span>`);
+      if (p.port) chips.push(`<span class="chip">port ${p.port}</span>`);
+      const sub = `${UI.esc(p.model || "no model set")} · updated ${UI.timeAgo(p.updated_at)}`;
       return `
-      <tr>
-        <td class="cell-name">${UI.esc(p.name)}</td>
-        <td class="muted cell-model" title="${UI.esc(p.model)}">${UI.esc(p.model || "—")}</td>
-        <td>${p.context_size}</td>
-        <td>${p.n_gpu_layers}</td>
-        <td>${p.spec_type && p.spec_type !== "none" ? UI.esc(p.spec_type) : '<span class="muted">—</span>'}</td>
-        <td>${p.port}</td>
-        <td class="muted">${UI.timeAgo(p.updated_at)}</td>
-        <td class="cell-summary" title="${UI.esc(p.model)}">${bits.join(" · ")}</td>
-        <td class="cell-actions">
-          <button type="button" class="btn" data-act="edit" data-id="${p.id}">Edit</button>
-          <button type="button" class="btn" data-act="dup" data-id="${p.id}">Duplicate</button>
-          <button type="button" class="btn btn-danger" data-act="del" data-id="${p.id}">Delete</button>
-        </td>
-      </tr>`;
+      <div class="preset-card" data-id="${p.id}">
+        ${this.logoForPreset(p)}
+        <div class="preset-main">
+          <div class="preset-line1">
+            <h3 class="preset-name" title="${UI.esc(p.name)}">${UI.esc(p.name)}</h3>
+            ${chips.length ? `<span class="preset-chips">${chips.join("")}</span>` : ""}
+          </div>
+          <div class="preset-sub" title="${UI.esc(p.model)}">${sub}</div>
+        </div>
+        <div class="preset-actions">
+          <button type="button" class="btn btn-small" data-act="edit" data-id="${p.id}">Edit</button>
+          <button type="button" class="btn btn-small" data-act="dup" data-id="${p.id}">Duplicate</button>
+          <button type="button" class="btn btn-small btn-danger" data-act="del" data-id="${p.id}">Delete</button>
+        </div>
+      </div>`;
     }).join("");
+    document.getElementById("presets-count").textContent =
+      rows.length ? `${rows.length} preset${rows.length > 1 ? "s" : ""}` : "";
     document.getElementById("presets-empty").classList.toggle("hidden", rows.length > 0);
     this.refreshDatalists();
   },
