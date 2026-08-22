@@ -274,12 +274,23 @@ To stay focused on the current work:
   process runs from the exe path and the exe opens exclusively — the
   onefile PARENT (same exe path, not the waited-for PID) keeps the exe image
   mapped until it exits, and merging while it is locked leaves a PARTIAL
-  merge (`frontend/*` written, exe not) + a dirty tree (issue #23). If the
-  exe is still locked at the wait cap the helper writes `RESULT:fail` with
-  a clear message and skips the merge (never a partial merge). The helper
-  then relaunches the app (success OR failure — the user always gets a
-  running panel; the lock-timeout path skips the relaunch since an instance
-  is still alive). The restart hook is called with `deferred=True` and must
+  merge (`frontend/*` written, exe not) + a dirty tree (issue #23). The
+  helper gives the parent a short (10 s) grace to exit cleanly; if the exe
+  is still locked it then looks for exe processes WITHOUT a live child — a
+  healthy running instance always has its app child alive and the old app
+  child is already gone (PID wait), so only a STUCK bootloader parent
+  qualifies (e.g. sitting on the "Failed to remove temporary directory"
+  dialog when Windows/Defender won't let it delete its `_MEI*` dir — issue
+  #34) and is force-killed; the dialog dies with it and the merge +
+  relaunch proceed UNATTENDED (a `note: force-killed …` line is appended to
+  `update-result.txt`). A wedged live panel is protected by the same filter
+  (its child — or the lingering llama-server — keeps a live child
+  relationship), so that case still ends in `RESULT:fail` + skipped merge
+  (never a partial merge). The helper then relaunches the app (success OR
+  failure — the user always gets a running panel; the lock-timeout path
+  skips the relaunch since an instance is still alive).
+  `tray.py` removes stale `_MEI*` temp dirs (>24 h) at startup — a
+  force-killed parent (or a crash) leaves its ~25 MB extraction dir behind. The restart hook is called with `deferred=True` and must
   NOT spawn `--restarting` (the helper is the relauncher). The outcome lands
   in `<data-dir>/update-result.txt` (`pending`, git output, `RESULT:ok` +
   `SHA:` or `RESULT:fail`; no RESULT line = interrupted) and is consumed
@@ -304,7 +315,8 @@ To stay focused on the current work:
   onefile exe RE-EXTRACTS its ~25MB bundle on first launch (Windows Defender
   scans it) — commonly 1–3 min, machine-dependent. 120 s timed out this in
   practice (issue #12). Each health probe is abort-bounded (4 s) so a hung
-  TCP probe can't eat the budget. Version of the running app: frozen builds
+  TCP probe can't eat the budget; the timeout message points at
+  `update-result.txt` in the data folder (remote-update diagnosis). Version of the running app: frozen builds
   read `_MEIPASS/backend/_buildinfo.json` (CI bakes `GITHUB_SHA`); dev
   reports live `git HEAD`.
 - **Detached helper processes on Windows**: `tasklist`/`timeout` silently
