@@ -186,8 +186,11 @@ const Analytics = (() => {
     );
   }
 
-  /* hover: nearest data point -> brightened bar/dot + a tooltip chip that
-     fades in, then glides between points. Returns a clear() for refreshes. */
+  /* mouse hover: nearest data point -> brightened bar/dot + a tooltip chip
+     that fades in, then glides between points.
+     touch: tap a point to PIN its value — it stays on screen (no hover on
+     touch) until the user taps outside the graph.
+     Returns a clear() for refreshes. */
   function setupChartHover(canvasId, tipId, fmtVal) {
     const canvas = $(canvasId);
     const tip = $(tipId);
@@ -195,9 +198,12 @@ const Analytics = (() => {
     const tipLbl = tip.querySelector(".chart-tip-lbl");
     const tipVal = tip.querySelector(".chart-tip-val");
     let cur = -1;
+    let pinned = false;
+    let touchStart = null;
     let resetT = 0;
 
     function hide() {
+      pinned = false;
       if (cur === -1 && !tip.classList.contains("on")) return;
       cur = -1;
       tip.classList.remove("on");
@@ -210,13 +216,15 @@ const Analytics = (() => {
         { mode: c.mode, color: c.color, hoverColor: c.hoverColor, max: c.max });
     }
 
-    canvas.addEventListener("pointermove", (e) => {
+    /* point at the nearest data point; false (and cleared) when outside the
+       plot area */
+    function showAt(clientX, clientY) {
       const c = canvas._chart;
-      if (!c) return;
+      if (!c) return false;
       const rect = canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-      if (x < c.padL - 6 || x > c.w - c.padR + 6 || y < 0 || y > c.h) { hide(); return; }
+      const x = clientX - rect.left;
+      const y = clientY - rect.top;
+      if (x < c.padL - 6 || x > c.w - c.padR + 6 || y < 0 || y > c.h) { hide(); return false; }
       let i = Math.max(0, Math.min(c.n - 1, Math.floor((x - c.padL) / c.stepX)));
       if (c.values[i] == null) {
         // gap in the series: snap to the nearest non-null neighbor
@@ -224,7 +232,7 @@ const Analytics = (() => {
         while (lo > 0 && c.values[lo] == null) lo--;
         while (hi < c.n - 1 && c.values[hi] == null) hi++;
         i = c.values[lo] != null && (c.values[hi] == null || i - lo <= hi - i) ? lo : hi;
-        if (c.values[i] == null) { hide(); return; }
+        if (c.values[i] == null) { hide(); return false; }
       }
       cur = i;
       const v = c.values[i];
@@ -253,9 +261,39 @@ const Analytics = (() => {
       tip.classList.add("on");
       drawChart(canvas, c.values, c.labels,
         { mode: c.mode, color: c.color, hoverColor: c.hoverColor, max: c.max, hover: i });
+      return true;
+    }
+
+    canvas.addEventListener("pointermove", (e) => {
+      if (e.pointerType !== "mouse") return; // touch: tap only, no hover
+      if (pinned) hide();                    // mouse takes over the pin
+      showAt(e.clientX, e.clientY);
     });
 
-    canvas.addEventListener("pointerleave", hide);
+    canvas.addEventListener("pointerdown", (e) => {
+      if (e.pointerType !== "touch") return;
+      touchStart = { x: e.clientX, y: e.clientY };
+    });
+
+    canvas.addEventListener("pointerup", (e) => {
+      if (e.pointerType !== "touch" || !touchStart) { touchStart = null; return; }
+      const tapped = Math.hypot(e.clientX - touchStart.x, e.clientY - touchStart.y) <= 12;
+      touchStart = null;
+      if (!tapped) return; // it was a scroll/drag, not a tap
+      if (showAt(e.clientX, e.clientY)) pinned = true;
+    });
+
+    canvas.addEventListener("pointerleave", (e) => {
+      if (e.pointerType !== "mouse" || pinned) return; // a pin outlives the finger lift
+      hide();
+    });
+
+    // a tap/click anywhere outside the graph releases the pin
+    document.addEventListener("click", (e) => {
+      if (!pinned) return;
+      if (e.target === canvas || canvas.contains(e.target)) return;
+      hide();
+    });
     return hide;
   }
 
