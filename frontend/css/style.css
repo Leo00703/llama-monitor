@@ -1288,7 +1288,14 @@ code {
   gap: 6px;
   justify-content: flex-end;
 }
-.preset-actions .btn { min-height: 0; }
+/* the per-card actions are rounded squares (not pills) at a comfortable
+   size — pill shape reads as "round" at the old small size */
+.preset-actions .btn {
+  min-height: 0;
+  padding: 6px 14px;
+  font-size: 13px;
+  border-radius: 8px;
+}
 
 /* phones: the presets action buttons drop to their own right-aligned row so
    name + chips + sub keep the full width (after the base rules — later wins) */

@@ -176,9 +176,9 @@ const Presets = {
           <div class="preset-sub" title="${UI.esc(p.model)}">${sub}</div>
         </div>
         <div class="preset-actions">
-          <button type="button" class="btn btn-small" data-act="edit" data-id="${p.id}">Edit</button>
-          <button type="button" class="btn btn-small" data-act="dup" data-id="${p.id}">Duplicate</button>
-          <button type="button" class="btn btn-small btn-danger" data-act="del" data-id="${p.id}">Delete</button>
+          <button type="button" class="btn" data-act="edit" data-id="${p.id}">Edit</button>
+          <button type="button" class="btn" data-act="dup" data-id="${p.id}">Duplicate</button>
+          <button type="button" class="btn btn-danger" data-act="del" data-id="${p.id}">Delete</button>
         </div>
       </div>`;
     }).join("");
