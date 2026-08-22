@@ -31,8 +31,9 @@ line:
   it pulls the latest commits from the repo and restarts the app. The repo
   ships the code *and* the bundled tray exe (CI commits the latest
   `llama-monitor.exe` back to the repo root, so a plain `git pull` updates
-  both). Fast-forward only — local changes or unpushed commits block the
-  update with a clear message. A running model server is kept across the
+  both). Fast-forward only — unpushed local commits block the update with a
+  clear message (in the frozen deployment, leftover local changes from an
+  interrupted update are recovered automatically). A running model server is kept across the
   update (the restarted panel re-detects it), so inference is not
   interrupted. The first launch after an update can take a while — the
   relaunched tray exe re-extracts its bundle on start, and the panel

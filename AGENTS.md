@@ -290,8 +290,9 @@ To stay focused on the current work:
   failure — the user always gets a running panel; the lock-timeout path
   skips the relaunch since an instance is still alive).
   `tray.py` removes stale `_MEI*` temp dirs (>24 h) at startup — a
-  force-killed parent (or a crash) leaves its ~25 MB extraction dir behind. The restart hook is called with `deferred=True` and must
-  NOT spawn `--restarting` (the helper is the relauncher). The outcome lands
+  force-killed parent (or a crash) leaves its ~25 MB extraction dir behind.
+  The restart hook is called with `deferred=True` and must NOT spawn
+  `--restarting` (the helper is the relauncher). The outcome lands
   in `<data-dir>/update-result.txt` (`pending`, git output, `RESULT:ok` +
   `SHA:` or `RESULT:fail`; no RESULT line = interrupted) and is consumed
   one-shot at next startup via `/api/update/result` → toast. Read it with
@@ -316,8 +317,9 @@ To stay focused on the current work:
   scans it) — commonly 1–3 min, machine-dependent. 120 s timed out this in
   practice (issue #12). Each health probe is abort-bounded (4 s) so a hung
   TCP probe can't eat the budget; the timeout message points at
-  `update-result.txt` in the data folder (remote-update diagnosis). Version of the running app: frozen builds
-  read `_MEIPASS/backend/_buildinfo.json` (CI bakes `GITHUB_SHA`); dev
+  `update-result.txt` in the data folder (remote-update diagnosis).
+  Version of the running app: frozen builds read
+  `_MEIPASS/backend/_buildinfo.json` (CI bakes `GITHUB_SHA`); dev
   reports live `git HEAD`.
 - **Detached helper processes on Windows**: `tasklist`/`timeout` silently
   kill a console-less detached `cmd /c` (empirically) — use a PowerShell
