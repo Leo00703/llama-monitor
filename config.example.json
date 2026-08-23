@@ -10,6 +10,9 @@
   "energy_price_eur_kwh": 0.2,
   "energy_overhead_w": 0,
   "update_check_minutes": 5,
+  "dashboard": {
+    "usage_style": "graph"
+  },
   "llama_backend": {
     "channel": "stable",
     "auto_download": false,

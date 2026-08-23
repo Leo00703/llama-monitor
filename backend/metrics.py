@@ -140,9 +140,14 @@ class MetricsCollector:
         ram = psutil.virtual_memory()
         gpus = await asyncio.to_thread(run_nvidia_smi)
         inference = await self._inference(port) if port else None
+        freq = psutil.cpu_freq()  # None on platforms without a freq source
         return {
             "ts": time.time(),
-            "cpu": {"total": round(total, 1), "per_core": [round(v, 1) for v in per_core]},
+            "cpu": {
+                "total": round(total, 1),
+                "per_core": [round(v, 1) for v in per_core],
+                "freq_ghz": round(freq.current / 1000, 2) if freq and freq.current else None,
+            },
             "ram": {
                 "used_gb": round(ram.used / 1073741824, 2),
                 "total_gb": round(ram.total / 1073741824, 2),

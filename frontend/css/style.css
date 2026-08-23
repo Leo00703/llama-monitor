@@ -425,29 +425,44 @@ details[open] .card-summary { margin-bottom: 8px; }
 /* native <select> popups: keep option text readable on the dark list */
 select option { background: #1a1a1a; color: var(--text); }
 
-/* ---------- metrics grid ---------- */
+/* ---------- metrics grid ----------
+
+Resource cards (CPU/RAM/GPU) have one DOM for both display modes; the
+mode lives on the grid (mode-graph | mode-bar, set from the live config
+in the metrics WS payload). Graphs mode: full-bleed sparkline, head and
+foot overlaid, 11% gridlines, value with a text-shadow (no black bar).
+Bars mode: name/value head, one big rounded traffic-light bar in the
+middle, fact foot (cores/GHz, GB, temp/power). */
 
 .metrics-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 14px;
+  align-items: stretch;
 }
 
 .gpu-cards { display: contents; }
 
+/* base card (also used by the analytics summary cards — the dashboard
+   sizing below is scoped to the metrics grid, not the generic class) */
 .metric-card { padding: 14px 16px; display: flex; flex-direction: column; }
+#metrics-grid .metric-card { gap: 10px; min-height: 190px; }
+#metrics-grid .metric-card .card-head { margin-bottom: 0; }
+#metrics-grid .metric-card .card-head h2 { font-size: 17px; }
 
-/* resource cards (CPU/RAM/GPU): the canvas covers the whole card
+/* graphs mode: on spark cards the canvas covers the whole card
    edge-to-edge; the name/value head and the detail foot overlay it, and
    the data is drawn from the bottom edge up to just below the head row
-   (see drawSpark topPad) */
-.metric-card.metric-card--graph { min-height: 180px; padding: 0; position: relative; overflow: hidden; }
-.metric-card--graph > .card-head {
+   (see drawSpark topPad). The inference card has no canvas — it keeps its
+   normal padding in both modes. */
+#metrics-grid.mode-graph .metric-card--spark { padding: 0; position: relative; overflow: hidden; }
+#metrics-grid.mode-graph .metric-card--spark > .card-head {
   position: relative;
   z-index: 1;
-  margin: 0;
   padding: 14px 16px 0;
 }
+#metrics-grid.mode-graph .metric-card--spark .metric-bar { display: none; }
+#metrics-grid.mode-bar .spark { display: none; }
 
 .metric-value {
   font-size: 19px;
@@ -456,42 +471,121 @@ select option { background: #1a1a1a; color: var(--text); }
   font-variant-numeric: tabular-nums;
   color: var(--text);
 }
-
+/* dashboard usage values are the headline number of the card */
+#metrics-grid .metric-value { font-size: 24px; }
+/* the overlaid graph value must stay readable over the line */
+#metrics-grid.mode-graph .metric-value { text-shadow: 0 1px 10px rgba(0, 0, 0, 0.85), 0 0 3px rgba(0, 0, 0, 0.6); }
+/* usage traffic light: < 80% ok, < 95% warn, >= 95% hot */
+.metric-value.v-ok { color: var(--ok); }
+.metric-value.v-warn { color: var(--warn); }
+.metric-value.v-hot { color: var(--err); }
 .metric-value.err { color: var(--err); }
 
-/* bottom detail row of graph cards (RAM GB, GPU VRAM/temp/power):
-   overlaid on the bottom edge of the graph */
-.metric-foot {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 1;
-  padding: 8px 16px 12px;
-  background: rgba(13, 13, 13, 0.55);
+/* the big shared bar (bars mode) */
+.metric-bar {
+  flex: 1;
   display: flex;
-  align-items: center;
-  gap: 6px 14px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  justify-content: center;
+  gap: 9px;
+  min-height: 0;
 }
-.metric-foot-val {
+.metric-bar-nums {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.metric-bar-main {
   font-family: var(--mono);
   font-size: 15px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--text);
 }
+.metric-bar-pct {
+  font-family: var(--mono);
+  font-size: 21px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+.metric-bar-pct.v-ok { color: var(--ok); }
+.metric-bar-pct.v-warn { color: var(--warn); }
+.metric-bar-pct.v-hot { color: var(--err); }
+.metric-bar-track {
+  height: 30px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 9px;
+  overflow: hidden;
+}
+.metric-bar-fill {
+  height: 100%;
+  width: 0;
+  background: var(--ok);
+  border-radius: 9px;
+  transition: width 0.5s ease, background-color 0.5s ease;
+}
+.metric-bar-fill.v-warn { background: var(--warn); }
+.metric-bar-fill.v-hot { background: var(--err); }
 
-/* GPU detail chips: VRAM / temp / power */
-.gpu-foot { flex-direction: column; align-items: flex-start; gap: 4px; }
-.gpu-row { display: flex; align-items: baseline; gap: 14px; }
-.gpu-stat { display: inline-flex; align-items: baseline; gap: 6px; }
-.gpu-lbl { font-size: 10.5px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; color: var(--muted); }
-.gpu-val { font-family: var(--mono); font-size: 13px; font-variant-numeric: tabular-nums; color: var(--text); }
-.gpu-pct { font-family: var(--mono); font-size: 12px; color: var(--muted); }
-.gpu-pct.hot { color: var(--warn); }
-.gpu-id { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.gpu-id .gpu-name { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* fact foot row: CPU cores+GHz, RAM GB, GPU temp/power (icons muted) */
+.metric-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 14px;
+  flex-wrap: wrap;
+  min-height: 22px;
+}
+.metric-foot-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  white-space: nowrap;
+}
+.metric-foot-item.muted { color: var(--muted); }
+#metrics-grid.mode-graph .metric-card--spark .metric-foot {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  padding: 8px 16px 12px;
+  background: none;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.8), 0 0 3px rgba(0, 0, 0, 0.5);
+}
+.micon {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  color: var(--muted);
+}
+
+/* GPU identity: name row under the title, util % next to it (bars mode) */
+.gpu-id { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.gpu-id-sub { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.gpu-id .gpu-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+  max-width: 210px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gpu-util-inline {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  flex: none;
+}
 
 .spark {
   display: block;
@@ -500,7 +594,7 @@ select option { background: #1a1a1a; color: var(--text); }
   margin: 8px 0;
 }
 
-/* full-bleed canvas: the whole card (used by .metric-card--graph).
+/* full-bleed canvas: the whole card (graphs-mode resource cards).
    Doubled class so the media-query .spark height rule can't override it. */
 .spark.spark-bleed {
   position: absolute;
@@ -510,52 +604,45 @@ select option { background: #1a1a1a; color: var(--text); }
   margin: 0;
 }
 
-/* inference card: head value = generation tok/s, row 1 = prompt + draft
-   chips, main area = context usage bar (color shifts green → red with %) */
-.metric-card--infer { min-height: 180px; }
+/* inference card: head value = generation tok/s (biggest on the card),
+   stat cells = prompt tok/s + draft acceptance, main area = context bar
+   (neutral — capacity, not health — warn at >= 95%), slot list below */
+.metric-card--infer { min-height: 190px; }
 
 .infer-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
 
 .infer-head-value { display: inline-flex; align-items: baseline; gap: 5px; }
+.infer-gen { font-size: 26px; }
 .infer-unit { font-size: 11px; color: var(--muted); }
 
-.infer-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 4px 0 14px;
+.infer-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 14px;
+  margin: 2px 0 12px;
 }
-.infer-chip {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 4px 12px;
-  background: var(--panel-strong);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-}
-.infer-chip-lbl {
+.infer-stat { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.infer-stat-lbl {
   font-size: 10.5px;
   font-weight: 600;
   letter-spacing: 0.5px;
   text-transform: uppercase;
   color: var(--muted);
 }
-.infer-chip-val {
+.infer-stat-val {
   font-family: var(--mono);
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 650;
   font-variant-numeric: tabular-nums;
   color: var(--text);
 }
 
-.ctx-block { margin-top: 2px; }
+.ctx-block { display: flex; flex-direction: column; gap: 7px; }
 .ctx-head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 10px;
-  margin-bottom: 7px;
 }
 .ctx-lbl {
   font-size: 10.5px;
@@ -566,12 +653,13 @@ select option { background: #1a1a1a; color: var(--text); }
 }
 .ctx-nums {
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: 14px;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--text);
 }
 .ctx-track {
-  height: 16px;
+  height: 24px;
   background: rgba(255, 255, 255, 0.08);
   border-radius: 8px;
   overflow: hidden;
@@ -579,10 +667,11 @@ select option { background: #1a1a1a; color: var(--text); }
 .ctx-fill {
   height: 100%;
   width: 0;
-  background: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.28);
   border-radius: 8px;
   transition: width 0.5s ease, background-color 0.5s ease;
 }
+.ctx-fill.v-warn { background: var(--warn); }
 
 .slot-list {
   display: flex;
@@ -796,7 +885,11 @@ body.nav-locked { overflow: hidden; }
   .badge { padding: 4px 10px; font-size: 12.5px; gap: 6px; }
   .btn { min-height: 38px; }
   .metric-card { padding: 12px 13px; }
-  .metric-value { font-size: 17px; }
+  #metrics-grid .metric-card .card-head h2 { font-size: 15.5px; }
+  #metrics-grid .metric-value { font-size: 20px; }
+  .infer-gen { font-size: 22px; }
+  .metric-bar-track { height: 26px; }
+  .metric-bar-pct { font-size: 18px; }
   .card-head { flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
   .card-head .row { width: 100%; }
   .row select,
@@ -1094,6 +1187,29 @@ fieldset.fieldset legend {
 }
 .btn-neutral:hover:not(:disabled) { background: #ffffff; border-color: #ffffff; }
 .btn-neutral:disabled { opacity: 0.55; cursor: default; }
+
+/* segmented control (two-choice pill, e.g. dashboard usage style) */
+.seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--panel-strong);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+.seg-btn {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 5px 18px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.seg-btn.active { background: #f5f5f5; color: #111; }
+.seg-btn:not(.active):hover { color: var(--text); }
 
 .be-current {
   display: flex;

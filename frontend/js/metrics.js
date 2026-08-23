@@ -1,6 +1,11 @@
 "use strict";
 
-/* llama-monitor — resource + inference metrics: history, sparklines, cards */
+/* llama-monitor — resource + inference metrics: history, sparklines, cards.
+
+   Two dashboard display modes (config dashboard.usage_style, pushed live in
+   every metrics WS tick): "graph" = full-bleed sparklines with gridlines and
+   overlaid values; "bar" = one big traffic-light bar per card. The DOM is
+   shared — the mode lives on the #metrics-grid class (mode-graph/mode-bar). */
 
 const Metrics = (() => {
   const HISTORY = 120;
@@ -9,8 +14,42 @@ const Metrics = (() => {
   const gpuEls = {};
   let lastGpuCount = -1;
   let lastSeq = 0;
+  let mode = "graph";
+  let lastGpus = [];
 
   const $ = (id) => document.getElementById(id);
+
+  const ICONS = {
+    temp: '<svg class="micon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 14.76V4a2 2 0 0 0-4 0v10.76a4 4 0 1 0 4 0z"/></svg>',
+    power: '<svg class="micon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg>',
+  };
+
+  // usage traffic light: < 80% ok, < 95% warn, >= 95% hot (both modes)
+  function usageClass(pct) {
+    if (pct == null || Number.isNaN(pct)) return "";
+    if (pct >= 95) return "v-hot";
+    if (pct >= 80) return "v-warn";
+    return "v-ok";
+  }
+
+  function setUsage(el, pct) {
+    if (!el) return;
+    const cls = usageClass(pct);
+    el.classList.remove("v-ok", "v-warn", "v-hot");
+    if (cls) el.classList.add(cls);
+  }
+
+  function setBar(fill, pct) {
+    if (!fill) return;
+    fill.style.width = `${Math.min(100, Math.max(0, pct || 0)).toFixed(1)}%`;
+    fill.classList.remove("v-warn", "v-hot");
+    if (pct >= 95) fill.classList.add("v-hot");
+    else if (pct >= 80) fill.classList.add("v-warn");
+  }
+
+  function footItem(html, muted = false) {
+    return `<span class="metric-foot-item${muted ? " muted" : ""}">${html}</span>`;
+  }
 
   function push(arr, v) {
     if (v === undefined || Number.isNaN(v)) v = null;
@@ -42,6 +81,32 @@ const Metrics = (() => {
     ctx.clearRect(0, 0, w, h);
     if (values.length < 2) return;
 
+    const nums = [];
+    values.forEach((v) => { if (v != null) nums.push(v); });
+    if (nums.length < 2) return;
+    const max = opts.max != null ? opts.max : Math.max(...nums, 0.001);
+    const span = max || 1;
+    const stepX = w / (HISTORY - 1);
+    const x0 = w - (values.length - 1) * stepX;
+    // topPad: px reserved at the top of the canvas where data does not reach
+    // (graphs mode: the name/value head row overlays that space)
+    const topPad = opts.topPad || 0;
+    const areaH = Math.max(h - topPad - 3, 1);
+    const yOf = (v) => topPad + 1 + (1 - Math.min(Math.max(v, 0), max) / span) * areaH;
+
+    // faint reference grid: 0% at the card bottom, one line every 10%
+    if (opts.grid) {
+      ctx.beginPath();
+      for (let p = 0; p <= 100; p += 10) {
+        const y = Math.round(yOf(p * max / 100)) + 0.5;
+        ctx.moveTo(0, y);
+        ctx.lineTo(w, y);
+      }
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.07)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+
     // nulls are gaps: draw each contiguous run of values as its own segment
     const runs = [];
     let run = [];
@@ -55,17 +120,6 @@ const Metrics = (() => {
     });
     if (run.length) runs.push(run);
     if (!runs.length) return;
-
-    const nums = runs.flat().map((p) => p[1]);
-    const max = opts.max != null ? opts.max : Math.max(...nums, 0.001);
-    const span = max || 1;
-    const stepX = w / (HISTORY - 1);
-    const x0 = w - (values.length - 1) * stepX;
-    // topPad: px reserved at the top of the canvas where data does not reach
-    // (full-bleed cards: the name/value head row overlays that space)
-    const topPad = opts.topPad || 0;
-    const areaH = Math.max(h - topPad - 3, 1);
-    const yOf = (v) => topPad + 1 + (1 - Math.min(Math.max(v, 0), max) / span) * areaH;
 
     for (const r of runs) {
       ctx.beginPath();
@@ -92,9 +146,26 @@ const Metrics = (() => {
     }
   }
 
+  /* ------------------------------ display mode --------------------------- */
+
+  function applyMode(style) {
+    if (style === mode) return;
+    mode = style;
+    const grid = $("metrics-grid");
+    if (grid) {
+      grid.classList.toggle("mode-bar", mode === "bar");
+      grid.classList.toggle("mode-graph", mode === "graph");
+    }
+    for (const key of Object.keys(gpuEls)) {
+      const g = lastGpus.find((x) => Math.round(x.index) === Number(key));
+      if (g) renderGpuFoot(g);
+    }
+    redrawAll();
+  }
+
   /* ------------------------------ GPU cards ------------------------------ */
 
-  // head-row height (+ gap) of a full-bleed card: the graph data stops
+  // head-row height (+ gap) of a graphs-mode card: the graph data stops
   // just below the name/value row
   function bleedTopPad(card) {
     const head = card.querySelector(":scope > .card-head");
@@ -111,30 +182,62 @@ const Metrics = (() => {
     for (const g of gpus) {
       const i = Math.round(g.index);
       const card = document.createElement("div");
-      card.className = "card metric-card metric-card--graph";
+      card.className = "card metric-card metric-card--spark";
       card.innerHTML = `
         <canvas class="spark spark-bleed"></canvas>
         <div class="card-head">
           <div class="gpu-id">
             <h2>GPU ${i}</h2>
-            <span class="muted small gpu-name"></span>
+            <span class="gpu-id-sub"><span class="gpu-name"></span><span class="gpu-util-inline" hidden></span></span>
           </div>
-          <span class="metric-value gpu-util">—</span>
+          <span class="metric-value gpu-util" hidden>—</span>
         </div>
-        <div class="metric-foot gpu-foot"></div>`;
+        <div class="metric-bar">
+          <div class="metric-bar-nums">
+            <span class="metric-bar-main"></span>
+            <span class="metric-bar-pct"></span>
+          </div>
+          <div class="metric-bar-track"><div class="metric-bar-fill"></div></div>
+        </div>
+        <div class="metric-foot"></div>`;
       wrap.appendChild(card);
       gpuHist[i] = { util: [] };
       gpuEls[i] = {
         card: card,
         name: card.querySelector(".gpu-name"),
+        utilInline: card.querySelector(".gpu-util-inline"),
         util: card.querySelector(".gpu-util"),
+        nums: card.querySelector(".metric-bar-nums"),
+        barMain: card.querySelector(".metric-bar-main"),
+        barPct: card.querySelector(".metric-bar-pct"),
+        barFill: card.querySelector(".metric-bar-fill"),
         spark: card.querySelector("canvas"),
-        foot: card.querySelector(".gpu-foot"),
+        foot: card.querySelector(":scope > .metric-foot"),
       };
     }
   }
 
+  function renderGpuFoot(g) {
+    const els = gpuEls[Math.round(g.index)];
+    if (!els) return;
+    const temp = g.temperature_c != null
+      ? footItem(`${ICONS.temp}${g.temperature_c.toFixed(0)} °C`)
+      : footItem(`${ICONS.temp}—`, true);
+    const power = g.power_w != null
+      ? footItem(`${ICONS.power}${g.power_w.toFixed(0)}${g.power_limit_w ? ` / ${g.power_limit_w.toFixed(0)}` : ""} W`)
+      : footItem(`${ICONS.power}—`, true);
+    let vram = "";
+    if (mode === "graph") {
+      // A3: graphs-mode foot = temp (left) + VRAM (center) + power (right)
+      vram = g.vram_total_mb
+        ? footItem(`${(g.vram_used_mb / 1024).toFixed(1)} / ${(g.vram_total_mb / 1024).toFixed(1)} GB`)
+        : footItem("—", true);
+    }
+    els.foot.innerHTML = `${temp}${vram}${power}`;
+  }
+
   function updateGpus(gpus) {
+    lastGpus = gpus;
     if (gpus.length !== lastGpuCount) {
       lastGpuCount = gpus.length;
       buildGpuCards(gpus);
@@ -145,41 +248,45 @@ const Metrics = (() => {
       const h = gpuHist[i];
       if (!els || !h) continue;
       push(h.util, g.util_percent);
-      drawSpark(els.spark, h.util, { max: 100, topPad: bleedTopPad(els.card) });
+      if (mode === "graph") {
+        drawSpark(els.spark, h.util, { max: 100, topPad: bleedTopPad(els.card), grid: true });
+      }
       if (g.name) els.name.textContent = g.name;
-      els.util.textContent = `${(g.util_percent ?? 0).toFixed(0)}%`;
+      const util = g.util_percent == null ? null : g.util_percent.toFixed(0);
 
-      let vram = "";
-      if (g.vram_total_mb) {
-        const used = (g.vram_used_mb ?? 0) / 1024;
-        const tot = g.vram_total_mb / 1024;
-        const pct = Math.round((g.vram_used_mb / g.vram_total_mb) * 100);
-        vram =
-          `<span class="gpu-stat"><span class="gpu-lbl">VRAM</span>` +
-          `<span class="gpu-val">${used.toFixed(1)} / ${tot.toFixed(1)} GB</span>` +
-          `<span class="gpu-pct${pct >= 90 ? " hot" : ""}">${pct}%</span></span>`;
+      if (mode === "bar") {
+        // util % is a small secondary value next to the model name
+        els.util.hidden = true;
+        els.utilInline.hidden = !util;
+        els.utilInline.textContent = util != null ? `${util}%` : "";
+        // the VRAM bar is the centerpiece: values + % above it
+        if (g.vram_total_mb) {
+          const used = (g.vram_used_mb ?? 0) / 1024;
+          const tot = g.vram_total_mb / 1024;
+          const pct = Math.round((g.vram_used_mb / g.vram_total_mb) * 100);
+          els.nums.style.display = "";
+          els.barMain.textContent = `${used.toFixed(1)} / ${tot.toFixed(1)} GB`;
+          els.barPct.textContent = `${pct}%`;
+          setUsage(els.barPct, pct);
+          setBar(els.barFill, pct);
+        } else {
+          els.nums.style.display = "none";
+          setBar(els.barFill, 0);
+        }
+      } else {
+        els.utilInline.hidden = true;
+        els.util.hidden = !util;
+        els.util.textContent = util != null ? `${util}%` : "—";
+        setUsage(els.util, g.util_percent);
+        els.nums.style.display = "none";
       }
-      let temp = "";
-      if (g.temperature_c != null) {
-        temp =
-          `<span class="gpu-stat"><span class="gpu-lbl">Temp</span>` +
-          `<span class="gpu-val">${g.temperature_c.toFixed(0)} °C</span></span>`;
-      }
-      let power = "";
-      if (g.power_w != null) {
-        power =
-          `<span class="gpu-stat"><span class="gpu-lbl">Power</span>` +
-          `<span class="gpu-val">${g.power_w.toFixed(0)}${g.power_limit_w ? ` / ${g.power_limit_w.toFixed(0)}` : ""} W</span></span>`;
-      }
-      const row1 = vram ? `<div class="gpu-row">${vram}</div>` : "";
-      const row2 = temp || power ? `<div class="gpu-row">${temp}${power}</div>` : "";
-      els.foot.innerHTML = row1 + row2;
+      renderGpuFoot(g);
     }
   }
 
   /* ------------------------------ inference ------------------------------ */
 
-  // context bar color: green → yellow → orange → red as the % rises
+  // per-slot context color: green → yellow → orange → red as the % rises
   function ctxColor(pct) {
     const p = Math.min(100, Math.max(0, pct));
     return `hsl(${Math.round(120 - 1.2 * p)}, 80%, 52%)`;
@@ -194,11 +301,13 @@ const Metrics = (() => {
       list.innerHTML = "";
       nums.textContent = "—";
       fill.style.width = "0%";
+      fill.classList.remove("v-warn");
       return;
     }
     const pct = inf.ctx_total ? (inf.ctx_used / inf.ctx_total) * 100 : 0;
     fill.style.width = `${pct.toFixed(1)}%`;
-    fill.style.background = ctxColor(pct);
+    // context is capacity, not health: neutral, warn at >= 95%
+    fill.classList.toggle("v-warn", pct >= 95);
     nums.textContent = inf.ctx_total
       ? `${inf.ctx_used.toLocaleString()} / ${inf.ctx_total.toLocaleString()} · ${pct.toFixed(0)}%`
       : "—";
@@ -222,20 +331,43 @@ const Metrics = (() => {
 
   function update(data) {
     if (!data) return;
+    applyMode(data.usage_style || "graph");
+
     const cpu = data.cpu || {};
     const ram = data.ram || {};
 
     push(hist.cpu, cpu.total);
     push(hist.ram, ram.percent);
-    drawSpark($("cpu-spark"), hist.cpu, { max: 100, topPad: bleedTopPad($("cpu-card")) });
-    drawSpark($("ram-spark"), hist.ram, { max: 100, topPad: bleedTopPad($("ram-card")) });
+    if (mode === "graph") {
+      drawSpark($("cpu-spark"), hist.cpu, { max: 100, topPad: bleedTopPad($("cpu-card")), grid: true });
+      drawSpark($("ram-spark"), hist.ram, { max: 100, topPad: bleedTopPad($("ram-card")), grid: true });
+    }
 
     const cpuTotal = $("cpu-total");
+    if (cpuTotal) cpuTotal.textContent = `${(cpu.total ?? 0).toFixed(0)}%`;
+    setUsage(cpuTotal, cpu.total);
+    setBar($("cpu-bar-fill"), cpu.total);
+    const cores = cpu.per_core ? cpu.per_core.length : null;
+    $("cpu-cores").textContent = cores ? `${cores} cores` : "—";
+    const ghzEl = $("cpu-ghz");
+    const ghzItem = $("cpu-ghz-item");
+    if (cpu.freq_ghz != null) {
+      ghzItem.style.display = "";
+      ghzItem.classList.remove("muted");
+      ghzEl.textContent = `${cpu.freq_ghz.toFixed(2)} GHz`;
+    } else {
+      ghzItem.style.display = "none";
+    }
+
     const ramValue = $("ram-value");
     const ramDetail = $("ram-detail");
-    if (cpuTotal) cpuTotal.textContent = `${(cpu.total ?? 0).toFixed(0)}%`;
     if (ramValue) ramValue.textContent = `${(ram.percent ?? 0).toFixed(0)}%`;
-    if (ramDetail) ramDetail.textContent = ram.total_gb ? `${ram.used_gb} / ${ram.total_gb} GB` : "";
+    setUsage(ramValue, ram.percent);
+    setBar($("ram-bar-fill"), ram.percent);
+    if (ramDetail) {
+      ramDetail.textContent = ram.total_gb ? `${ram.used_gb} / ${ram.total_gb} GB` : "";
+      ramDetail.classList.toggle("muted", !ram.total_gb);
+    }
 
     updateGpus(data.gpus || []);
 
@@ -247,7 +379,8 @@ const Metrics = (() => {
     if (inf) {
       promptEl.textContent = inf.prompt_tps == null ? "—" : inf.prompt_tps.toFixed(1);
       genEl.textContent = inf.gen_tps == null ? "—" : inf.gen_tps.toFixed(1);
-      stateEl.textContent = "live";
+      const busy = (inf.slots || []).some((s) => s.busy);
+      stateEl.textContent = busy ? "generating" : "idle";
       stateEl.classList.remove("muted");
       if (inf.last_seq != null && inf.last_seq !== lastSeq) {
         lastSeq = inf.last_seq;
@@ -272,10 +405,11 @@ const Metrics = (() => {
   }
 
   function redrawAll() {
-    drawSpark($("cpu-spark"), hist.cpu, { max: 100, topPad: bleedTopPad($("cpu-card")) });
-    drawSpark($("ram-spark"), hist.ram, { max: 100, topPad: bleedTopPad($("ram-card")) });
+    if (mode !== "graph") return;
+    drawSpark($("cpu-spark"), hist.cpu, { max: 100, topPad: bleedTopPad($("cpu-card")), grid: true });
+    drawSpark($("ram-spark"), hist.ram, { max: 100, topPad: bleedTopPad($("ram-card")), grid: true });
     for (const key of Object.keys(gpuEls)) {
-      drawSpark(gpuEls[key].spark, gpuHist[key].util, { max: 100, topPad: bleedTopPad(gpuEls[key].card) });
+      drawSpark(gpuEls[key].spark, gpuHist[key].util, { max: 100, topPad: bleedTopPad(gpuEls[key].card), grid: true });
     }
   }
 
@@ -283,6 +417,7 @@ const Metrics = (() => {
 
   function init() {
     updateGpus([]);
+    applyMode("graph");
     window.addEventListener("resize", () => {
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(redrawAll, 150);

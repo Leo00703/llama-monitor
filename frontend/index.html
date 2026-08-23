@@ -82,22 +82,37 @@
           <pre id="flag-preview" class="log hidden"></pre>
         </section>
 
-        <section class="metrics-grid" id="metrics-grid">
-          <div class="card metric-card metric-card--graph" id="cpu-card">
+        <section class="metrics-grid mode-graph" id="metrics-grid">
+          <div class="card metric-card metric-card--spark" id="cpu-card">
             <canvas id="cpu-spark" class="spark spark-bleed"></canvas>
             <div class="card-head">
               <h2>CPU</h2>
               <span id="cpu-total" class="metric-value">—</span>
             </div>
+            <div class="metric-bar">
+              <div class="metric-bar-track"><div class="metric-bar-fill" id="cpu-bar-fill"></div></div>
+            </div>
+            <div class="metric-foot">
+              <span class="metric-foot-item" id="cpu-cores-item">
+                <svg class="micon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6.5" y="6.5" width="11" height="11" rx="1.5"/><rect x="10.2" y="10.2" width="3.6" height="3.6"/><path d="M9.5 6.5V3.8M14.5 6.5V3.8M9.5 20.2v-2.7M14.5 20.2v-2.7M6.5 9.5H3.8M6.5 14.5H3.8M20.2 9.5h-2.7M20.2 14.5h-2.7"/></svg>
+                <span id="cpu-cores">—</span>
+              </span>
+              <span class="metric-foot-item" id="cpu-ghz-item"><span id="cpu-ghz"></span></span>
+            </div>
           </div>
 
-          <div class="card metric-card metric-card--graph" id="ram-card">
+          <div class="card metric-card metric-card--spark" id="ram-card">
             <canvas id="ram-spark" class="spark spark-bleed"></canvas>
             <div class="card-head">
               <h2>RAM</h2>
               <span id="ram-value" class="metric-value">—</span>
             </div>
-            <div class="metric-foot"><span id="ram-detail" class="metric-foot-val"></span></div>
+            <div class="metric-bar">
+              <div class="metric-bar-track"><div class="metric-bar-fill" id="ram-bar-fill"></div></div>
+            </div>
+            <div class="metric-foot">
+              <span class="metric-foot-item" id="ram-detail"></span>
+            </div>
           </div>
 
           <div id="gpu-cards" class="gpu-cards"></div>
@@ -109,17 +124,17 @@
                 <span id="infer-state" class="muted small">no server</span>
               </div>
               <span class="infer-head-value">
-                <span id="gen-tps" class="metric-value">—</span><span class="infer-unit">tok/s</span>
+                <span id="gen-tps" class="metric-value infer-gen">—</span><span class="infer-unit">tok/s</span>
               </span>
             </div>
-            <div class="infer-chips">
-              <div class="infer-chip">
-                <span class="infer-chip-lbl">prompt tok/s</span>
-                <span id="prompt-tps" class="infer-chip-val">—</span>
+            <div class="infer-stats">
+              <div class="infer-stat">
+                <span class="infer-stat-lbl">prompt tok/s</span>
+                <span id="prompt-tps" class="infer-stat-val">—</span>
               </div>
-              <div class="infer-chip" id="draft-cell" hidden>
-                <span class="infer-chip-lbl">draft acceptance</span>
-                <span id="draft-rate" class="infer-chip-val">—</span>
+              <div class="infer-stat" id="draft-cell" hidden>
+                <span class="infer-stat-lbl">draft acceptance</span>
+                <span id="draft-rate" class="infer-stat-val">—</span>
               </div>
             </div>
             <div class="ctx-block">
@@ -425,6 +440,18 @@
             <p class="muted small">Panel host/port only take effect on next panel restart. Energy price is used for the cost estimates on the Analytics page.</p>
             <p class="muted small" id="set-datadir"></p>
           </form>
+        </div>
+        <div class="card">
+          <div class="card-head">
+            <h2>Dashboard</h2>
+          </div>
+          <div class="field"><label class="field-label">Usage display</label>
+            <div class="seg" id="set-usage-style" role="group" aria-label="Dashboard usage display">
+              <button type="button" class="seg-btn" data-style="graph">Graphs</button>
+              <button type="button" class="seg-btn" data-style="bar">Bars</button>
+            </div>
+          </div>
+          <p class="muted small">How the CPU / RAM / GPU usage cards render on the Dashboard. Applies live, no reload needed.</p>
         </div>
         <div class="card">
           <div class="card-head">

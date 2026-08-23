@@ -21,7 +21,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, ValidationError
 
@@ -196,6 +196,12 @@ class LlamaBackendSettings(BaseModel):
     pending: Optional[LlamaBackendPending] = None
 
 
+class DashboardSettings(BaseModel):
+    """Dashboard display settings."""
+
+    usage_style: Literal["graph", "bar"] = "graph"
+
+
 class AppConfig(BaseModel):
     """Live configuration, persisted to config.json (machine specific)."""
 
@@ -207,6 +213,7 @@ class AppConfig(BaseModel):
     energy_price_eur_kwh: float = 0.20
     energy_overhead_w: float = 0.0
     update_check_minutes: int = Field(default=5, ge=0, le=1440)  # 0 = off
+    dashboard: DashboardSettings = Field(default_factory=DashboardSettings)
     llama_backend: LlamaBackendSettings = Field(default_factory=LlamaBackendSettings)
 
     def model_root(self) -> Optional[Path]:

@@ -4,9 +4,15 @@
 
 const Settings = {
   llamaBackend: null,
+  dashboard: null,
 
   init() {
     document.getElementById("btn-save-settings").addEventListener("click", () => this.save());
+    // usage-style toggle: applies live (the dashboard reads it from the
+    // metrics WS payload), and persists straight away
+    document.querySelectorAll("#set-usage-style .seg-btn").forEach((b) => {
+      b.addEventListener("click", () => this.setUsageStyle(b.dataset.style));
+    });
     document.getElementById("btn-check-updates").addEventListener("click", async () => {
       const b = document.getElementById("btn-check-updates");
       const label = b.textContent;
@@ -49,6 +55,9 @@ const Settings = {
         ? `Data (config, presets, analytics history) is stored in: ${cfg.data_dir}`
         : "";
       document.getElementById("set-update-interval").value = String(cfg.update_check_minutes ?? 5);
+      const dash = cfg.dashboard || {};
+      this.dashboard = { usage_style: dash.usage_style || "graph" };
+      this.setSegActive(this.dashboard.usage_style);
       // llama.cpp backend card — kept in memory so save() can merge the
       // form fields without clobbering last_check / pending
       const lb = cfg.llama_backend || {};
@@ -115,6 +124,30 @@ const Settings = {
     }
   },
 
+  setSegActive(style) {
+    document.querySelectorAll("#set-usage-style .seg-btn").forEach((b) => {
+      b.classList.toggle("active", b.dataset.style === style);
+    });
+  },
+
+  async setUsageStyle(style) {
+    if (style !== "graph" && style !== "bar") return;
+    this.setSegActive(style); // optimistic — the metrics tick confirms it
+    try {
+      const res = await API.post("/api/config", { dashboard: { usage_style: style } });
+      if (!res.ok) {
+        UI.toast(res.error || "save failed", "err");
+        this.load();
+        return;
+      }
+      if (this.dashboard) this.dashboard.usage_style = style;
+      UI.toast(style === "bar" ? "Dashboard: bars" : "Dashboard: graphs");
+    } catch (e) {
+      UI.toast(`save failed: ${e}`, "err");
+      this.load();
+    }
+  },
+
   async save() {
     const body = {
       update_check_minutes: parseInt(document.getElementById("set-update-interval").value, 10) || 0,
@@ -138,6 +171,10 @@ const Settings = {
         variant: document.getElementById("be-variant").value,
         storage_dir: document.getElementById("be-storage").value.trim(),
       };
+    }
+    if (this.dashboard) {
+      // nested model: send the full object
+      body.dashboard = { ...this.dashboard };
     }
     try {
       const res = await API.post("/api/config", body);

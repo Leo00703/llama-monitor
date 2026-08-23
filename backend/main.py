@@ -100,7 +100,7 @@ def _update_loop(manager: LlamaServerManager, loop: asyncio.AbstractEventLoop,
 
 async def _metrics_loop(collector: MetricsCollector, manager: LlamaServerManager,
                         power: PowerSampler, tracker: PrintTimingTracker,
-                        live_log: LiveLogStats) -> None:
+                        live_log: LiveLogStats, config: AppConfig) -> None:
     """Poll system + inference metrics and push them to WebSocket listeners."""
     while True:
         await asyncio.sleep(METRICS_INTERVAL)
@@ -113,6 +113,7 @@ async def _metrics_loop(collector: MetricsCollector, manager: LlamaServerManager
         power.add(float(data.get("ts") or time.time()), total_w if total_w > 0 else None)
         _enrich_inference(data, tracker, live_log)
         tracker.tick()
+        data["usage_style"] = config.dashboard.usage_style  # live mode switch
         manager.broadcast({"type": "metrics", "data": data})
 
 
@@ -293,7 +294,8 @@ def create_app() -> FastAPI:
         await manager.on_startup()
         log.info("panel ready (state=%s)", manager.snapshot()["state"])
         loop = asyncio.get_running_loop()
-        task = asyncio.create_task(_metrics_loop(collector, manager, power, tracker, live_log))
+        task = asyncio.create_task(
+            _metrics_loop(collector, manager, power, tracker, live_log, config))
         updater = threading.Thread(
             target=_update_loop, args=(manager, loop, config),
             daemon=True, name="update-checker")
