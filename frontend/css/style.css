@@ -621,8 +621,6 @@ select option { background: #1a1a1a; color: var(--text); }
 
 .slot-nums { width: 120px; flex: none; text-align: right; }
 
-.btn-small { padding: 3px 12px; font-size: 12.5px; }
-
 /* ---------- forms ---------- */
 
 input[type="text"],
