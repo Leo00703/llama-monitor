@@ -1216,6 +1216,13 @@ fieldset.fieldset legend {
   flex: none;
 }
 
+/* llama.cpp backend card: even 14px vertical rhythm between the stacked
+   rows (intro, current-build row, channel/variant grid, folder field,
+   auto-download checkbox, version picker, buttons, status line) */
+.be-card > p { margin: 0; }
+.be-card > * + * { margin-top: 14px; }
+.be-card > * + p { margin-top: 14px; } /* beats the p margin:0 above */
+.be-card > .be-current { margin-top: 14px; } /* beats .be-current's own 2px */
 .seg-btn.active { background: #f5f5f5; color: #111; }
 .seg-btn:not(.active):hover { color: var(--text); }
 
