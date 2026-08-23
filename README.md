@@ -11,7 +11,10 @@ line:
   settings (never raw CLI strings). A translation layer converts them to real
   `llama-server` flags at launch time, and validates them against the actually
   installed version via `llama-server --help` — unknown flags are reported as
-  warnings instead of blocking the start.
+  warnings instead of blocking the start. Speculative decoding is organized
+  per technique (MTP, DFlash, DSpark, draft-simple, EAGLE-3); types the
+  installed build doesn't document are greyed out in the editor and blocked
+  at launch with a clear message.
 - **Resource monitoring** — CPU (per-core), RAM, and one card per detected GPU
   (utilization, VRAM, temperature, power draw) via `nvidia-smi`,
   plus inference metrics (prompt/generation tok/s, per-slot context usage,
@@ -140,6 +143,8 @@ backend/
   schema.py      Pydantic models for launch settings, specs, and API payloads
   process.py     llama-server child-process manager (state machine, log capture)
   flags.py       semantic settings -> CLI flags translation + --help validation
+  spec/          speculative decoding: one module per technique (mtp, dflash,
+                 dspark, draft-simple, eagle3) + registry
   presets.py     preset CRUD (JSON files under <data-dir>/presets)
   metrics.py     CPU/RAM (psutil), GPU (nvidia-smi), inference metrics
   models.py      recursive .gguf browser + mmproj detection

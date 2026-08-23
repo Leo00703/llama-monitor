@@ -17,6 +17,9 @@ llama-monitor: a lightweight web control panel for a local `llama-server`
   - `schema.py` Pydantic models (launch settings, API payloads)
   - `process.py` llama-server child-process manager (state machine, log capture)
   - `flags.py` semantic settings → CLI flags translation + `--help` validation
+  - `spec/` speculative decoding — one module per technique (`mtp`,
+    `dflash`, `dspark`, `draft_simple`, `eagle3`) + registry (`get()`);
+    ngram-* has no module (no drafter/extra fields)
   - `presets.py` preset CRUD (JSON files under `<data-dir>/presets`)
   - `metrics.py` CPU/RAM (psutil), GPU (nvidia-smi), inference metrics
   - `models.py` recursive `.gguf` browser + mmproj detection
@@ -223,6 +226,7 @@ To stay focused on the current work:
   block. The tracker must therefore treat the block as open until a
   NON-`print_timing` line arrives — finalizing on the `total` line (or any
   single line) silently drops the later `draft acceptance` line.
+- **DSpark confidence flag is `--spec-draft-p-min`, not `--spec-draft-conf-min`**: the DSpark section of llama.cpp's `docs/speculative.md` still shows the pre-rename name; the current `--help` flag list and `common/speculative.cpp` use `--spec-draft-p-min` (block truncation when the draft's confidence head falls below it; also a generic early-stop for other draft types). Verified against master 2026-08-23. Don't "fix" `dspark.py` back to conf-min.
 - **Headless Chrome** clamps window width to ~500px — size the viewport with an
   iframe inside the page, not with the browser window.
 - **Headless Chrome CDP + caching**: the persistent profile keeps its disk
