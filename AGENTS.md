@@ -26,6 +26,8 @@ llama-monitor: a lightweight web control panel for a local `llama-server`
   - `proxy.py` `/v1/chat/completions` & `/completion` proxy with settings injection
   - `analytics.py` print_timing parser + SQLite request/energy history
   - `update.py` git self-update (fetch/ff-only pull of origin, version info)
+  - `backend_update.py` llama.cpp build updater (release check, download,
+    verify, install/rollback, retention)
 - `frontend/` — single-page vanilla app: `index.html`, `css/style.css`,
   `js/` (app shell + `pages/`), `fonts/` (bundled Geist Mono woff2)
 - `tray.py` — Windows tray launcher (embeds the panel; `--smoke` headless
@@ -227,6 +229,33 @@ To stay focused on the current work:
   NON-`print_timing` line arrives — finalizing on the `total` line (or any
   single line) silently drops the later `draft acceptance` line.
 - **DSpark confidence flag is `--spec-draft-p-min`, not `--spec-draft-conf-min`**: the DSpark section of llama.cpp's `docs/speculative.md` still shows the pre-rename name; the current `--help` flag list and `common/speculative.cpp` use `--spec-draft-p-min` (block truncation when the draft's confidence head falls below it; also a generic early-stop for other draft types). Verified against master 2026-08-23. Don't "fix" `dspark.py` back to conf-min.
+- **llama.cpp build updater (#18)** — release facts (verified 2026-08, will
+  drift): stable tags ship NO binaries — they carry only a `nightly-tag.txt`
+  pointer (v0.2.0 → b10566), so "stable" downloads the pinned NIGHTLY zip;
+  every `b[NNNN]` nightly is `prerelease: True` and `/releases/latest`
+  returns the stable tag. Windows zips are FLAT (`llama-server.exe` at zip
+  root). No SHA256/signature artifacts — trust = GitHub TLS + the
+  `verify_build()` step. Provenance: `llama-server --version` prints to
+  **stderr**; official = `build > 0` AND `commit != "unknown"`; build maps
+  1:1 to the `b{N}` tag (that's what makes current-vs-remote comparable).
+  `backend_update.py` keeps a 30-min release cache; the panel-side loop
+  (`be_loop` in main.py, daemon thread: 25 s startup sleep, 60 s poll) uses
+  `check_due()` (≥12 h since last check OR crossed the 00:00/12:00
+  boundary) and broadcasts `llama.update.*` via `run_coroutine_threadsafe`
+  (never `manager.broadcast` off-thread). All state lives on
+  `config.llama_backend` (mutated in place + `save_config`) — restarting
+  the panel is the only way to reset `last_check`/`pending` from disk. **Apply is restricted to builds inside
+  the storage folder** (`relative_to(storage)`) — rollback to a custom/
+  non-managed folder is rejected by design (switch custom builds by editing
+  `llama_server_exe`). Retention keeps current + previous MANAGED builds
+  (identified by the `llama-monitor.json` manifest); folders without a
+  manifest are never deleted. `be_apply` captures `manager.preset_id`
+  BEFORE `manager.stop()` (stop clears it). Asset naming is deterministic
+  (`llama-b{N}-bin-win-cpu-x64.zip`, `…-vulkan-x64.zip`,
+  `…-cuda{ver}-x64.zip`; Linux: `ubuntu-x64.tar.gz` without a "cpu" segment)
+  with a prefix-match fallback; `suggest_variant()` reads the nvidia-smi
+  driver major (≥580 → cuda-13.3, else cuda-12.4; no nvidia-smi → cpu) and
+  only ever SUGGESTS — the user confirms.
 - **Headless Chrome** clamps window width to ~500px — size the viewport with an
   iframe inside the page, not with the browser window.
 - **Headless Chrome CDP + caching**: the persistent profile keeps its disk

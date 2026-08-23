@@ -41,6 +41,18 @@ line:
   interrupted. The first launch after an update can take a while — the
   relaunched tray exe re-extracts its bundle on start, and the panel
   reports the wait live (up to ~5 min).
+- **llama.cpp build updater** — a separate Settings card keeps the
+  *llama.cpp binary* current (independent of the panel's own self-update):
+  it checks the official GitHub releases — **stable** (the pinned nightly of
+  the latest stable release) or **nightly** — twice a day, downloads the
+  chosen build to a local builds folder (next to the current build by
+  default; optional auto-download), and verifies it by running its
+  `--version`. **Update llama.cpp** then installs it in one step — stops the
+  server first if it is running, swaps `llama_server_exe` to the new build,
+  and offers to restart the current preset. Every downloaded build stays on
+  disk (retention: current + previous), so the same picker is also the
+  rollback path. Custom / PR-branch builds are detected from the
+  `--version` output and never touched — updates stay fully manual for them.
 
 ## Screenshots
 
@@ -96,6 +108,10 @@ in-app **Settings** page (which shows the data directory in use):
 | `energy_price_eur_kwh` | € per kWh, used for the cost estimates on the Analytics page |
 | `energy_overhead_w` | Constant idle-system wattage added to the GPU power estimate |
 | `update_check_minutes` | Self-update background poll interval (0 disables the check) |
+| `llama_backend.channel` | Build channel: `stable` (pinned nightly of the latest stable release) or `nightly` |
+| `llama_backend.variant` | Build flavor: `cpu`, `vulkan`, `cuda-12.4`, `cuda-13.3` (the **Detect** button suggests one from `nvidia-smi`) |
+| `llama_backend.auto_download` | Download new builds automatically when a check finds them (installing always stays manual) |
+| `llama_backend.storage_dir` | Folder for downloaded builds (default: a `llama-builds`-style sibling of the current build) |
 
 ## Run
 
@@ -151,13 +167,15 @@ backend/
   proxy.py       /v1/chat/completions & /completion proxy with settings injection
   analytics.py   print_timing parser + SQLite request/energy history
   update.py      git self-update (fetch/ff-only pull of origin, version info)
+  backend_update.py  llama.cpp build updater (release check, download, verify,
+                     install/rollback, retention)
 llama-monitor.exe    latest CI-built tray exe, tracked at the repo root so
                      `git pull` always ships it
 config.example.json  template documenting every config key
 frontend/
   index.html     single-page app (vanilla HTML/CSS/JS, no build step)
   css/style.css  official llama.cpp dark theme
-  js/            app shell (app.js), api/ui/metrics/update helpers, pages/
+  js/            app shell (app.js), api/ui/metrics/backend/update helpers, pages/
                  (dashboard, generation, presets, models, analytics, settings)
   fonts/         bundled Geist Mono (woff2)
 tray.py          Windows system-tray launcher (embeds the panel, --smoke self-test,
