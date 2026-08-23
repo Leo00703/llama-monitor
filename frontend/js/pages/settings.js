@@ -3,6 +3,8 @@
 /* llama-monitor — settings page: executable, models root, panel ports */
 
 const Settings = {
+  llamaBackend: null,
+
   init() {
     document.getElementById("btn-save-settings").addEventListener("click", () => this.save());
     document.getElementById("btn-check-updates").addEventListener("click", async () => {
@@ -47,6 +49,21 @@ const Settings = {
         ? `Data (config, presets, analytics history) is stored in: ${cfg.data_dir}`
         : "";
       document.getElementById("set-update-interval").value = String(cfg.update_check_minutes ?? 5);
+      // llama.cpp backend card — kept in memory so save() can merge the
+      // form fields without clobbering last_check / pending
+      const lb = cfg.llama_backend || {};
+      this.llamaBackend = {
+        channel: lb.channel || "stable",
+        auto_download: !!lb.auto_download,
+        variant: lb.variant || "cpu",
+        storage_dir: lb.storage_dir || "",
+        last_check: lb.last_check || "",
+        pending: lb.pending || null,
+      };
+      document.getElementById("be-channel").value = this.llamaBackend.channel;
+      document.getElementById("be-variant").value = this.llamaBackend.variant;
+      document.getElementById("be-storage").value = this.llamaBackend.storage_dir;
+      document.getElementById("be-autodl").checked = this.llamaBackend.auto_download;
     } catch (e) {
       UI.toast(`failed to load settings: ${e}`, "err");
     }
@@ -111,9 +128,22 @@ const Settings = {
       energy_price_eur_kwh: parseFloat(document.getElementById("set-energy-price").value) || 0,
       energy_overhead_w: parseFloat(document.getElementById("set-energy-overhead").value) || 0,
     };
+    if (this.llamaBackend) {
+      // nested model: send the FULL object (last_check/pending preserved
+      // from the in-memory copy — a scheduled check may have advanced them)
+      body.llama_backend = {
+        ...this.llamaBackend,
+        channel: document.getElementById("be-channel").value,
+        auto_download: document.getElementById("be-autodl").checked,
+        variant: document.getElementById("be-variant").value,
+        storage_dir: document.getElementById("be-storage").value.trim(),
+      };
+    }
     try {
       const res = await API.post("/api/config", body);
       if (!res.ok) { UI.toast(res.error || "save failed", "err"); return; }
+      if (body.llama_backend) this.llamaBackend = { ...this.llamaBackend, ...body.llama_backend };
+      Backend.refresh();
       UI.toast("settings saved");
     } catch (e) {
       UI.toast(`save failed: ${e}`, "err");

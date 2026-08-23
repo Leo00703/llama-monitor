@@ -5,9 +5,11 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import shutil
 import threading
 import time
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import Any, AsyncIterator, Callable, Optional
 
@@ -16,6 +18,8 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 
+import httpx
+
 from .analytics import (
     AnalyticsStore,
     LiveLogStats,
@@ -23,7 +27,16 @@ from .analytics import (
     PrintTimingTracker,
     RANGES,
 )
-from .config import DATA_DIR, PRESETS_DIR, AppConfig, load_config, save_config
+from .config import (
+    DATA_DIR,
+    PRESETS_DIR,
+    AppConfig,
+    LlamaBackendPending,
+    LlamaBackendSettings,
+    load_config,
+    save_config,
+)
+from . import backend_update
 from .flags import build_args, parse_help, validate_settings
 from .metrics import MetricsCollector
 from .models import list_models
@@ -285,6 +298,15 @@ def create_app() -> FastAPI:
             target=_update_loop, args=(manager, loop, config),
             daemon=True, name="update-checker")
         updater.start()
+        backend_thread = threading.Thread(
+            target=be_loop, args=(loop,),
+            daemon=True, name="backend-checker")
+        backend_thread.start()
+        # leftover of an interrupted download (A9: re-download, no resume)
+        try:
+            backend_update.cleanup_partials(be_storage())
+        except OSError:
+            pass
         yield
         _updater_stop.set()
         task.cancel()
@@ -340,6 +362,296 @@ def create_app() -> FastAPI:
     @app.post("/api/presets/{preset_id}/preview")
     async def preset_preview(preset_id: str) -> dict:
         return await prepare_launch(preset_id)
+
+    # ------------------------------------------------------------------
+    # llama.cpp backend updates (check / download / apply — see
+    # backend_update.py). Unlike the app self-update this is pure file
+    # work: stop → extract → verify --version → flip config → start.
+    # ------------------------------------------------------------------
+
+    be_downloading = False  # single-flight download guard
+
+    def be_storage() -> Path:
+        return backend_update.resolve_storage(config)
+
+    async def be_current() -> dict:
+        return await backend_update.provenance(config.resolved_exe() or "")
+
+    def be_target_tag(rel: dict) -> Optional[str]:
+        return (rel.get("pinned_nightly") if config.llama_backend.channel
+                == "stable" else rel.get("latest_nightly"))
+
+    async def be_run_check(manual: bool = False) -> dict:
+        """One update check: compare the channel's latest build with the
+        current one, set `pending`, and (if enabled) start the download.
+
+        Automation (notify + auto-download) only for official prebuilts —
+        manual actions from the card stay available for custom builds.
+        """
+        nonlocal be_downloading
+        try:
+            rel = await backend_update.fetch_releases(force=manual)
+        except (httpx.HTTPError, OSError, ValueError) as exc:
+            return {"ok": False, "error": f"release check failed: {exc}"}
+        lb = config.llama_backend
+        lb.last_check = datetime.now().isoformat(timespec="seconds")
+        current = await be_current()
+        save_config(config)
+        target = be_target_tag(rel)
+        res: dict[str, Any] = {
+            "ok": True, "remote": rel, "current": current, "target": target,
+            "automation": current["official"],
+        }
+        if not target:
+            res["error"] = "could not determine the latest build — try again later"
+            return res
+        if not current["official"]:
+            return res
+        if target == current["tag"]:
+            if lb.pending is not None:
+                lb.pending = None
+                save_config(config)
+            res["pending"] = None
+            return res
+        pending = lb.pending or LlamaBackendPending()
+        changed = pending.tag != target or pending.state != "available"
+        pending.tag, pending.variant, pending.state = target, lb.variant, "available"
+        lb.pending = pending
+        save_config(config)
+        res["pending"] = pending
+        if changed:
+            manager.broadcast({
+                "type": "llama.update.available",
+                "data": {
+                    "tag": target, "channel": lb.channel,
+                    "current": current["tag"],
+                    "stable_tag": rel.get("stable_tag"),
+                },
+            })
+        if lb.auto_download and not be_downloading:
+            asyncio.create_task(be_download(target, lb.variant))
+        return res
+
+    async def be_download(tag: str, variant: str) -> dict:
+        """Download + extract + verify a build into the storage folder."""
+        nonlocal be_downloading
+        if be_downloading:
+            return {"ok": False, "error": "a download is already in progress"}
+        be_downloading = True
+        t0 = time.time()
+        try:
+            storage = be_storage()
+            storage.mkdir(parents=True, exist_ok=True)
+            headers = {"User-Agent": backend_update.USER_AGENT}
+            async with httpx.AsyncClient(timeout=30, headers=headers,
+                                         follow_redirects=True) as client:
+                asset = await backend_update.find_asset(client, tag, variant)
+            if asset is None:
+                return {"ok": False,
+                        "error": f"no {variant} build for {tag} on this platform"}
+            # A6: free space for the zip + the extracted copy
+            free = backend_update.free_bytes(storage)
+            needed = (asset.get("size") or 0) * 2
+            if free is not None and free < needed:
+                return {"ok": False, "error": (
+                    f"not enough free space in {storage}: need ~"
+                    f"{needed / 1048576:.0f} MB, have {free / 1048576:.0f} MB")}
+            zip_path = storage / asset["name"]
+
+            def progress(done: int, total: int) -> None:
+                manager.broadcast({"type": "llama.update.progress", "data": {
+                    "tag": tag, "done": done, "total": total,
+                    "percent": round(done * 100 / total) if total else 0,
+                }})
+
+            await backend_update.download_file(asset, zip_path, progress)
+            build_dir = storage / f"llama-{tag}-{variant}"
+            if build_dir.exists():
+                shutil.rmtree(build_dir, ignore_errors=True)
+            backend_update.extract_archive(zip_path, build_dir)
+            ver = await backend_update.verify_build(build_dir, tag)
+            if not ver["ok"]:
+                shutil.rmtree(build_dir, ignore_errors=True)
+                return {"ok": False, "error": ver["error"]}
+            backend_update.write_manifest(
+                build_dir, tag, variant, asset["browser_download_url"],
+                asset.get("size") or 0)
+            config.llama_backend.pending = LlamaBackendPending(
+                tag=tag, variant=variant, state="downloaded")
+            save_config(config)
+            manager.broadcast({"type": "llama.update.downloaded",
+                               "data": {"tag": tag, "dir": str(build_dir)}})
+            return {"ok": True, "dir": str(build_dir),
+                    "seconds": round(time.time() - t0, 1)}
+        except (httpx.HTTPError, OSError, ValueError,
+                backend_update.UpdateError) as exc:
+            log.exception("backend download failed")
+            return {"ok": False, "error": str(exc)}
+        finally:
+            be_downloading = False
+
+    async def be_apply(body: dict) -> dict:
+        """Flip the configured executable to a downloaded build: stop the
+        panel-managed server (if running), flip the config, restart with
+        the same preset. External servers keep running on the old build
+        until restarted manually."""
+        d = (body or {}).get("dir") or ""
+        if not d:
+            return {"ok": False, "error": "missing build dir"}
+        try:
+            target_dir = Path(d).expanduser().resolve()
+        except (OSError, RuntimeError):
+            return {"ok": False, "error": "invalid build dir"}
+        storage = be_storage().resolve()
+        try:
+            target_dir.relative_to(storage)
+        except ValueError:
+            return {"ok": False,
+                    "error": f"build dir is not inside the storage folder ({storage})"}
+        exe_name = backend_update.server_exe_name()
+        if not (target_dir / exe_name).exists():
+            return {"ok": False, "error": f"no {exe_name} in that build folder"}
+
+        state = manager.snapshot()["state"]
+        external = state == "external"
+        preset_id = manager.preset_id  # stop() clears it — capture first
+        if state in ("running", "starting", "restarting") and not external:
+            stop = await manager.stop()
+            if not stop.get("ok"):
+                return {"ok": False,
+                        "error": f"could not stop the server: {stop.get('error') or 'stop failed'}"}
+
+        config.llama_server_exe = str(target_dir / exe_name)
+        # a freshly installed build is no longer "pending"
+        pend = config.llama_backend.pending
+        mp = target_dir / backend_update.MANIFEST_NAME
+        if pend and pend.tag and mp.exists():
+            try:
+                if json.loads(mp.read_text(encoding="utf-8")).get("tag") == pend.tag:
+                    config.llama_backend.pending = None
+            except (json.JSONDecodeError, OSError):
+                pass
+        save_config(config)
+        await manager.redetect_version()  # topbar must show the new build
+        res: dict[str, Any] = {"ok": True, "exe": config.llama_server_exe,
+                               "external": external}
+        if external:
+            res["note"] = ("the running external server keeps the old build "
+                           "until it is restarted manually")
+        elif preset_id:
+            prepared = await prepare_launch(preset_id)
+            if prepared["ok"]:
+                start = await manager.start(prepared["args"])
+                if start.get("ok"):
+                    manager.set_preset_id(preset_id)
+                    proxy.invalidate_props_cache()
+                    res["restarted"] = True
+                else:
+                    res["restarted"] = False
+                    res["error"] = (f"config flipped, but restart failed: "
+                                    f"{start.get('error') or 'start failed'}")
+            else:
+                res["restarted"] = False
+                res["error"] = ("config flipped, but restart failed: "
+                                + "; ".join(prepared["errors"]))
+        else:
+            res["restarted"] = False
+            res["note"] = "config flipped — start the server when ready"
+
+        # retention: keep the new current build + the most recently
+        # installed managed build (the previous one — the rollback target),
+        # whatever folder the old current lived in
+        keep = {target_dir.name}
+        for b in await asyncio.to_thread(backend_update.local_builds, storage):
+            if b["name"] != target_dir.name:
+                keep.add(b["name"])
+                break
+        deleted = await asyncio.to_thread(backend_update.prune, storage, keep)
+        if deleted:
+            res["pruned"] = deleted
+        return res
+
+    def be_loop(loop: asyncio.AbstractEventLoop) -> None:
+        """Twice-daily (00:00 / 12:00 local) build check + startup catch-up."""
+        time.sleep(25.0)  # don't slow down startup with a network call
+        while not _updater_stop.wait(60.0):
+            try:
+                if backend_update.check_due(config.llama_backend):
+                    fut = asyncio.run_coroutine_threadsafe(
+                        be_run_check(manual=False), loop)
+                    try:
+                        fut.result(timeout=180)
+                    except Exception:
+                        log.exception("scheduled backend check failed")
+            except Exception:
+                log.exception("backend check loop error")
+
+    @app.get("/api/backend/suggest")
+    async def backend_suggest() -> dict:
+        return {"ok": True, **backend_update.suggest_variant()}
+
+    @app.get("/api/backend/versions")
+    async def backend_versions() -> dict:
+        current = await be_current()
+        try:
+            remote = await backend_update.fetch_releases()
+            remote_error: Optional[str] = None
+        except (httpx.HTTPError, OSError, ValueError) as exc:
+            remote, remote_error = None, str(exc)
+        storage = be_storage()
+        return {
+            "ok": True,
+            "current": current,
+            "remote": remote,
+            "remote_error": remote_error,
+            "storage": str(storage),
+            "local": backend_update.local_builds(storage),
+            "settings": config.llama_backend.model_dump(),
+            "downloading": be_downloading,
+        }
+
+    @app.post("/api/backend/check")
+    async def backend_check() -> dict:
+        return await be_run_check(manual=True)
+
+    @app.post("/api/backend/download")
+    async def backend_download(body: dict[str, Any] | None = None) -> dict:
+        body = body or {}
+        tag = (body.get("tag") or "").strip()
+        variant = (body.get("variant") or config.llama_backend.variant).strip()
+        if not tag:
+            # no explicit tag: use the channel's latest (fresh check)
+            res = await be_run_check(manual=True)
+            if not res.get("ok"):
+                return res
+            tag = res.get("target") or ""
+            if not tag:
+                return {"ok": False, "error": "no target build found"}
+        if be_downloading:
+            return {"ok": False, "error": "a download is already in progress"}
+        asyncio.create_task(be_download(tag, variant))
+        return {"ok": True, "started": True, "tag": tag, "variant": variant}
+
+    @app.post("/api/backend/apply")
+    async def backend_apply(body: dict[str, Any] | None = None) -> dict:
+        return await be_apply(body or {})
+
+    @app.post("/api/backend/config")
+    async def backend_set_config(body: dict[str, Any]) -> dict:
+        fields = LlamaBackendSettings.model_fields
+        merged = {k: v for k, v in (body or {}).items() if k in fields}
+        try:
+            new = LlamaBackendSettings.model_validate(
+                {**config.llama_backend.model_dump(), **merged})
+        except ValidationError as exc:
+            return {"ok": False, "error": str(exc)}
+        if new.channel not in ("stable", "nightly"):
+            return {"ok": False, "error": "channel must be 'stable' or 'nightly'"}
+        if new.variant not in backend_update.VARIANTS:
+            return {"ok": False, "error": f"unknown variant '{new.variant}'"}
+        config.llama_backend = new
+        save_config(config)
+        return {"ok": True, "settings": config.llama_backend.model_dump()}
 
     # ------------------------------------------------------------------
     # REST: process control

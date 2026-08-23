@@ -78,6 +78,12 @@ class LlamaServerManager:
         self._detect_external()
         self._publish_state()
 
+    async def redetect_version(self) -> None:
+        """Re-probe the configured exe (e.g. after the build updater
+        swapped it) and refresh the state broadcast."""
+        self._version = await self._detect_version()
+        self._publish_state()
+
     async def shutdown(self) -> None:
         if self._proc is not None and self._proc.returncode is None:
             if _linger_server:

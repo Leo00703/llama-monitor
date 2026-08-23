@@ -262,6 +262,10 @@ API.connect("/ws/logs", (event) => {
     Metrics.update(event.data);
   } else if (event.type === "update.available") {
     Update.maybeShow(event.data);
+  } else if (event.type === "llama.update.available" ||
+             event.type === "llama.update.progress" ||
+             event.type === "llama.update.downloaded") {
+    Backend.onWs(event);
   }
 });
 
@@ -309,6 +313,7 @@ Models.init();
 Generation.init();
 Presets.init();
 Settings.init();
+Backend.init();
 Analytics.init();
 Metrics.init();
 Update.init();

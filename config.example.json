@@ -9,5 +9,13 @@
   "active_preset_id": "",
   "energy_price_eur_kwh": 0.2,
   "energy_overhead_w": 0,
-  "update_check_minutes": 5
+  "update_check_minutes": 5,
+  "llama_backend": {
+    "channel": "stable",
+    "auto_download": false,
+    "variant": "cpu",
+    "storage_dir": "",
+    "last_check": "",
+    "pending": null
+  }
 }

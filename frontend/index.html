@@ -450,6 +450,49 @@
           </div>
           <p class="muted small">Updates pull the latest commits from the repository and restart the panel. The model server is stopped during the update and must be started again afterwards.</p>
         </div>
+        <div class="card">
+          <div class="card-head">
+            <h2>llama.cpp backend</h2>
+          </div>
+          <p class="muted small">
+            Check for new llama.cpp builds (twice a day, ~00:00 and ~12:00) and
+            update the llama-server binary. New builds are downloaded to the
+            storage folder; installing one is always a manual choice. Your custom
+            builds are never touched automatically.
+          </p>
+          <div id="be-current" class="be-current"></div>
+          <div class="grid2">
+            <div class="field"><label class="field-label" for="be-channel">Channel</label>
+              <select id="be-channel">
+                <option value="stable">Stable (pinned nightly)</option>
+                <option value="nightly">Nightly (latest build)</option>
+              </select>
+            </div>
+            <div class="field"><label class="field-label" for="be-variant">Build variant</label>
+              <div class="be-variant-row">
+                <select id="be-variant">
+                  <option value="cpu">CPU</option>
+                  <option value="vulkan">Vulkan</option>
+                  <option value="cuda-12.4">CUDA 12.4 (Windows)</option>
+                  <option value="cuda-13.3">CUDA 13.3 (Windows)</option>
+                </select>
+                <button type="button" id="be-detect" class="btn" title="Suggest a variant from the installed GPU driver — you make the final call">Detect</button>
+              </div>
+            </div>
+          </div>
+          <div class="field"><label class="field-label" for="be-storage">Download folder</label>
+            <input type="text" id="be-storage" spellcheck="false" placeholder="default: next to the current build folder">
+          </div>
+          <label class="check"><input type="checkbox" id="be-autodl"><span>Download new builds automatically (never installed automatically)</span></label>
+          <div id="be-pick" role="button" tabindex="0" aria-expanded="false" aria-controls="be-pick-list"></div>
+          <div id="be-pick-list" class="be-pick-list hidden" role="listbox"></div>
+          <div class="set-update-actions">
+            <button type="button" id="be-check" class="btn btn-neutral">Check for updates</button>
+            <button type="button" id="be-download" class="btn btn-neutral">Download</button>
+            <button type="button" id="be-update" class="btn btn-neutral">Update llama.cpp</button>
+          </div>
+          <p class="muted small" id="be-status"></p>
+        </div>
       </section>
     </main>
   </div>
@@ -479,6 +522,18 @@
   </div>
 </div>
 
+<div id="be-modal-overlay" class="update-overlay" hidden>
+  <div class="update-modal" role="dialog" aria-modal="true" aria-labelledby="be-modal-title">
+    <div class="update-modal-spinner" id="be-modal-spinner" hidden></div>
+    <div class="update-modal-title" id="be-modal-title">llama.cpp</div>
+    <div class="update-modal-status" id="be-modal-status"></div>
+    <div class="be-modal-actions">
+      <button type="button" id="be-modal-cancel" class="btn" hidden>Cancel</button>
+      <button type="button" id="be-modal-ok" class="btn btn-neutral">OK</button>
+    </div>
+  </div>
+</div>
+
 <datalist id="models-datalist"></datalist>
 <datalist id="mmproj-datalist"></datalist>
 
@@ -491,6 +546,7 @@
 <script src="js/pages/presets.js"></script>
 <script src="js/pages/settings.js"></script>
 <script src="js/pages/analytics.js"></script>
+<script src="js/backend.js"></script>
 <script src="js/update.js"></script>
 <script src="js/app.js"></script>
 </body>

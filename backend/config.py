@@ -177,6 +177,25 @@ class PanelSettings(BaseModel):
     port: int = 8000
 
 
+class LlamaBackendPending(BaseModel):
+    """A build that is available/downloaded but not yet applied."""
+
+    tag: str = ""            # e.g. "b10588"
+    variant: str = ""
+    state: str = "available"  # available | downloaded
+
+
+class LlamaBackendSettings(BaseModel):
+    """llama.cpp backend (build) update settings — see backend_update.py."""
+
+    channel: str = "stable"     # stable (pinned nightly) | nightly
+    auto_download: bool = False
+    variant: str = "cpu"        # cpu | vulkan | cuda-12.4 | cuda-13.3
+    storage_dir: str = ""       # "" = sibling of the current build folder
+    last_check: str = ""        # local ISO timestamp of the last check
+    pending: Optional[LlamaBackendPending] = None
+
+
 class AppConfig(BaseModel):
     """Live configuration, persisted to config.json (machine specific)."""
 
@@ -188,6 +207,7 @@ class AppConfig(BaseModel):
     energy_price_eur_kwh: float = 0.20
     energy_overhead_w: float = 0.0
     update_check_minutes: int = Field(default=5, ge=0, le=1440)  # 0 = off
+    llama_backend: LlamaBackendSettings = Field(default_factory=LlamaBackendSettings)
 
     def model_root(self) -> Optional[Path]:
         """Resolved models root directory, or None if unset."""
