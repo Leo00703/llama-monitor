@@ -44,6 +44,14 @@ const Backend = {
       this.refresh().then(() => this.openPick());
     });
     document.getElementById("be-detect").addEventListener("click", () => this.detect());
+    // channel / variant apply live (no Save round-trip): the check button
+    // must always test the channel that is selected on screen
+    document.getElementById("be-channel").addEventListener("change", (e) => {
+      this.setLlamaField("channel", e.target.value);
+    });
+    document.getElementById("be-variant").addEventListener("change", (e) => {
+      this.setLlamaField("variant", e.target.value);
+    });
     // modal buttons
     document.getElementById("be-modal-ok").addEventListener("click", () => this.modalOk());
     document.getElementById("be-modal-cancel").addEventListener("click", () => this.modalCancel());
@@ -112,6 +120,11 @@ const Backend = {
       } else {
         parts.push(`${UI.esc(target)} available — install it from the picker`);
       }
+      // stable is pinned by the latest stable release — surface the pin and
+      // the latest nightly so the two never look like a stale check
+      if (lb.channel === "stable" && d.remote.latest_nightly && d.remote.latest_nightly !== target) {
+        parts.push(`pinned by ${UI.esc(d.remote.stable_tag)} · latest nightly: ${UI.esc(d.remote.latest_nightly)}`);
+      }
     } else if (!d.remote_error) {
       parts.push("release info unavailable");
     }
@@ -160,22 +173,31 @@ const Backend = {
         <span class="muted small">${cur.official ? UI.esc(cur.tag || "unknown") : (cur.version || "unknown")}</span>
       </span>${chev}`;
     // picker items: the channel target (when different from current) first,
-    // then every downloaded build (newest first — also the rollback path)
+    // then the latest nightly in stable mode (so it can be grabbed without
+    // switching channels), then every downloaded build (newest first — also
+    // the rollback path)
     const items = [];
-    if (target && (!cur.official || target !== cur.tag)) {
-      const done = downloadedTags.has(target);
+    const offerTag = (tag, title) => {
+      const done = downloadedTags.has(tag);
       items.push({
-        dir: done ? (d.local || []).find((b) => b.tag === target).dir : "",
-        tag: target,
-        title: `${target} — ${d.settings && d.settings.channel === "nightly" ? "latest nightly" : "stable (pinned nightly)"}`,
+        dir: done ? (d.local || []).find((b) => b.tag === tag).dir : "",
+        tag,
+        title,
         sub: done ? "downloaded · ready to install" : "not downloaded yet — this will download it first",
         current: false,
       });
+    };
+    if (target && (!cur.official || target !== cur.tag)) {
+      offerTag(target, `${target} — ${d.settings && d.settings.channel === "nightly" ? "latest nightly" : "stable (pinned nightly)"}`);
     }
-    // a local copy of the target is already the first item — don't list it twice
-    const targetOffered = items.length === 1 && items[0].tag === target;
+    const latest = (d.remote || {}).latest_nightly || null;
+    if (target && latest && latest !== target && (!cur.official || latest !== cur.tag)) {
+      offerTag(latest, `${latest} — latest nightly`);
+    }
+    // already offered above — don't list those local copies twice
+    const offered = new Set(items.map((i) => i.tag));
     for (const b of d.local || []) {
-      if (targetOffered && b.tag === target) continue;
+      if (offered.has(b.tag)) continue;
       items.push({
         dir: b.dir, tag: b.tag,
         title: `${b.tag} — downloaded${b.variant ? ` · ${b.variant}` : ""}`,
@@ -248,6 +270,26 @@ const Backend = {
   },
 
   /* ---------------------------------------------------------- actions */
+
+  async setLlamaField(field, value) {
+    try {
+      const res = await API.post("/api/backend/config", { [field]: value });
+      if (!res.ok) {
+        UI.toast(res.error || "save failed", "err");
+        this.refresh();
+        return;
+      }
+      // keep the in-memory copies in sync so the main Save button can't
+      // clobber the live change with a stale value
+      if (this.data && this.data.settings) this.data.settings = res.settings;
+      if (typeof Settings !== "undefined" && Settings.llamaBackend)
+        Settings.llamaBackend = { ...Settings.llamaBackend, ...res.settings };
+      this.render();
+    } catch (e) {
+      UI.toast(`save failed: ${e}`, "err");
+      this.refresh();
+    }
+  },
 
   async check() {
     const b = document.getElementById("be-check");
