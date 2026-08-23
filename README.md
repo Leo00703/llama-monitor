@@ -19,7 +19,9 @@ line:
   (utilization, VRAM, temperature, power draw) via `nvidia-smi`,
   plus inference metrics (prompt/generation tok/s, per-slot context usage,
   draft acceptance for spec decode) sourced from the server's own log lines,
-  with `/slots` and `/metrics` as fallbacks.
+  with `/slots` and `/metrics` as fallbacks. The usage cards render as
+  sparkline graphs (default) or big traffic-light bars — switchable live
+  from **Settings → Dashboard**.
 - **Generation parameters** — sampling / penalties / control fields that are
   *not* launch flags: they are injected into every proxied
   `/v1/chat/completions` and `/completion` request, so they can be changed at
@@ -108,6 +110,7 @@ in-app **Settings** page (which shows the data directory in use):
 | `energy_price_eur_kwh` | € per kWh, used for the cost estimates on the Analytics page |
 | `energy_overhead_w` | Constant idle-system wattage added to the GPU power estimate |
 | `update_check_minutes` | Self-update background poll interval (0 disables the check) |
+| `dashboard.usage_style` | Dashboard usage-card style: `graph` (sparklines) or `bar` (big traffic-light bars) |
 | `llama_backend.channel` | Build channel: `stable` (pinned nightly of the latest stable release) or `nightly` |
 | `llama_backend.variant` | Build flavor: `cpu`, `vulkan`, `cuda-12.4`, `cuda-13.3` (the **Detect** button suggests one from `nvidia-smi`) |
 | `llama_backend.auto_download` | Download new builds automatically when a check finds them (installing always stays manual) |
