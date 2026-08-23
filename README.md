@@ -21,7 +21,7 @@ line:
   draft acceptance for spec decode) sourced from the server's own log lines,
   with `/slots` and `/metrics` as fallbacks. The usage cards render as
   sparkline graphs (default) or big traffic-light bars — switchable live
-  from **Settings → Dashboard**.
+  from **Settings** ("Dashboard usage display").
 - **Generation parameters** — sampling / penalties / control fields that are
   *not* launch flags: they are injected into every proxied
   `/v1/chat/completions` and `/completion` request, so they can be changed at
@@ -53,7 +53,7 @@ line:
   server first if it is running, swaps `llama_server_exe` to the new build,
   and offers to restart the current preset. Every downloaded build stays on
   disk (retention: current + previous), so the same picker is also the
-  rollback path. Custom / PR-branch builds are detected from the
+  rollback path; the latest nightly is always listed in the picker (even in stable mode), and the channel / variant selects apply live (no Save round-trip). Custom / PR-branch builds are detected from the
   `--version` output and never touched — updates stay fully manual for them.
 
 ## Screenshots
