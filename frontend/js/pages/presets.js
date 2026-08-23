@@ -30,6 +30,7 @@ const Presets = {
     ["pf-draft", "spec.draft_model", "str"],
     ["pf-dnmax", "spec.draft_n_max", "int0"],
     ["pf-dnmin", "spec.draft_n_min", "int0"],
+    ["pf-dconf", "spec.draft_conf_min", "float0"],
     ["pf-slots", "slots", "int"],
     ["pf-host", "host", "str"],
     ["pf-port", "port", "int"],
@@ -48,7 +49,7 @@ const Presets = {
     override_tensors: [], flash_attn: "auto", cache_type_k: "f16", cache_type_v: "f16",
     load_mode: "mmap", tensor_split: [], main_gpu: 0, split_mode: "layer",
     threads: 0, threads_batch: 0, batch_size: 2048, micro_batch: 512, cache_reuse: 0,
-    spec: { spec_type: "none", draft_model: "", draft_n_max: 3, draft_n_min: 0 },
+    spec: { spec_type: "none", draft_model: "", draft_n_max: 3, draft_n_min: 0, draft_conf_min: 0 },
     slots: 1, host: "0.0.0.0", port: 8080, api_key: "",
     jinja: true, reasoning_preserve: false, merge_qkv: false, graph_reuse: 0,
     fit: false, extra_flags: "",
@@ -75,10 +76,9 @@ const Presets = {
       if (card) this.openForm(card.dataset.id);
     });
     document.getElementById("pf-spectype").addEventListener("change", (e) => {
-      const needsDrafter = ["draft-simple", "draft-eagle3", "draft-dflash", "draft-dspark"].includes(e.target.value);
-      document.getElementById("pf-draftwrap").classList.toggle("hidden", !needsDrafter);
-      this.updateMtpWarning();
+      this.syncSpecFields(e.target.value);
     });
+    this.loadSpecGating().then((supported) => this.applySpecGating(supported));
     document.getElementById("pf-model").addEventListener("change", () => this.suggestMmproj());
     document.getElementById("pf-mmproj").addEventListener("input", () => this.updateMtpWarning());
     this.showList();
@@ -113,6 +113,36 @@ const Presets = {
     const isMtp = document.getElementById("pf-spectype").value === "draft-mtp";
     const hasMmproj = !!document.getElementById("pf-mmproj").value.trim();
     el.classList.toggle("hidden", !(isMtp && hasMmproj));
+  },
+
+  syncSpecFields(specType) {
+    const needsDrafter = ["draft-simple", "draft-eagle3", "draft-dflash", "draft-dspark"].includes(specType);
+    document.getElementById("pf-draftwrap").classList.toggle("hidden", !needsDrafter);
+    document.getElementById("pf-dconfwrap").classList.toggle("hidden", specType !== "draft-dspark");
+    this.updateMtpWarning();
+  },
+
+  /* --spec-type gating: types the installed build doesn't document are
+     disabled (the backend blocks such launches with a clear error). */
+  _specGating: { loaded: false, supported: null },
+
+  async loadSpecGating() {
+    if (this._specGating.loaded) return this._specGating.supported;
+    this._specGating.loaded = true;
+    try {
+      const res = await API.get("/api/spec/types");
+      if (res.ok) this._specGating.supported = res.supported?.length ? res.supported : null;
+    } catch { /* no gating if the endpoint is unreachable */ }
+    return this._specGating.supported;
+  },
+
+  applySpecGating(supported) {
+    const sel = document.getElementById("pf-spectype");
+    for (const opt of sel.options) {
+      const blocked = !!supported && !supported.includes(opt.value);
+      opt.disabled = blocked;
+      opt.title = blocked ? "Not documented by this llama-server build — update llama-server to enable it" : "";
+    }
   },
 
   /* ---------------- list ---------------- */
@@ -251,6 +281,9 @@ const Presets = {
       else if (type === "int" || type === "int0") {
         const n = parseInt(el.value, 10);
         v = Number.isNaN(n) ? 0 : n;
+      } else if (type === "float0") {
+        const n = parseFloat(el.value);
+        v = Number.isNaN(n) ? 0 : n;
       } else v = el.value;
       this.setPath(launch, path, v);
     }
@@ -303,10 +336,8 @@ const Presets = {
       document.getElementById("pf-name").value = "New preset";
       this.fillFields(this.DEFAULTS);
     }
-    const specType = document.getElementById("pf-spectype").value;
-    const needsDrafter = ["draft-simple", "draft-eagle3", "draft-dflash", "draft-dspark"].includes(specType);
-    document.getElementById("pf-draftwrap").classList.toggle("hidden", !needsDrafter);
-    this.updateMtpWarning();
+    this.syncSpecFields(document.getElementById("pf-spectype").value);
+    this.applySpecGating(await this.loadSpecGating());
   },
 
   async save() {

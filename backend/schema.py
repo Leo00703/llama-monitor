@@ -27,20 +27,15 @@ SPEC_TYPES = [
     "ngram-cache",
 ]
 
-# spec types that need an external drafter GGUF (--spec-draft-model)
-DRAFT_MODEL_REQUIRED_TYPES = {
-    "draft-simple",
-    "draft-eagle3",
-    "draft-dflash",
-    "draft-dspark",
-}
-
 
 class SpecSettings(BaseModel):
     spec_type: str = "none"
     draft_model: str = ""  # path relative to models_root
     draft_n_max: int = 3
     draft_n_min: int = 0
+    # DSpark only: min acceptance confidence for block truncation
+    # (--spec-draft-p-min); 0 = off. Emitted only when spec_type == draft-dspark.
+    draft_conf_min: float = 0.0
 
 
 class LaunchSettings(BaseModel):

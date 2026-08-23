@@ -20,7 +20,8 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from .config import no_window_kwargs, spawn_argv
-from .schema import DRAFT_MODEL_REQUIRED_TYPES, LaunchSettings
+from .schema import LaunchSettings
+from .spec import get as get_spec_technique
 
 # ---------------------------------------------------------------------------
 # cross-field validation
@@ -60,19 +61,13 @@ def validate_settings(
             errors.append(f"{label} file not found: {p}")
 
     _check_model_file("model", s.model)
-    _check_model_file("drafter model", s.spec.draft_model)
+    if s.spec.spec_type != "none":
+        _check_model_file("drafter model", s.spec.draft_model)
 
-    if s.spec.spec_type == "draft-mtp" and s.mmproj.strip():
-        errors.append(
-            "mmproj (vision) and draft-mtp speculative decoding are incompatible — "
-            "disable one of them"
-        )
-
-    if s.spec.spec_type in DRAFT_MODEL_REQUIRED_TYPES and not s.spec.draft_model.strip():
-        errors.append(
-            f"speculative decoding type '{s.spec.spec_type}' requires a drafter model "
-            "(spec.draft_model)"
-        )
+    # spec decoding validation (per-technique modules, backend/spec/)
+    tech = get_spec_technique(s.spec.spec_type)
+    if tech is not None:
+        errors.extend(tech.validate(s))
 
     if gpu_count > 0 and s.tensor_split and len(s.tensor_split) != gpu_count:
         warnings.append(
@@ -196,26 +191,26 @@ def _r_cache_reuse(s: LaunchSettings, c: FlagContext) -> Optional[list[str]]:
     return ["--cache-reuse", str(s.cache_reuse)] if s.cache_reuse > 0 else None
 
 
-def _r_spec_type(s: LaunchSettings, c: FlagContext) -> Optional[list[str]]:
-    return ["--spec-type", s.spec.spec_type] if s.spec.spec_type != "none" else None
+def _r_spec(s: LaunchSettings, c: FlagContext) -> Optional[list[str]]:
+    """--spec-type plus technique tokens (one module per technique, #17).
 
-
-def _r_draft_model(s: LaunchSettings, c: FlagContext) -> Optional[list[str]]:
-    if not s.spec.draft_model.strip():
+    Types without a registry entry (ngram-*, unknown) keep the legacy
+    drafter/n-max/n-min token set.
+    """
+    if s.spec.spec_type == "none":
         return None
-    return ["--spec-draft-model", c.resolve(s.spec.draft_model)]
-
-
-def _r_draft_n_max(s: LaunchSettings, c: FlagContext) -> Optional[list[str]]:
-    if s.spec.spec_type == "none" or s.spec.draft_n_max <= 0:
-        return None
-    return ["--spec-draft-n-max", str(s.spec.draft_n_max)]
-
-
-def _r_draft_n_min(s: LaunchSettings, c: FlagContext) -> Optional[list[str]]:
-    if s.spec.spec_type == "none" or s.spec.draft_n_min <= 0:
-        return None
-    return ["--spec-draft-n-min", str(s.spec.draft_n_min)]
+    out = ["--spec-type", s.spec.spec_type]
+    tech = get_spec_technique(s.spec.spec_type)
+    if tech is not None:
+        out.extend(tech.flags(s.spec, c.resolve))
+        return out
+    if s.spec.draft_model.strip():
+        out.extend(["--spec-draft-model", c.resolve(s.spec.draft_model)])
+    if s.spec.draft_n_max > 0:
+        out.extend(["--spec-draft-n-max", str(s.spec.draft_n_max)])
+    if s.spec.draft_n_min > 0:
+        out.extend(["--spec-draft-n-min", str(s.spec.draft_n_min)])
+    return out
 
 
 def _r_slots(s: LaunchSettings, c: FlagContext) -> Optional[list[str]]:
@@ -291,10 +286,7 @@ FLAG_RULES: list[tuple[str, Callable[[LaunchSettings, FlagContext], Optional[lis
     ("batch_size", _r_batch),
     ("micro_batch", _r_ubatch),
     ("cache_reuse", _r_cache_reuse),
-    ("spec_type", _r_spec_type),
-    ("draft_model", _r_draft_model),
-    ("draft_n_max", _r_draft_n_max),
-    ("draft_n_min", _r_draft_n_min),
+    ("spec", _r_spec),
     ("slots", _r_slots),
     ("host", _r_host),
     ("port", _r_port),
@@ -361,15 +353,37 @@ def build_args(
 # ---------------------------------------------------------------------------
 
 _HELP_FLAG_RE = re.compile(r"(?:^|\s)(--?[A-Za-z][A-Za-z0-9-]*)")
+# --spec-type value hint is a comma/pipe-separated list with no spaces:
+# "  --spec-type none,draft-simple,...,ngram-mod   <description>"
+_SPEC_TYPE_VALUE_RE = re.compile(r"^\s*--spec-type\s+([A-Za-z0-9,|\[\]-]+)")
 
-_help_cache: dict[tuple[str, float], set[str]] = {}
+_help_cache: dict[tuple[str, float], tuple[set[str], set[str]]] = {}
 
 
-async def parse_supported_flags(exe: str) -> set[str]:
-    """Run `llama-server --help` and collect every flag token it documents.
+def _parse_help_output(out: bytes) -> tuple[set[str], set[str]]:
+    """(documented flag names, documented --spec-type values) from --help."""
+    flags: set[str] = set()
+    spec_types: set[str] = set()
+    for line in out.decode(errors="replace").splitlines():
+        for m in _HELP_FLAG_RE.finditer(line):
+            flags.add(m.group(1))
+        if not spec_types:
+            m = _SPEC_TYPE_VALUE_RE.match(line)
+            if m:
+                hint = m.group(1).strip("[]<>")
+                types = {t.strip() for t in re.split(r"[,|]", hint) if t.strip()}
+                # "none" is documented by every build — sanity marker
+                if "none" in types:
+                    spec_types = types
+    return flags, spec_types
 
-    Results are cached per (exe path, mtime). Returns an empty set on any
-    failure (in which case no version check is performed).
+
+async def parse_help(exe: str) -> tuple[set[str], set[str]]:
+    """Run `llama-server --help`.
+
+    Returns (documented flag names, documented --spec-type values). Cached
+    per (exe path, mtime). Returns empty sets on any failure (in which
+    case no version check is performed).
     """
     try:
         path = Path(exe)
@@ -383,11 +397,8 @@ async def parse_supported_flags(exe: str) -> set[str]:
             **no_window_kwargs(),
         )
         out, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
-        flags: set[str] = set()
-        for line in out.decode(errors="replace").splitlines():
-            for m in _HELP_FLAG_RE.finditer(line):
-                flags.add(m.group(1))
-        _help_cache[key] = flags
-        return flags
+        result = _parse_help_output(out)
+        _help_cache[key] = result
+        return result
     except (OSError, asyncio.TimeoutError):
-        return set()
+        return (set(), set())

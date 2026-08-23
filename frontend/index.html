@@ -272,9 +272,10 @@
                     <option value="ngram-mod">ngram-mod</option>
                   </select>
                 </div>
-                <div class="field hidden" id="pf-draftwrap"><label class="field-label" for="pf-draft">Drafter model (--spec-draft-model)</label><input type="text" id="pf-draft" spellcheck="false"></div>
+                <div class="field hidden" id="pf-draftwrap"><label class="field-label" for="pf-draft">Drafter model (--spec-draft-model)</label><input type="text" id="pf-draft" list="models-datalist" spellcheck="false"></div>
                 <div class="field"><label class="field-label" for="pf-dnmax">Max draft tokens (--spec-draft-n-max)</label><input type="number" id="pf-dnmax" min="0" step="1"></div>
                 <div class="field"><label class="field-label" for="pf-dnmin">Min draft tokens (--spec-draft-n-min)</label><input type="number" id="pf-dnmin" min="0" step="1"></div>
+                <div class="field hidden" id="pf-dconfwrap"><label class="field-label" for="pf-dconf">Min draft confidence (--spec-draft-p-min, 0 = off)</label><input type="number" id="pf-dconf" min="0" max="1" step="0.01"></div>
                 <div class="field"><label class="field-label" for="pf-slots">Parallel slots (-np)</label><input type="number" id="pf-slots" min="1" step="1"></div>
               </div>
             </fieldset>

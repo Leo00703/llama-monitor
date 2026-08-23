@@ -24,13 +24,13 @@ from .analytics import (
     RANGES,
 )
 from .config import DATA_DIR, PRESETS_DIR, AppConfig, load_config, save_config
-from .flags import build_args, parse_supported_flags, validate_settings
+from .flags import build_args, parse_help, validate_settings
 from .metrics import MetricsCollector
 from .models import list_models
 from .process import LlamaServerManager
 from .presets import PresetStore
 from .proxy import INJECT_PATHS, ProxyOffline, ServerProxy
-from .schema import LaunchSettings, Preset
+from .schema import LaunchSettings, Preset, SPEC_TYPES
 from . import update as app_update
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-7s %(name)s: %(message)s")
@@ -308,14 +308,31 @@ def create_app() -> FastAPI:
             return {"ok": False, "args": [], "warnings": warnings, "errors": errors}
 
         exe = config.resolved_exe()
-        supported = await parse_supported_flags(exe) if exe else None
+        supported: set[str] = set()
+        spec_types: set[str] = set()
         if exe is None:
             warnings.append("llama-server executable not configured — flag version check skipped")
+        else:
+            supported, spec_types = await parse_help(exe)
+
+        # spec types the installed build doesn't document would make
+        # llama-server abort at startup — block with a clear message
+        st = preset.launch.spec.spec_type
+        if spec_types and st not in spec_types:
+            return {
+                "ok": False,
+                "args": [],
+                "warnings": warnings,
+                "errors": [
+                    f"spec type '{st}' is not documented by this llama-server build — "
+                    "update llama-server first"
+                ],
+            }
 
         args, flag_warnings = build_args(
             preset.launch,
             models_root=models_root,
-            supported=supported,
+            supported=supported or None,
         )
         warnings.extend(flag_warnings)
         return {"ok": True, "args": args, "warnings": warnings, "errors": []}
@@ -482,6 +499,17 @@ def create_app() -> FastAPI:
     # ------------------------------------------------------------------
     # REST: generation defaults
     # ------------------------------------------------------------------
+
+    @app.get("/api/spec/types")
+    async def spec_types() -> dict:
+        """All selectable spec types plus the subset the installed build
+        documents (from `llama-server --help`). Empty `supported` means
+        unknown — the UI treats that as no gating."""
+        exe = config.resolved_exe()
+        supported: set[str] = set()
+        if exe is not None:
+            _, supported = await parse_help(exe)
+        return {"ok": True, "all": SPEC_TYPES, "supported": sorted(supported)}
 
     @app.get("/api/generation/defaults")
     async def generation_defaults(preset_id: str = "") -> dict:
