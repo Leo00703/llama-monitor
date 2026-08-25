@@ -215,9 +215,10 @@ def _r_spec(s: LaunchSettings, c: FlagContext) -> Optional[list[str]]:
 
 def _r_slots(s: LaunchSettings, c: FlagContext) -> Optional[list[str]]:
     # -1 = auto (llama-server sizes the slot count by free memory); any
-    # other invalid value falls back to auto instead of breaking the launch
-    if s.spec.spec_type != "none":
-        return ["-np", "1"]  # spec decoding needs a dedicated slot
+    # other invalid value falls back to auto instead of breaking the launch.
+    # Spec decode no longer forces 1 slot: since b10xxx (2026-05, PR #22838
+    # "parallel drafting") the draft context serves all slots in parallel,
+    # so MTP + N slots works on modern builds (older ones may clamp to 1).
     slots = s.slots if (s.slots == -1 or s.slots >= 1) else -1
     return ["-np", str(slots)]
 

@@ -117,17 +117,14 @@ async def _metrics_loop(collector: MetricsCollector, manager: LlamaServerManager
         data["usage_style"] = config.dashboard.usage_style  # live mode switch
         inf = data.get("inference")
         if inf and inf.get("n_slots"):
-            # Effective slots the known preset wants (spec decode needs a
-            # dedicated slot; -1 = auto is never a mismatch). The UI compares
-            # it with the running server's live slot count and hints when the
-            # preset's setting has not been applied yet (needs a restart).
+            # Slots the known preset wants (-1 = auto is never a mismatch).
+            # The UI compares it with the running server's live slot count
+            # and hints when the preset's setting has not been applied yet
+            # (needs a restart).
             pid = manager.preset_id or config.active_preset_id
             preset = store.get(pid) if pid else None
-            if preset is not None:
-                want = (1 if preset.launch.spec.spec_type != "none"
-                        else preset.launch.slots)
-                if want > 0:
-                    data["preset_slots"] = want
+            if preset is not None and preset.launch.slots > 0:
+                data["preset_slots"] = preset.launch.slots
         manager.broadcast({"type": "metrics", "data": data})
 
 

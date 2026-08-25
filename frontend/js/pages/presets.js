@@ -122,13 +122,11 @@ const Presets = {
     const needsDrafter = ["draft-simple", "draft-eagle3", "draft-dflash", "draft-dspark"].includes(specType);
     document.getElementById("pf-draftwrap").classList.toggle("hidden", !needsDrafter);
     document.getElementById("pf-dconfwrap").classList.toggle("hidden", specType !== "draft-dspark");
-    // spec decoding needs a dedicated slot — the backend forces -np 1, so
-    // reflect (and lock) it in the form instead of letting the user set N
+    // Parallel slots stay fully editable with spec decode: modern builds
+    // (b10xxx+, "parallel drafting") draft for all slots at once.
     const slots = document.getElementById("pf-slots");
-    const forced = specType !== "none";
-    slots.disabled = forced;
-    if (forced && slots.value !== "1") slots.value = "1";
-    slots.title = forced ? "Forced to 1 while speculative decoding is enabled" : "";
+    slots.disabled = false;
+    slots.title = "";
     this.updateMtpWarning();
   },
 
