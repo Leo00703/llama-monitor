@@ -211,6 +211,7 @@ To stay focused on the current work:
   not a code bug.
 - **llama-server logs**: print_timing lines are right-aligned / space-padded in
   current builds — all log-parsing regexes must be whitespace-tolerant.
+- **b10566 slot semantics (tested)**: `-np auto` (default, `-1`) is NOT 1 slot — it starts **4** slots (`n_slots = 4, n_ctx_slot = 8192, kv_unified = 'true'`). With ≥2 slots, 4 concurrent requests run fully parallel (wall/sum ≈ 0.25), also with `--no-cont-batching` (0.29) and `--no-kv-unified`. The **only** config that serializes requests is **1 slot**. The startup log line `load_model: initializing, n_slots = N` (visible in the panel's log view) is the ground truth for what the RUNNING server has; a running server keeps its original flags until restarted (preset edits never auto-restart it).
 - **Live tok/s: prefer the server's own log lines, not /metrics.** Recent
   llama.cpp updates its `/metrics` token counters only when a request
   completes (per-request, not live), so 1.5s counter deltas read 0 for the

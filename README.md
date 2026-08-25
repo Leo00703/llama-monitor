@@ -143,6 +143,16 @@ applied to every request through the panel.
 > If a server is already running on the configured port, the panel marks it
 > as **external** and can still stop it.
 
+### Diagnostics
+
+`tools/parallel-test.py` checks whether a `llama-server` really serves
+concurrent chats — it reads the live slot count and fires N simultaneous
+streaming requests, then reports **PARALLEL** or **SERIALIZED**:
+
+```bash
+python tools/parallel-test.py http://127.0.0.1:8080 2
+```
+
 ## Tray launcher (Windows .exe)
 
 For Windows there is a single-file `.exe` that runs the whole panel in the
