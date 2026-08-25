@@ -14,7 +14,9 @@ line:
   warnings instead of blocking the start. Speculative decoding is organized
   per technique (MTP, DFlash, DSpark, draft-simple, EAGLE-3); types the
   installed build doesn't document are greyed out in the editor and blocked
-  at launch with a clear message.
+  at launch with a clear message. Concurrency is per preset too:
+  parallel slots (`-np`, **auto** by default), continuous batching
+  and the unified KV buffer, each auto / on / off.
 - **Resource monitoring** — CPU (per-core), RAM, and one card per detected GPU
   (utilization, VRAM, temperature, power draw) via `nvidia-smi`,
   plus inference metrics (prompt/generation tok/s, per-slot context usage,
@@ -31,6 +33,16 @@ line:
 - **Analytics** — per-request history (tokens, latency, energy estimate) in
   SQLite: summary cards, token/speed charts, model breakdown, a request
   table, and CSV export, all with a day/week/month/year/all range picker.
+- **PWA / installable app** — the panel is a progressive web app: install
+  it from the browser (phone, tablet, desktop) to get a native app icon, a
+  standalone window, and an offline shell (live data always comes from the
+  network; only the UI is cached). Browsers allow installing only on a
+  secure context, so for LAN / tailscale devices enable optional TLS in
+  **Settings** (TLS certificate / key fields, off by default) — the panel
+  then serves HTTPS and Android offers the install; on tailscale a
+  `tailscale cert` (or `tailscale serve`) gives a fully trusted certificate.
+  `localhost` (the desktop/tray case) is installable without TLS, and iOS
+  can add the home-screen app even over plain http.
 - **Self-updating** — the panel checks the git remote in the background and
   offers a one-click **Update now** (bottom-right toast, also in Settings):
   it pulls the latest commits from the repo and restarts the app. The repo
@@ -106,6 +118,7 @@ in-app **Settings** page (which shows the data directory in use):
 | `models_root` | Root folder scanned for `.gguf` models; preset model paths are relative to it |
 | `default_server_port` | Port assumed for external/ready checks when nothing else is known |
 | `panel.host` / `panel.port` | Bind address/port of the panel itself (default `0.0.0.0:8000`, so it is reachable over Tailscale) |
+| `panel.tls_cert` / `panel.tls_key` | Optional PEM cert + key paths — serve the panel over HTTPS (needed for PWA installs over LAN/tailscale; empty = plain http) |
 | `active_preset_id` | Preset currently selected for launches |
 | `energy_price_eur_kwh` | € per kWh, used for the cost estimates on the Analytics page |
 | `energy_overhead_w` | Constant idle-system wattage added to the GPU power estimate |

@@ -29,7 +29,10 @@ llama-monitor: a lightweight web control panel for a local `llama-server`
   - `backend_update.py` llama.cpp build updater (release check, download,
     verify, install/rollback, retention)
 - `frontend/` — single-page vanilla app: `index.html`, `css/style.css`,
-  `js/` (app shell + `pages/`), `fonts/` (bundled Geist Mono woff2)
+  `js/` (app shell + `pages/`), `fonts/` (bundled Geist Mono woff2),
+  `manifest.webmanifest` + `sw.js` + `icons/icon-*.png` (PWA — network-first
+  shell cache, live endpoints never cached; optional panel TLS makes LAN/
+  tailscale installs possible, see README)
 - `tray.py` — Windows tray launcher (embeds the panel; `--smoke` headless
   self-test; `--restarting` internal flag for the update relaunch handoff)
 - `build_exe.bat` — local PyInstaller build → `dist\llama-monitor.exe`
