@@ -21,7 +21,7 @@ line:
   (utilization, VRAM, temperature, power draw) via `nvidia-smi`,
   plus inference metrics (prompt/generation tok/s, per-slot context usage,
   draft acceptance for spec decode) sourced from the server's own log lines,
-  with `/slots` and `/metrics` as fallbacks. The usage cards render as
+  with `/slots` and `/metrics` as fallbacks. The card also shows the running server's live slot count and turns orange when the active preset's parallel-slots setting differs (the server needs a restart to pick it up). The usage cards render as
   sparkline graphs (default) or big traffic-light bars — switchable live
   from **Settings** ("Dashboard usage display").
 - **Generation parameters** — sampling / penalties / control fields that are
