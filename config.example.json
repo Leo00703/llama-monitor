@@ -4,7 +4,9 @@
   "default_server_port": 8080,
   "panel": {
     "host": "0.0.0.0",
-    "port": 8000
+    "port": 8000,
+    "tls_cert": "",
+    "tls_key": ""
   },
   "active_preset_id": "",
   "energy_price_eur_kwh": 0.2,

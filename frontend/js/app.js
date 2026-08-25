@@ -2,6 +2,13 @@
 
 /* llama-monitor — app shell: routing, topbar state, WebSocket log stream */
 
+/* PWA: install the service worker (manifest + network-first shell cache).
+   Failures are silent — on non-secure contexts (plain http on a LAN IP)
+   browsers refuse registration and the panel simply isn't installable. */
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => {});
+}
+
 const $ = (id) => document.getElementById(id);
 
 const badge = $("status-badge");

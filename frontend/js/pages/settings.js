@@ -49,6 +49,8 @@ const Settings = {
       const panel = cfg.panel || {};
       document.getElementById("set-phost").value = panel.host || "0.0.0.0";
       document.getElementById("set-pport").value = panel.port || 8000;
+      document.getElementById("set-tlscert").value = panel.tls_cert || "";
+      document.getElementById("set-tlskey").value = panel.tls_key || "";
       document.getElementById("set-energy-price").value = cfg.energy_price_eur_kwh ?? 0.2;
       document.getElementById("set-energy-overhead").value = cfg.energy_overhead_w ?? 0;
       document.getElementById("set-datadir").textContent = cfg.data_dir
@@ -157,6 +159,8 @@ const Settings = {
       panel: {
         host: document.getElementById("set-phost").value.trim() || "0.0.0.0",
         port: parseInt(document.getElementById("set-pport").value, 10) || 8000,
+        tls_cert: document.getElementById("set-tlscert").value.trim(),
+        tls_key: document.getElementById("set-tlskey").value.trim(),
       },
       energy_price_eur_kwh: parseFloat(document.getElementById("set-energy-price").value) || 0,
       energy_overhead_w: parseFloat(document.getElementById("set-energy-overhead").value) || 0,

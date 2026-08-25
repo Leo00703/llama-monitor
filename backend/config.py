@@ -175,6 +175,11 @@ migrate_legacy_data()
 class PanelSettings(BaseModel):
     host: str = "0.0.0.0"
     port: int = 8000
+    # optional TLS (empty = plain http): the paths point at a PEM cert and
+    # its key. Needed for PWA installs on LAN / tailscale — browsers only
+    # offer "install as app" on a secure context (https or localhost).
+    tls_cert: str = ""
+    tls_key: str = ""
 
 
 class LlamaBackendPending(BaseModel):

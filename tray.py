@@ -77,7 +77,26 @@ def local_host(config: AppConfig) -> str:
 
 
 def panel_url(config: AppConfig) -> str:
-    return f"http://{local_host(config)}:{config.panel.port}"
+    # https when TLS is configured: PWA installs need a secure context,
+    # and https on localhost / tailscale works without extra setup
+    scheme = "https" if config.panel.tls_cert.strip() else "http"
+    return f"{scheme}://{local_host(config)}:{config.panel.port}"
+
+
+def _panel_verify(url: str) -> bool:
+    # https is never verified: the cert on a private network is self-signed
+    # or a tailscale cert the host may not trust, and the traffic never
+    # leaves the user's own networks
+    return not url.startswith("https")
+
+
+def _panel_get(url: str, path: str, timeout: float):
+    return httpx.get(f"{url}{path}", timeout=timeout, verify=_panel_verify(url))
+
+
+def _panel_post(url: str, path: str, timeout: float, **kwargs):
+    return httpx.post(f"{url}{path}", timeout=timeout, verify=_panel_verify(url),
+                      **kwargs)
 
 
 def load_mark() -> Image.Image:
@@ -124,12 +143,23 @@ def apply_state(icon: pystray.Icon, state: str, error: str = "") -> None:
 
 def start_panel(config: AppConfig) -> tuple[threading.Thread, uvicorn.Server]:
     app = create_app()
+    ssl_kwargs = {}
+    if config.panel.tls_cert.strip():
+        if not config.panel.tls_key.strip():
+            log.warning("panel.tls_cert set but panel.tls_key is empty — "
+                        "starting without TLS")
+        else:
+            ssl_kwargs = {
+                "ssl_certfile": config.panel.tls_cert,
+                "ssl_keyfile": config.panel.tls_key,
+            }
     cfg = uvicorn.Config(
         app,
         host=config.panel.host or "0.0.0.0",
         port=config.panel.port,
         log_level="warning",
         lifespan="on",
+        **ssl_kwargs,
     )
     server = uvicorn.Server(cfg)
 
@@ -149,7 +179,7 @@ def wait_health(url: str, timeout: float) -> bool:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline and not _stop.is_set():
         try:
-            if httpx.get(f"{url}/api/health", timeout=2.0).json().get("ok"):
+            if _panel_get(url, "/api/health", 2.0).json().get("ok"):
                 return True
         except (httpx.HTTPError, ValueError):
             pass
@@ -163,8 +193,8 @@ def poll_loop(config: AppConfig, icon: pystray.Icon) -> None:
     last = object()
     while not _stop.is_set():
         try:
-            state = httpx.get(f"{base}/api/state", timeout=3.0).json()
-            cfg = httpx.get(f"{base}/api/config", timeout=3.0).json()
+            state = _panel_get(base, "/api/state", 3.0).json()
+            cfg = _panel_get(base, "/api/config", 3.0).json()
             preset_id = cfg.get("active_preset_id") or ""
             # the error text is part of the key: a changed error while the
             # state stays "error" must refresh the tooltip
@@ -218,13 +248,13 @@ def toggle_server() -> None:
                 if not _preset_id:
                     _notify("No preset selected", "Select an active preset in the panel first.")
                     return
-                httpx.post(
-                    f"{base}/api/server/start",
+                _panel_post(
+                    base, "/api/server/start",
                     json={"args": [], "preset_id": _preset_id},
                     timeout=10.0,
                 )
             else:
-                httpx.post(f"{base}/api/server/stop", timeout=10.0)
+                _panel_post(base, "/api/server/stop", timeout=10.0)
         except httpx.HTTPError as exc:
             log.exception("server control failed")
             _notify("Action failed", str(exc))
@@ -415,7 +445,7 @@ def run_tray(restarting: bool = False) -> int:
         deadline = time.time() + 60.0
         while time.time() < deadline:
             try:
-                httpx.get(f"{url}/api/health", timeout=1.0)
+                _panel_get(url, "/api/health", 1.0)
             except httpx.HTTPError:
                 break
             time.sleep(0.5)
@@ -432,12 +462,12 @@ def run_tray(restarting: bool = False) -> int:
         return 1
 
     try:
-        initial = httpx.get(f"{url}/api/state", timeout=3.0).json()
+        initial = _panel_get(url, "/api/state", 3.0).json()
     except (httpx.HTTPError, ValueError):
         initial = {"state": "stopped"}
     initial_preset = ""
     try:
-        initial_preset = httpx.get(f"{url}/api/config", timeout=3.0).json().get(
+        initial_preset = _panel_get(url, "/api/config", 3.0).json().get(
             "active_preset_id"
         ) or ""
     except (httpx.HTTPError, ValueError):
