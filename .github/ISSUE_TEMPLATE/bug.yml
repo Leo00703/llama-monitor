@@ -42,7 +42,7 @@ body:
     id: log
     attributes:
       label: Log excerpt
-      description: Copy from the panel log pane — the `[panel] starting: …` line already contains the full launch command. Trim to the failure; no secrets or personal paths you'd rather not share.
+      description: "Copy from the panel log pane — the [panel] starting: … line already contains the full launch command. Trim to the failure; no secrets or personal paths you'd rather not share."
     validations:
       required: false
   - type: textarea
