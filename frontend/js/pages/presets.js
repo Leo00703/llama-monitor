@@ -32,6 +32,8 @@ const Presets = {
     ["pf-dnmin", "spec.draft_n_min", "int0"],
     ["pf-dconf", "spec.draft_conf_min", "float0"],
     ["pf-slots", "slots", "int"],
+    ["pf-cb", "cont_batching", "str"],
+    ["pf-kvu", "kv_unified", "str"],
     ["pf-host", "host", "str"],
     ["pf-port", "port", "int"],
     ["pf-apikey", "api_key", "str"],
@@ -50,7 +52,8 @@ const Presets = {
     load_mode: "mmap", tensor_split: [], main_gpu: 0, split_mode: "layer",
     threads: 0, threads_batch: 0, batch_size: 2048, micro_batch: 512, cache_reuse: 0,
     spec: { spec_type: "none", draft_model: "", draft_n_max: 3, draft_n_min: 0, draft_conf_min: 0 },
-    slots: 1, host: "0.0.0.0", port: 8080, api_key: "",
+    slots: -1, cont_batching: "auto", kv_unified: "auto",
+    host: "0.0.0.0", port: 8080, api_key: "",
     jinja: true, reasoning_preserve: false, merge_qkv: false, graph_reuse: 0,
     fit: false, extra_flags: "",
   },
@@ -119,6 +122,13 @@ const Presets = {
     const needsDrafter = ["draft-simple", "draft-eagle3", "draft-dflash", "draft-dspark"].includes(specType);
     document.getElementById("pf-draftwrap").classList.toggle("hidden", !needsDrafter);
     document.getElementById("pf-dconfwrap").classList.toggle("hidden", specType !== "draft-dspark");
+    // spec decoding needs a dedicated slot — the backend forces -np 1, so
+    // reflect (and lock) it in the form instead of letting the user set N
+    const slots = document.getElementById("pf-slots");
+    const forced = specType !== "none";
+    slots.disabled = forced;
+    if (forced && slots.value !== "1") slots.value = "1";
+    slots.title = forced ? "Forced to 1 while speculative decoding is enabled" : "";
     this.updateMtpWarning();
   },
 

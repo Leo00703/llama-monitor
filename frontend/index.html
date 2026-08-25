@@ -274,6 +274,27 @@
             </fieldset>
 
             <fieldset class="fieldset">
+              <legend>Concurrency</legend>
+              <div class="grid3">
+                <div class="field"><label class="field-label" for="pf-slots">Parallel slots (-np, -1 = auto)</label><input type="number" id="pf-slots" min="-1" step="1"></div>
+                <div class="field"><label class="field-label" for="pf-cb">Continuous batching (--cont-batching)</label>
+                  <select id="pf-cb">
+                    <option value="auto">auto (server default)</option>
+                    <option value="on">on</option>
+                    <option value="off">off</option>
+                  </select>
+                </div>
+                <div class="field"><label class="field-label" for="pf-kvu">Unified KV buffer (--kv-unified)</label>
+                  <select id="pf-kvu">
+                    <option value="auto">auto (server default)</option>
+                    <option value="on">on</option>
+                    <option value="off">off</option>
+                  </select>
+                </div>
+              </div>
+            </fieldset>
+
+            <fieldset class="fieldset">
               <legend>Speculative decoding</legend>
               <div id="pf-mtp-warning" class="banner banner-err hidden" style="margin:0 0 10px">
                 draft-mtp + mmproj is not supported by the current llama-server build (the vision projector disables the MTP head).
@@ -298,7 +319,6 @@
                 <div class="field"><label class="field-label" for="pf-dnmax">Max draft tokens (--spec-draft-n-max)</label><input type="number" id="pf-dnmax" min="0" step="1"></div>
                 <div class="field"><label class="field-label" for="pf-dnmin">Min draft tokens (--spec-draft-n-min)</label><input type="number" id="pf-dnmin" min="0" step="1"></div>
                 <div class="field hidden" id="pf-dconfwrap"><label class="field-label" for="pf-dconf">Min draft confidence (--spec-draft-p-min, 0 = off)</label><input type="number" id="pf-dconf" min="0" max="1" step="0.01"></div>
-                <div class="field"><label class="field-label" for="pf-slots">Parallel slots (-np)</label><input type="number" id="pf-slots" min="1" step="1"></div>
               </div>
             </fieldset>
 

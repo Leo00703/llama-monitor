@@ -214,8 +214,28 @@ def _r_spec(s: LaunchSettings, c: FlagContext) -> Optional[list[str]]:
 
 
 def _r_slots(s: LaunchSettings, c: FlagContext) -> Optional[list[str]]:
-    slots = 1 if s.spec.spec_type != "none" else max(1, s.slots)
+    # -1 = auto (llama-server sizes the slot count by free memory); any
+    # other invalid value falls back to auto instead of breaking the launch
+    if s.spec.spec_type != "none":
+        return ["-np", "1"]  # spec decoding needs a dedicated slot
+    slots = s.slots if (s.slots == -1 or s.slots >= 1) else -1
     return ["-np", str(slots)]
+
+
+def _r_cont_batching(s: LaunchSettings, c: FlagContext) -> Optional[list[str]]:
+    if s.cont_batching == "on":
+        return ["--cont-batching"]
+    if s.cont_batching == "off":
+        return ["--no-cont-batching"]
+    return None  # auto: server default (enabled)
+
+
+def _r_kv_unified(s: LaunchSettings, c: FlagContext) -> Optional[list[str]]:
+    if s.kv_unified == "on":
+        return ["--kv-unified"]
+    if s.kv_unified == "off":
+        return ["--no-kv-unified"]
+    return None  # auto: server default (enabled when slots is auto)
 
 
 def _r_host(s: LaunchSettings, c: FlagContext) -> Optional[list[str]]:
@@ -288,6 +308,8 @@ FLAG_RULES: list[tuple[str, Callable[[LaunchSettings, FlagContext], Optional[lis
     ("cache_reuse", _r_cache_reuse),
     ("spec", _r_spec),
     ("slots", _r_slots),
+    ("cont_batching", _r_cont_batching),
+    ("kv_unified", _r_kv_unified),
     ("host", _r_host),
     ("port", _r_port),
     ("api_key", _r_api_key),

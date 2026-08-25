@@ -69,7 +69,13 @@ class LaunchSettings(BaseModel):
 
     # speculative decoding
     spec: SpecSettings = Field(default_factory=SpecSettings)
-    slots: int = 1  # forced to 1 when spec_type != none
+
+    # concurrency (parallel slots / continuous batching / unified KV).
+    # "auto" = emit no flag, the server default applies (slots sized by
+    # free memory, typically 2-4; unified KV enabled when slots is auto)
+    slots: int = -1  # -1 = auto; forced to 1 when spec_type != none
+    cont_batching: str = "auto"  # auto | on | off
+    kv_unified: str = "auto"  # auto | on | off
 
     # network & observability
     host: str = "0.0.0.0"
