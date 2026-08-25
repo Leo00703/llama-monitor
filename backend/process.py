@@ -8,6 +8,7 @@ import collections
 import contextlib
 import logging
 import os
+import re
 import signal
 import socket
 import subprocess
@@ -23,6 +24,19 @@ log = logging.getLogger("llama-monitor.process")
 LOG_BUFFER_SIZE = 4000
 STOP_TIMEOUT = 10.0
 KILL_TIMEOUT = 5.0
+
+# Most-specific-first: when the server dies, the first matching pattern in the
+# recent log tail explains WHY (e.g. the OOM line behind a model-load failure).
+_FATAL_PATTERNS = (
+    "out of memory",
+    "failed to allocate",
+    "failed to initialize",
+    "failed to create",
+    "failed to load",
+    "exiting due to",
+)
+_TS_PREFIX = re.compile(r"^\d+\.\d+\.\d+\.\d+\s+")
+_MOD_PREFIX = re.compile(r"^[A-Z]\s+\S+:\s*")
 
 # When set (update relaunch handoff), panel exit leaves the llama-server
 # child running: the relaunched panel adopts it as an external server, so
@@ -334,10 +348,27 @@ class LlamaServerManager:
                 self._publish_state()
         else:
             if self._state != ServerState.ERROR:
-                self._error = f"process exited with code {code}"
-                self._publish_log(f"[panel] server exited unexpectedly (code {code})")
+                hint = self._fatal_hint()
+                self._error = f"process exited with code {code}" + (f" — {hint}" if hint else "")
+                self._publish_log(f"[panel] server exited unexpectedly (code {code})" + (f": {hint}" if hint else ""))
                 self._state = ServerState.ERROR
                 self._publish_state()
+
+    def _fatal_hint(self, tail: int = 60) -> str:
+        """Best-effort: the most specific fatal line in the recent log tail,
+        so the error banner shows the cause (e.g. CUDA OOM), not just the
+        exit code. Tail-only scan: a server that died hours after a healthy
+        start shouldn't surface an old one-off warning."""
+        recent = list(self._log)[-tail:]
+        for pat in _FATAL_PATTERNS:
+            for line in reversed(recent):
+                if pat in line.lower():
+                    line = _TS_PREFIX.sub("", line.strip())
+                    # drop the leading "E <module>: " so the banner shows the
+                    # message, e.g. "cudaMalloc failed: out of memory"
+                    line = _MOD_PREFIX.sub("", line)
+                    return line[:200]
+        return ""
 
     @staticmethod
     def _spawn_kwargs() -> dict:
