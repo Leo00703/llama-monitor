@@ -255,4 +255,7 @@ class MetricsCollector:
             "ctx_used": ctx_used,
             "ctx_total": ctx_total,
             "slots": slots,
+            # live slot count of the RUNNING server — the UI uses it to
+            # flag a preset whose slot setting hasn't been applied yet
+            "n_slots": len(slots),
         }

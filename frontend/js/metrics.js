@@ -379,9 +379,18 @@ const Metrics = (() => {
     if (inf) {
       promptEl.textContent = inf.prompt_tps == null ? "—" : inf.prompt_tps.toFixed(1);
       genEl.textContent = inf.gen_tps == null ? "—" : inf.gen_tps.toFixed(1);
-      const busy = (inf.slots || []).some((s) => s.busy);
-      stateEl.textContent = busy ? "generating" : "idle";
-      stateEl.classList.remove("muted");
+      const slots = inf.slots || [];
+      const busy = slots.some((s) => s.busy);
+      if (data.preset_slots != null && inf.n_slots && inf.n_slots !== data.preset_slots) {
+        // The preset's slot setting is not what the running server has —
+        // it was started with other settings and needs a restart to apply.
+        stateEl.textContent = `server has ${inf.n_slots} slot${inf.n_slots > 1 ? "s" : ""} · preset wants ${data.preset_slots} — restart to apply`;
+        stateEl.classList.remove("muted");
+        stateEl.classList.add("slots-mismatch");
+      } else {
+        stateEl.textContent = `${busy ? "generating" : "idle"} · ${inf.n_slots ?? "?"} slot${(inf.n_slots ?? 0) > 1 ? "s" : ""}`;
+        stateEl.classList.remove("muted", "slots-mismatch");
+      }
       if (inf.last_seq != null && inf.last_seq !== lastSeq) {
         lastSeq = inf.last_seq;
         if ((inf.draft_proposed || 0) > 0) {
@@ -399,6 +408,7 @@ const Metrics = (() => {
       genEl.textContent = "—";
       stateEl.textContent = "no server";
       stateEl.classList.add("muted");
+      stateEl.classList.remove("slots-mismatch");
       if (draftCell) draftCell.hidden = true;
     }
     updateInference(inf);

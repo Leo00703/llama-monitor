@@ -610,6 +610,8 @@ middle, fact foot (cores/GHz, GB, temp/power). */
 .metric-card--infer { min-height: 190px; }
 
 .infer-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
+/* preset's slot setting differs from the running server — needs a restart */
+.slots-mismatch { color: var(--warn); }
 
 .infer-head-value { display: inline-flex; align-items: baseline; gap: 5px; }
 .infer-gen { font-size: 26px; }
