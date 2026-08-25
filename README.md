@@ -228,3 +228,81 @@ The panel is built in incremental phases (see `Implementation Plan.md`):
 4. Model browser, mmproj, speculative decoding, generation parameters + proxy — done
 5. Analytics: usage history (SQLite), energy cost, historical charts — done
 6. Header (status/version/host), collapsible sidebar, design polish — done
+
+## Contributing
+
+The project has a single maintainer; work is triaged from the GitHub Issues
+queue in order. The fastest ways to help, in order of value per unit of effort:
+
+1. **File a precise issue** — a bug with the checklist below, or an idea in
+   the goal/scope shape. A good issue is worth more than a quick PR.
+2. **Send a small PR** — bug fixes are very welcome; for larger features,
+   open an issue first and align on the goal.
+3. **Improve the docs** — stale-claim fixes, screenshots, missing config keys.
+
+### Bug reports
+
+Issue templates are in [`.github/ISSUE_TEMPLATE`](.github/ISSUE_TEMPLATE).
+A triage-ready report has all of these:
+
+| Field | Where to find it |
+| --- | --- |
+| Panel version | Settings → **Current version** (commit sha + date), or `GET /api/update/check` |
+| llama-server build | Topbar version label, or `llama-server --version` (e.g. `b10621`) |
+| OS | Windows 11 / Ubuntu 24.04 / … |
+| Steps to reproduce | Exact clicks and settings; naming the preset (or listing its fields) is ideal |
+| Log excerpt | Copy from the panel log pane — the `[panel] starting: …` line already contains the full launch command; trim to the failure, no secrets |
+| Expected vs actual | One sentence each |
+
+### Feature requests
+
+Keep the same shape as the project's own locked specs:
+
+- **Goal** — one sentence, what the user gets
+- **Scope** — what's in, what's explicitly out
+- **Open questions** — the decisions to make before coding starts
+
+### Pull requests
+
+- **Small and single-purpose** — one fix or one feature per PR.
+- **Read [`AGENTS.md`](AGENTS.md) first** — it is the single source of truth
+  for repo layout, commands, conventions, and hard-won gotchas, and it is
+  written for both humans and AI agents. Don't duplicate its rules in PR
+  comments; follow them.
+- **Commit style** — `Fix: …` / `Feat: …` / `Docs: …`; docs changes in
+  separate commits, never mixed with code.
+- **Verify before opening** — there is no test framework (by design), so the
+  PR description must say what was run and what was seen:
+  - UI: headless Chrome at 390 / 720 / 900 / 1024 / 1440 px —
+    `document.scrollWidth == innerWidth` on every page (hard rule: no
+    horizontal scroll on mobile)
+  - backend: ad-hoc inline Python with synthetic data
+  - live E2E: start the panel, exercise the API, run a real generation
+  - frozen builds: `python tray.py --smoke`
+- **By submitting a PR you agree that your contribution is licensed under the
+  [MIT](LICENSE) license.**
+
+### Deliberate choices — don't "improve" them
+
+- **No test framework, linter, or formatter** — verification is manual/ad-hoc
+  (checklist above); don't add pytest/black/ruff/CI lint jobs.
+- **No frontend framework, build step, or dependencies** — vanilla
+  HTML/CSS/JS, no bundler, no `package.json`.
+- **No new Python dependencies** without an issue discussion first.
+- **The theme is the official llama.cpp dark design language** — solid
+  `#0d0d0d` background, brand orange `#f65e00`, no gradients, bundled Geist
+  Mono for code/metrics. No Google Fonts or any other CDN, no restyling.
+- **Windows is primary; Linux must keep working** — `nvidia-smi` is optional
+  (GPU cards are hidden when absent).
+- **Never pin or downgrade PyInstaller** — the onefile relaunch env handling
+  is a fix for a real bug (see `AGENTS.md` → Gotchas).
+- **Never commit** `config.json`, `data/`, `TODO.md`, `*.log`, `build/`,
+  `dist/`, `*.spec` — they are gitignored on purpose.
+- **New config keys must also go into `config.example.json`.**
+
+### A note for AI agents
+
+This repo is developed *with* AI agents, so agent-filed issues and
+agent-written PRs are normal here — the bar is the same: cite what you
+verified and how. Start by reading [`AGENTS.md`](AGENTS.md); it is the
+maintainer's durable memory and what the maintainer's own agents follow.
