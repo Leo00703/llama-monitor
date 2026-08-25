@@ -1,0 +1,32 @@
+name: Feature request / idea
+description: A new feature, an improvement, or a "would be nice" idea.
+title: "Feat: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: One sentence — what the user gets.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why / context
+      description: The problem it solves, or a link to the discussion.
+    validations:
+      required: false
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope (what's in / what's out)
+    validations:
+      required: false
+  - type: textarea
+    id: questions
+    attributes:
+      label: Open questions
+      description: Decisions that should be made before implementation — the maintainer answers these and locks the spec before coding starts.
+    validations:
+      required: false

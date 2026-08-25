@@ -1,0 +1,54 @@
+name: Bug report
+description: Something in the panel — or in the server it manages — does not work as expected.
+title: "Fix: "
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: One or two sentences — expected vs actual.
+    validations:
+      required: true
+  - type: input
+    id: panel-version
+    attributes:
+      label: Panel version
+      description: Settings page, "Current version" line (commit sha + date), or `GET /api/update/check`.
+    validations:
+      required: true
+  - type: input
+    id: server-build
+    attributes:
+      label: llama-server build
+      description: Topbar version label, or `llama-server --version` (e.g. b10621 / v0.3.0).
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS
+      description: e.g. Windows 11, Ubuntu 24.04
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Exact clicks and settings. Naming the preset (or listing its fields) is ideal.
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Log excerpt
+      description: Copy from the panel log pane — the `[panel] starting: …` line already contains the full launch command. Trim to the failure; no secrets or personal paths you'd rather not share.
+    validations:
+      required: false
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else?
+      description: Workarounds you tried, when it started, etc.
+    validations:
+      required: false
