@@ -38,7 +38,8 @@ from .config import (
 )
 from . import backend_update
 from .flags import build_args, parse_help, validate_settings
-from .metrics import MetricsCollector
+from . import memcheck
+from .metrics import MetricsCollector, run_nvidia_smi
 from .models import list_models
 from .process import LlamaServerManager
 from .presets import PresetStore
@@ -801,6 +802,13 @@ def create_app() -> FastAPI:
             config.active_preset_id = ""
             save_config(config)
         return {"ok": deleted}
+
+    @app.post("/api/presets/memcheck")
+    async def presets_memcheck(body: dict) -> dict:
+        """Memory pre-check (#46): estimate the VRAM/RAM this launch will
+        occupy, from the last successful launch of the same model."""
+        gpus = await asyncio.to_thread(run_nvidia_smi)
+        return memcheck.estimate(body or {}, gpus)
 
     @app.post("/api/presets/{preset_id}/activate")
     async def presets_activate(preset_id: str) -> dict:

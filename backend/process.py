@@ -17,7 +17,9 @@ from typing import Any, Callable, Optional
 
 import psutil
 
+from . import memcheck
 from .config import no_window_kwargs, spawn_argv
+from .metrics import run_nvidia_smi
 
 log = logging.getLogger("llama-monitor.process")
 
@@ -48,6 +50,39 @@ _linger_server = False
 def set_linger_server(linger: bool = True) -> None:
     global _linger_server
     _linger_server = linger
+
+
+def _launch_facts(args: list[str]) -> dict:
+    """Memory-relevant facts from the launch args (memcheck baseline)."""
+    facts: dict[str, Any] = {
+        "model": "", "ctx": 0, "slots": None, "kv_unified": None,
+        "cache_type_k": None, "cache_type_v": None, "spec_type": "none",
+        "tensor_split": [], "n_gpu_layers": None,
+    }
+    for i, a in enumerate(args):
+        nxt = args[i + 1] if i + 1 < len(args) else None
+        if a == "-m" and nxt:
+            facts["model"] = nxt
+        elif a == "-c" and nxt and nxt.lstrip("-").isdigit():
+            facts["ctx"] = int(nxt)
+        elif a == "-np" and nxt and nxt.lstrip("-").isdigit():
+            facts["slots"] = int(nxt)
+        elif a == "-ngl" and nxt and nxt.isdigit():
+            facts["n_gpu_layers"] = int(nxt)
+        elif a == "--kv-unified":
+            facts["kv_unified"] = True
+        elif a == "--no-kv-unified":
+            facts["kv_unified"] = False
+        elif a == "--cache-type-k" and nxt:
+            facts["cache_type_k"] = nxt
+        elif a == "--cache-type-v" and nxt:
+            facts["cache_type_v"] = nxt
+        elif a == "--spec-type" and nxt:
+            facts["spec_type"] = nxt
+        elif a == "--tensor-split" and nxt:
+            with contextlib.suppress(ValueError):
+                facts["tensor_split"] = [int(x) for x in nxt.split(",") if x.strip()]
+    return facts
 
 
 class ServerState(str, Enum):
@@ -82,6 +117,10 @@ class LlamaServerManager:
         self._stop_requested = False
         self._port: Optional[int] = None
         self._preset_id: Optional[str] = None
+        # memcheck baseline of the launch in flight (#46)
+        self._mem_facts: Optional[dict] = None
+        self._pre_gpus: Optional[list] = None
+        self._pre_ram_used = 0
 
     # ------------------------------------------------------------------
     # lifecycle
@@ -139,6 +178,11 @@ class LlamaServerManager:
             self._error = ""
             self._state = ServerState.STARTING
             self._publish_state()
+            # VRAM/RAM right before spawn: the baseline for the memory
+            # pre-check (memcheck records it once the server is up)
+            self._mem_facts = _launch_facts(args)
+            self._pre_gpus = await asyncio.to_thread(run_nvidia_smi)
+            self._pre_ram_used = psutil.virtual_memory().used
             cmd = " ".join([exe, *args])
             self._publish_log(f"[panel] starting: {cmd}")
             log.info("starting: %s", cmd)
@@ -338,6 +382,11 @@ class LlamaServerManager:
             self._error = ""
             self._publish_log("[panel] server is up and accepting connections")
             self._publish_state()
+            if self._mem_facts:
+                try:
+                    memcheck.record(self._mem_facts, self._pre_gpus, self._pre_ram_used)
+                except Exception:
+                    log.exception("memcheck: failed to record launch baseline")
         code = await proc.wait()
         self._port = None
         self._preset_id = None

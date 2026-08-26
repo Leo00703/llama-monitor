@@ -983,6 +983,43 @@ fieldset.fieldset legend {
 
 .form-head h2 { margin: 0; font-size: 16px; font-weight: 600; }
 
+/* memory pre-check card (#46) */
+.memcheck {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  margin: 0 0 14px;
+  background: var(--panel);
+  font-size: 13px;
+}
+.memcheck-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.memcheck-title { font-weight: 600; }
+.memcheck-cal { color: var(--muted); font-size: 12px; }
+.memcheck-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 2px 0;
+}
+.memcheck-gpu { min-width: 170px; font-weight: 500; }
+.memcheck-nums {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.memcheck-nums b { color: var(--text); font-weight: 600; }
+.memcheck-warn .memcheck-gpu, .memcheck-warn .memcheck-nums { color: var(--warn); }
+.memcheck-note { display: block; color: var(--muted); font-size: 12px; margin-top: 4px; }
+
 .card-actions { margin-top: 14px; }
 
 .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
