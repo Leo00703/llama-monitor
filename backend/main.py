@@ -316,6 +316,19 @@ def create_app() -> FastAPI:
         task = asyncio.create_task(
             _metrics_loop(collector, manager, power, tracker, live_log, config,
                           store))
+
+        async def _warm_help() -> None:
+            # Prime the `llama-server --help` cache off the request path —
+            # the first /api/spec/types otherwise spawns the (CUDA-loaded)
+            # exe and blocks the first Presets page load for a few seconds.
+            try:
+                exe = config.resolved_exe()
+                if exe:
+                    await parse_help(exe)
+            except Exception:
+                log.exception("--help warmup failed")
+
+        asyncio.create_task(_warm_help())
         updater = threading.Thread(
             target=_update_loop, args=(manager, loop, config),
             daemon=True, name="update-checker")
