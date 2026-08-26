@@ -140,10 +140,10 @@ To stay focused on the current work:
 
 ## Verification
 
-- **UI changes**: headless Chrome at **true viewport widths via an iframe
-  harness** (Chrome clamps window width to ~500px — see Gotchas). Audit at
-  390 / 720 / 900 / 1024 / 1440px: `document.scrollWidth == innerWidth` on
-  every page.
+- **UI changes**: headless Chrome at **true viewport widths via CDP
+  `Emulation.setDeviceMetricsOverride`** (Chrome clamps window width to
+  ~500px — see Gotchas). Audit at 390 / 720 / 900 / 1024 / 1440px:
+  `document.documentElement.scrollWidth <= width` on every page.
 - **Hard rule: never horizontal scroll on mobile**; topbar stays static (only
   `main` scrolls, with safe-area bottom padding).
 - **Live E2E**: start the panel on :8000 and exercise the API
@@ -262,8 +262,18 @@ To stay focused on the current work:
   with a prefix-match fallback; `suggest_variant()` reads the nvidia-smi
   driver major (≥580 → cuda-13.3, else cuda-12.4; no nvidia-smi → cpu) and
   only ever SUGGESTS — the user confirms.
-- **Headless Chrome** clamps window width to ~500px — size the viewport with an
-  iframe inside the page, not with the browser window.
+- **Headless Chrome** clamps window width to ~500px — set the viewport with
+  CDP `Emulation.setDeviceMetricsOverride` per width (works with
+  `--headless=new`; verify with `document.documentElement.scrollWidth <= w`).
+  In CDP `/json` targets, pick `type === "page"` — `targets[0]` may be a
+  chrome-extension background page (symptom: `net::ERR_ABORTED` on navigate,
+  empty eval results).
+- **Restarting a dev panel**: `pkill -f "uvicorn backend.main"` does NOT
+  match (the venv `python.exe` launcher stub re-execs core Python with a
+  different command line). Find the real PID via `netstat -ano | grep :PORT`
+  and `taskkill //PID <pid> //F` — if the old panel keeps the port, the new
+  uvicorn fails to bind SILENTLY and every request (and timing measurement!)
+  hits the old code.
 - **Headless Chrome CDP + caching**: the persistent profile keeps its disk
   cache between runs — when verifying a JS change, send `Network.enable` +
   `Network.setCacheDisabled` BEFORE navigating, or the page loads the old
