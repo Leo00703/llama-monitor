@@ -76,7 +76,7 @@ Desktop view:
 
 Mobile view:
 
-![llama-monitor — mobile view](docs/llama-monitor-mobile.jpg)
+![llama-monitor — mobile view](docs/llama-monitor-mobile.png)
 
 ## Requirements
 
