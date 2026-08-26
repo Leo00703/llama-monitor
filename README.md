@@ -30,6 +30,8 @@ line:
   any time without restarting the server.
 - **Model browser** — recursive scan of `models_root` for `.gguf` files with
   size/sort, plus automatic mmproj (vision) projectors detection per model.
+  The scan is cached for 60 s, so very large model folders stay fast and a
+  just-downloaded model appears within a minute.
 - **Analytics** — per-request history (tokens, latency, energy estimate) in
   SQLite: summary cards, token/speed charts, model breakdown, a request
   table, and CSV export, all with a day/week/month/year/all range picker.
