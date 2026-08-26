@@ -336,6 +336,11 @@ class LlamaServerManager:
     def _publish_state(self) -> None:
         self._broadcast({"type": "state", **self.snapshot()})
 
+    @property
+    def has_listeners(self) -> bool:
+        """True while at least one WebSocket client is connected."""
+        return bool(self._listeners)
+
     def broadcast(self, event: dict) -> None:
         """Send an event to every WebSocket listener (public entry point)."""
         for queue in list(self._listeners):

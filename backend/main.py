@@ -107,6 +107,12 @@ async def _metrics_loop(collector: MetricsCollector, manager: LlamaServerManager
     """Poll system + inference metrics and push them to WebSocket listeners."""
     while True:
         await asyncio.sleep(METRICS_INTERVAL)
+        # Nobody is looking: skip the whole sample (nvidia-smi subprocess,
+        # psutil, /metrics + /slots polling). The panel is often left
+        # running unattended; energy sampling degrades to None for that
+        # window, which only affects generations made without the panel UI.
+        if not manager.has_listeners:
+            continue
         try:
             data = await collector.snapshot(manager.current_port())
         except Exception:  # metrics must never take the panel down
