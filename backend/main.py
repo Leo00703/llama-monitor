@@ -16,6 +16,7 @@ from typing import Any, AsyncIterator, Callable, Optional
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel, Field, ValidationError
 
 import httpx
@@ -328,6 +329,11 @@ def create_app() -> FastAPI:
         await manager.shutdown()
 
     app = FastAPI(title="llama-monitor", version="0.4.0", lifespan=lifespan)
+
+    # The panel is often reached over Tailscale/WAN: gzip the shell
+    # (243 KB -> 81 KB on first view). Streamed bodies (proxy SSE) are
+    # compressed chunk-by-chunk, not buffered.
+    app.add_middleware(GZipMiddleware, minimum_size=200)
 
     # ------------------------------------------------------------------
     # launch preparation (presets -> validated, version-checked flags)
