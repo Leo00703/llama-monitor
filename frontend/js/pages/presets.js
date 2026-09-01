@@ -83,86 +83,7 @@ const Presets = {
     });
     this.loadSpecGating().then((supported) => this.applySpecGating(supported));
     document.getElementById("pf-model").addEventListener("change", () => this.suggestMmproj());
-    const onFormInput = (e) => {
-      if (e.target && e.target.id && this.MEMCHECK_FIELDS.includes(e.target.id)) this.refreshMemCheck();
-    };
-    document.getElementById("preset-form").addEventListener("input", onFormInput);
-    document.getElementById("preset-form").addEventListener("change", onFormInput);
     this.showList();
-  },
-
-  /* ---------------- memory pre-check (#46) ---------------- */
-
-  /* form fields whose value changes the VRAM/RAM footprint */
-  MEMCHECK_FIELDS: [
-    "pf-model", "pf-ctx", "pf-ngl", "pf-ncmoe", "pf-override", "pf-fa",
-    "pf-ctk", "pf-ctv", "pf-load", "pf-ts", "pf-mg", "pf-sm", "pf-b",
-    "pf-ub", "pf-reuse", "pf-spectype", "pf-draft", "pf-slots", "pf-kvu",
-  ],
-
-  _memTimer: 0,
-
-  refreshMemCheck() {
-    const card = document.getElementById("pf-memcheck");
-    const launch = this.readFields();
-    clearTimeout(this._memTimer);
-    if (!launch.model) {
-      card.classList.add("hidden");
-      return;
-    }
-    card.classList.remove("hidden");
-    document.getElementById("pf-memcheck-cal").textContent = "";
-    document.getElementById("pf-memcheck-body").innerHTML =
-      '<span class="memcheck-note">estimating…</span>';
-    this._memTimer = setTimeout(async () => {
-      try {
-        const res = await API.post("/api/presets/memcheck", this.readFields());
-        this.renderMemCheck(res);
-      } catch (e) {
-        document.getElementById("pf-memcheck-body").innerHTML =
-          `<span class="memcheck-note">estimate unavailable (${UI.esc(String(e))})</span>`;
-      }
-    }, 400);
-  },
-
-  _fmtMb(mb) {
-    if (mb == null) return "—";
-    return mb >= 1024 ? `${(mb / 1024).toFixed(2)} GB` : `${Math.round(mb)} MiB`;
-  },
-
-  renderMemCheck(res) {
-    const body = document.getElementById("pf-memcheck-body");
-    const cal = document.getElementById("pf-memcheck-cal");
-    if (!res || !res.baseline) {
-      cal.textContent = "";
-      body.innerHTML = '<span class="memcheck-note">no calibration data yet — start this model once from the panel; the estimate appears after the first successful launch</span>';
-      return;
-    }
-    cal.textContent = res.calibrated_ts
-      ? `calibrated ${new Date(res.calibrated_ts * 1000).toLocaleDateString()} · ctx ${Number(res.ctx_baseline).toLocaleString()}`
-      : "";
-    let html = res.verdict === "warn"
-      ? '<div class="memcheck-row memcheck-warn"><span class="memcheck-gpu">⚠ tight</span><span class="memcheck-nums">projected free VRAM is below the safety threshold — the launch may OOM</span></div>'
-      : "";
-    for (const g of res.gpus || []) {
-      const cls = g.status === "warn" ? "memcheck-warn" : "";
-      html += `<div class="memcheck-row ${cls}">` +
-        `<span class="memcheck-gpu">${UI.esc(g.name || "GPU " + g.id)}</span>` +
-        `<span class="memcheck-nums">` +
-        `total ${this._fmtMb(g.total_mb)} · free now ${this._fmtMb(g.free_mb)}` +
-        (g.used_mb != null ? ` · est. used ${this._fmtMb(g.used_mb)}` : "") +
-        (g.projected_free_mb != null ? ` · projected free <b>${this._fmtMb(g.projected_free_mb)}</b>` : " · not in the calibrated layout") +
-        `</span></div>`;
-    }
-    if (res.ram) {
-      const cls = res.ram.status === "warn" ? "memcheck-warn" : "";
-      html += `<div class="memcheck-row ${cls}"><span class="memcheck-gpu">System RAM</span>` +
-        `<span class="memcheck-nums">free now ${this._fmtMb(res.ram.free_mb)} · ` +
-        `est. used ${this._fmtMb(res.ram.used_mb)} · projected free <b>${this._fmtMb(res.ram.projected_free_mb)}</b></span></div>`;
-    }
-    if (!res.gpus || !res.gpus.length) html += '<span class="memcheck-note">GPU data unavailable (nvidia-smi not found)</span>';
-    for (const n of res.notes || []) html += `<div class="memcheck-note">note: ${UI.esc(n)}</div>`;
-    body.innerHTML = html;
   },
 
   /* ---------------- model browser integration ---------------- */
@@ -255,7 +176,6 @@ const Presets = {
     this.editingId = "";
     document.getElementById("presets-list-view").classList.remove("hidden");
     document.getElementById("presets-form-view").classList.add("hidden");
-    document.getElementById("pf-memcheck").classList.add("hidden");
     await this.load();
   },
 
@@ -421,7 +341,6 @@ const Presets = {
     }
     this.syncSpecFields(document.getElementById("pf-spectype").value);
     this.applySpecGating(await this.loadSpecGating());
-    this.refreshMemCheck();
   },
 
   async save() {
