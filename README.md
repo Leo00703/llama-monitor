@@ -14,7 +14,9 @@ line:
   warnings instead of blocking the start. Speculative decoding is organized
   per technique (MTP, DFlash, DSpark, draft-simple, EAGLE-3); types the
   installed build doesn't document are greyed out in the editor and blocked
-  at launch with a clear message. Concurrency is per preset too:
+  at launch with a clear message. MTP uses the target's built-in head, or
+  an external MTP GGUF when a drafter model is set (for targets that ship
+  no built-in head). Concurrency is per preset too:
   parallel slots (`-np`, **auto** by default), continuous batching
   and the unified KV buffer, each auto / on / off.
 - **Resource monitoring** — CPU (per-core), RAM, and one card per detected GPU
