@@ -83,7 +83,6 @@ const Presets = {
     });
     this.loadSpecGating().then((supported) => this.applySpecGating(supported));
     document.getElementById("pf-model").addEventListener("change", () => this.suggestMmproj());
-    document.getElementById("pf-mmproj").addEventListener("input", () => this.updateMtpWarning());
     const onFormInput = (e) => {
       if (e.target && e.target.id && this.MEMCHECK_FIELDS.includes(e.target.id)) this.refreshMemCheck();
     };
@@ -190,13 +189,6 @@ const Presets = {
     if (m && m.mmproj.length) mmprojEl.value = m.mmproj[0];
   },
 
-  updateMtpWarning() {
-    const el = document.getElementById("pf-mtp-warning");
-    const isMtp = document.getElementById("pf-spectype").value === "draft-mtp";
-    const hasMmproj = !!document.getElementById("pf-mmproj").value.trim();
-    el.classList.toggle("hidden", !(isMtp && hasMmproj));
-  },
-
   syncSpecFields(specType) {
     const needsDrafter = ["draft-simple", "draft-eagle3", "draft-dflash", "draft-dspark", "draft-mtp"].includes(specType);
     document.getElementById("pf-draftwrap").classList.toggle("hidden", !needsDrafter);
@@ -210,7 +202,6 @@ const Presets = {
     const slots = document.getElementById("pf-slots");
     slots.disabled = false;
     slots.title = "";
-    this.updateMtpWarning();
   },
 
   /* --spec-type gating: types the installed build doesn't document are

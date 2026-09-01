@@ -8,32 +8,23 @@ no built-in MTP head (e.g. the lower quants of the newer Unsloth
 Dynamic v3.0) still get MTP speculative decoding. The number of draft
 tokens (--spec-draft-n-max) is clamped by llama.cpp to the number of
 trained MTP heads.
+
+Vision (mmproj) is compatible: the MTP draft hook skips embedding
+(vision) batches, so image prefill passes through untouched
+(common/speculative.cpp process()).
 """
 
 from __future__ import annotations
 
-from ..schema import LaunchSettings
 from .base import DRAFTER_OPTIONAL, Technique
 
-
-class _MTP(Technique):
-    def validate(self, s: LaunchSettings) -> list[str]:
-        errors = super().validate(s)
-        if s.mmproj.strip():
-            errors.append(
-                "mmproj (vision) and draft-mtp speculative decoding are incompatible — "
-                "disable one of them"
-            )
-        return errors
-
-
-TECHNIQUE = _MTP(
+TECHNIQUE = Technique(
     spec_type="draft-mtp",
     label="draft-mtp (built-in or external MTP head)",
     description=(
         "Uses the model's own multi-token-prediction head; set a drafter model to "
         "use an external MTP GGUF instead (for targets that ship no built-in head). "
-        "Incompatible with mmproj (vision)."
+        "Compatible with mmproj (vision)."
     ),
     drafter=DRAFTER_OPTIONAL,
 )
