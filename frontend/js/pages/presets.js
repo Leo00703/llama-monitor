@@ -117,7 +117,10 @@ const Presets = {
     document.getElementById("pf-draft-label").textContent = specType === "draft-mtp"
       ? "MTP model (--spec-draft-model, optional — empty = built-in head)"
       : "Drafter model (--spec-draft-model)";
-    document.getElementById("pf-dconfwrap").classList.toggle("hidden", specType !== "draft-dspark");
+    // confidence early-stop (--spec-draft-p-min): DSpark and DFlash/DFlash2
+    document.getElementById("pf-dconfwrap").classList.toggle(
+      "hidden", !specType || (specType !== "draft-dspark" && specType !== "draft-dflash")
+    );
     // Parallel slots stay fully editable with spec decode: modern builds
     // (b10xxx+, "parallel drafting") draft for all slots at once.
     const slots = document.getElementById("pf-slots");

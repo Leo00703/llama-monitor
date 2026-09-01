@@ -33,8 +33,9 @@ class SpecSettings(BaseModel):
     draft_model: str = ""  # path relative to models_root
     draft_n_max: int = 3
     draft_n_min: int = 0
-    # DSpark only: min acceptance confidence for block truncation
-    # (--spec-draft-p-min); 0 = off. Emitted only when spec_type == draft-dspark.
+    # DSpark / DFlash: min acceptance confidence for block truncation
+    # (--spec-draft-p-min); 0 = off. Emitted when spec_type is draft-dspark
+    # or draft-dflash (DFlash2 honours the generic early-stop too).
     draft_conf_min: float = 0.0
 
 
