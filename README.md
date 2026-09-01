@@ -6,7 +6,12 @@ machine or over Tailscale), and manage everything without touching the command
 line:
 
 - **Process control** — start / stop / restart `llama-server` as a child process,
-  with live stdout/stderr streaming in a terminal panel.
+  with live stdout/stderr streaming in a terminal panel. The dashboard also
+  previews the exact launch command for the selected preset; a copy button
+  puts it on the clipboard one flag per line — paste-ready as a single pending
+  command for cmd, PowerShell, or bash (a small shell selector picks the
+  line-continuation character) — so the same setup can be started from a
+  terminal.
 - **Presets** — full CRUD on launch configurations, stored as *semantic*
   settings (never raw CLI strings). A translation layer converts them to real
   `llama-server` flags at launch time, and validates them against the actually
