@@ -479,6 +479,7 @@ def create_app() -> FastAPI:
             return {"ok": False, "error": "a download is already in progress"}
         be_downloading = True
         t0 = time.time()
+        zip_path: Path | None = None
         try:
             storage = be_storage()
             storage.mkdir(parents=True, exist_ok=True)
@@ -512,10 +513,15 @@ def create_app() -> FastAPI:
             ver = await backend_update.verify_build(build_dir, tag)
             if not ver["ok"]:
                 shutil.rmtree(build_dir, ignore_errors=True)
+                zip_path.unlink(missing_ok=True)
                 return {"ok": False, "error": ver["error"]}
             backend_update.write_manifest(
                 build_dir, tag, variant, asset["browser_download_url"],
                 asset.get("size") or 0)
+            # the archive has served its purpose — the extracted build dir +
+            # manifest is the managed artifact; keeping the ~100-200 MB zip
+            # would accumulate one per version in the storage folder (#51)
+            zip_path.unlink(missing_ok=True)
             config.llama_backend.pending = LlamaBackendPending(
                 tag=tag, variant=variant, state="downloaded")
             save_config(config)
@@ -526,6 +532,10 @@ def create_app() -> FastAPI:
         except (httpx.HTTPError, OSError, ValueError,
                 backend_update.UpdateError) as exc:
             log.exception("backend download failed")
+            # drop the archive too: the release is always re-downloadable,
+            # and keeping it reproduces the per-version accumulation (#51)
+            if zip_path is not None:
+                zip_path.unlink(missing_ok=True)
             return {"ok": False, "error": str(exc)}
         finally:
             be_downloading = False

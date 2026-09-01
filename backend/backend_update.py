@@ -369,12 +369,23 @@ def free_bytes(path: Path) -> Optional[int]:
         return None
 
 
+# Release asset names are deterministic (asset_name_for): llama-<tag>-bin-<...>
+# where <tag> is a nightly b#### or a stable vX.Y(.Z). Match only that shape so
+# user files that happen to be zips are never touched.
+_ORPHAN_ARCHIVE_RE = re.compile(
+    r"^llama-(?:b\d+|v[\d.]+(?:\.[A-Za-z0-9]+)*)-bin-.+\.(?:zip|tar\.gz)$")
+
+
 def cleanup_partials(storage: Path) -> None:
-    """Drop interrupted-download partial files (called at startup)."""
+    """Drop interrupted-download partials and orphan release archives
+    (called at startup). Archives are only removed when they match the
+    deterministic release-asset naming, so user files are never touched."""
     if not storage.is_dir():
         return
     for f in storage.iterdir():
-        if f.is_file() and f.name.endswith(".part"):
+        if not f.is_file():
+            continue
+        if f.name.endswith(".part") or _ORPHAN_ARCHIVE_RE.match(f.name):
             try:
                 f.unlink()
             except OSError:
