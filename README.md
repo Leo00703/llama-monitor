@@ -42,7 +42,9 @@ line:
 - **Generation parameters** — sampling / penalties / control fields that are
   *not* launch flags: they are injected into every proxied
   `/v1/chat/completions` and `/completion` request, so they can be changed at
-  any time without restarting the server.
+  any time without restarting the server. Saved defaults are **per preset**:
+  the Generation page edits the currently active preset's values (each preset
+  keeps its own), and saving a preset from the Presets page never touches them.
 - **Model browser** — recursive scan of `models_root` for `.gguf` files with
   size/sort, plus automatic mmproj (vision) projectors detection per model.
   The scan is cached for 60 s, so very large model folders stay fast and a
