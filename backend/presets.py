@@ -60,7 +60,14 @@ class PresetStore:
         if name is not None:
             preset.name = name
         if launch is not None:
+            old_generation = preset.launch.generation
             preset.launch = launch
+            if not launch.generation and generation is None:
+                # the presets editor replaces the whole launch object with an
+                # empty generation block — carry the saved defaults over so a
+                # launch save doesn't silently wipe them (#50); the dedicated
+                # /generation endpoint is the only way to clear them
+                preset.launch.generation = old_generation
         if generation is not None:
             preset.launch.generation = generation
         preset.updated_at = _now()
