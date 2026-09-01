@@ -19,7 +19,15 @@ line:
   warnings instead of blocking the start. Speculative decoding is organized
   per technique (MTP, DFlash, DSpark, draft-simple, EAGLE-3); types the
   installed build doesn't document are greyed out in the editor and blocked
-  at launch with a clear message. MTP uses the target's built-in head, or
+  at launch with a clear message. **DFlash also covers DFlash2**: since
+  [llama.cpp #27342](https://github.com/ggml-org/llama.cpp/pull/27342) the
+  DFlash2 checkpoint (grouped dynamic depthwise convolution + candidate
+  selector, ≈1.8× decode on Qwen3.8-class targets) is auto-detected from the
+  draft GGUF under the same `draft-dflash` type — there is no separate type to
+  select — and DFlash2 drafts also honour the per-block confidence
+  early-stop (`--spec-draft-p-min`). DFlash2 drafts must be converted with the
+  updated converter (GGUFs generated before 2026-08-27 need reconvertion). MTP
+  uses the target's built-in head, or
   an external MTP GGUF when a drafter model is set (for targets that ship
   no built-in head). Concurrency is per preset too:
   parallel slots (`-np`, **auto** by default), continuous batching
