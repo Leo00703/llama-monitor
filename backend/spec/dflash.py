@@ -8,11 +8,11 @@ model's trained block size.
 
 from __future__ import annotations
 
-from .base import Technique
+from .base import DRAFTER_REQUIRED, Technique
 
 TECHNIQUE = Technique(
     spec_type="draft-dflash",
     label="draft-dflash",
     description="Block-diffusion draft; emits a whole token block per forward pass. n-max is clamped to the draft's trained block size.",
-    needs_drafter=True,
+    drafter=DRAFTER_REQUIRED,
 )

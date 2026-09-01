@@ -6,11 +6,11 @@ model verifies the whole draft in a single pass.
 
 from __future__ import annotations
 
-from .base import Technique
+from .base import DRAFTER_REQUIRED, Technique
 
 TECHNIQUE = Technique(
     spec_type="draft-simple",
     label="draft-simple",
     description="Classic small draft model, one token at a time.",
-    needs_drafter=True,
+    drafter=DRAFTER_REQUIRED,
 )

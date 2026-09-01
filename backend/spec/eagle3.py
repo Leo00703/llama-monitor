@@ -7,11 +7,11 @@ the same size. Shares the target's tokenizer.
 
 from __future__ import annotations
 
-from .base import Technique
+from .base import DRAFTER_REQUIRED, Technique
 
 TECHNIQUE = Technique(
     spec_type="draft-eagle3",
     label="draft-eagle3",
     description="One-layer draft reading the target's hidden states; higher acceptance than a standalone draft.",
-    needs_drafter=True,
+    drafter=DRAFTER_REQUIRED,
 )

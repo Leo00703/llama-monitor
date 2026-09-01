@@ -198,8 +198,12 @@ const Presets = {
   },
 
   syncSpecFields(specType) {
-    const needsDrafter = ["draft-simple", "draft-eagle3", "draft-dflash", "draft-dspark"].includes(specType);
+    const needsDrafter = ["draft-simple", "draft-eagle3", "draft-dflash", "draft-dspark", "draft-mtp"].includes(specType);
     document.getElementById("pf-draftwrap").classList.toggle("hidden", !needsDrafter);
+    // draft-mtp: the drafter is optional — empty = the target's built-in MTP head
+    document.getElementById("pf-draft-label").textContent = specType === "draft-mtp"
+      ? "MTP model (--spec-draft-model, optional — empty = built-in head)"
+      : "Drafter model (--spec-draft-model)";
     document.getElementById("pf-dconfwrap").classList.toggle("hidden", specType !== "draft-dspark");
     // Parallel slots stay fully editable with spec decode: modern builds
     // (b10xxx+, "parallel drafting") draft for all slots at once.

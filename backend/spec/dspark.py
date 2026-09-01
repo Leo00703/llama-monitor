@@ -14,7 +14,7 @@ docs/speculative.md still shows the pre-rename name
 from __future__ import annotations
 
 from ..schema import LaunchSettings, SpecSettings
-from .base import Technique, Resolver
+from .base import DRAFTER_REQUIRED, Technique, Resolver
 
 
 class _DSpark(Technique):
@@ -35,6 +35,6 @@ TECHNIQUE = _DSpark(
     spec_type="draft-dspark",
     label="draft-dspark",
     description="DFlash + Markov head (Qwen3-backbone drafts only); optional per-block confidence truncation.",
-    needs_drafter=True,
+    drafter=DRAFTER_REQUIRED,
     extra_fields=("draft_conf_min",),
 )
