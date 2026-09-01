@@ -398,7 +398,10 @@ def create_app() -> FastAPI:
             supported=supported or None,
         )
         warnings.extend(flag_warnings)
-        return {"ok": True, "args": args, "warnings": warnings, "errors": []}
+        # exe is included so the frontend can build a copy-paste-ready
+        # command (first line = full llama-server path)
+        return {"ok": True, "args": args, "exe": str(exe) if exe else None,
+                "warnings": warnings, "errors": []}
 
     @app.post("/api/presets/{preset_id}/preview")
     async def preset_preview(preset_id: str) -> dict:

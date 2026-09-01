@@ -86,7 +86,19 @@
           </div>
           <div id="preset-pick" role="button" tabindex="0" aria-expanded="false" aria-controls="preset-pick-list"></div>
           <div id="preset-pick-list" class="preset-pick-list hidden" role="listbox"></div>
-          <pre id="flag-preview" class="log hidden"></pre>
+          <div class="preview-wrap">
+            <pre id="flag-preview" class="log hidden"></pre>
+            <div class="preview-toolbar hidden" id="preview-toolbar">
+              <select id="cmd-shell" class="shell-select" aria-label="Target shell" title="Shell the copied command targets (sets the line-continuation character)">
+                <option value="cmd" selected>cmd</option>
+                <option value="powershell">PowerShell</option>
+                <option value="bash">bash</option>
+              </select>
+              <button id="btn-copy-cmd" class="icon-btn" type="button" aria-label="Copy launch command" title="Copy launch command (one flag per line, paste-ready for the selected shell)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+              </button>
+            </div>
+          </div>
         </section>
 
         <section class="metrics-grid mode-graph" id="metrics-grid">

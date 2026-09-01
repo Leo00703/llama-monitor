@@ -39,6 +39,7 @@ const Dashboard = {
       if (e.key === "Escape" && this.pickOpen) this.closePick();
     });
     document.getElementById("btn-preview").addEventListener("click", () => this.preview());
+    document.getElementById("btn-copy-cmd").addEventListener("click", () => this.copyCommand());
     this.refreshPresets();
   },
 
@@ -126,12 +127,56 @@ const Dashboard = {
     this.closePick();
   },
 
+  // Line-continuation character per target shell (verified empirically):
+  // cmd.exe uses ^, PowerShell a backtick, bash/zsh a backslash. No single
+  // character works across all three, so the copy button offers a selector.
+  SHELL_CONT: { cmd: "^", powershell: "`", bash: "\\" },
+
+  /** Rebuild the paste-ready command from the last preview.
+      One flag per line (a flag+value pair stays together), the selected
+      shell's continuation character on every line except the last, so a
+      paste leaves ONE pending command and a single Enter starts the server.
+      Tokens use shell quoting (double quotes around tokens with spaces)
+      — NOT the display-only quoteForDisplay, since this text is meant to run. */
+  copyCommand() {
+    const p = this.lastPreview;
+    if (!p || !p.exe) {
+      UI.toast("llama-server executable not configured — nothing to copy", "err");
+      return;
+    }
+    const shell = document.getElementById("cmd-shell").value || "cmd";
+    const cont = this.SHELL_CONT[shell] || "\\";
+    // Double-quote only tokens containing whitespace (the realistic case:
+    // paths with spaces). No \" escaping — that is bash-specific and
+    // wrong for cmd/PowerShell, and these tokens never hold a literal quote.
+    const quote = (t) => (t === "" ? '""' : /\s/.test(t) ? `"${t}"` : t);
+    // a flag = 1-2 dashes + a letter; a value like `-1` (dash + digit)
+    // is NOT a flag, so `-np -1` stays on one line
+    const isFlag = (t) => /^-{1,2}[A-Za-z]/.test(t);
+    const lines = [quote(p.exe)];
+    const args = p.args;
+    for (let i = 0; i < args.length; i++) {
+      let line = quote(args[i]);
+      if (isFlag(args[i]) && i + 1 < args.length && !isFlag(args[i + 1])) {
+        line += " " + quote(args[i + 1]);
+        i++;
+      }
+      lines.push(line);
+    }
+    const text = lines.map((l, i) => (i < lines.length - 1 ? `${l} ${cont}` : l)).join("\r\n");
+    UI.copyText(text).then((ok) => UI.toast(
+      ok ? `copied launch command (one flag per line, ${shell})` : "clipboard copy failed",
+      ok ? "ok" : "err"));
+  },
+
   async preview(force = false) {
     const btn = document.getElementById("btn-preview");
     const pre = document.getElementById("flag-preview");
+    const toolbar = document.getElementById("preview-toolbar");
     // toggle off: just hide (a re-show re-fetches, so the command stays fresh)
     if (!pre.classList.contains("hidden") && !force) {
       pre.classList.add("hidden");
+      toolbar.classList.add("hidden");
       btn.textContent = "Preview launch command";
       return;
     }
@@ -143,6 +188,8 @@ const Dashboard = {
       const res = await API.post(`/api/presets/${this.selectedId}/preview`);
       pre.textContent = res.args.map(UI.quoteForDisplay).join(" ") || "(no flags)";
       pre.classList.remove("hidden");
+      toolbar.classList.toggle("hidden", !res.exe);
+      this.lastPreview = { exe: res.exe, args: res.args };
       btn.textContent = "Hide launch command";
       if (res.errors && res.errors.length) {
         UI.banner(document.getElementById("launch-banner"), "err", res.errors);
@@ -168,4 +215,6 @@ const Dashboard = {
   clearLaunchResult() {
     UI.clearBanner(document.getElementById("launch-banner"));
   },
+
+  lastPreview: null,
 };

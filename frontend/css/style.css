@@ -399,6 +399,19 @@ details[open] .card-summary { margin-bottom: 8px; }
 
 .log .panel-line { color: #4de2a8; }
 
+/* launch-command preview: positioned wrapper so the copy button sits in
+   the box's top-right corner (#53); extra right padding keeps text clear */
+.preview-wrap { position: relative; }
+.preview-wrap .log { padding-right: 150px; }
+.preview-toolbar {
+  position: absolute; top: 8px; right: 8px; z-index: 1;
+  display: flex; align-items: center; gap: 6px;
+}
+.shell-select {
+  width: auto; height: 32px; flex: none;
+  padding: 4px 26px 4px 9px; font-size: 12px;
+}
+
 /* hide/show: only the terminal goes away — the card padding and the head
    margin stay identical in both states so the title + buttons never move */
 .log-card.collapsed .log { display: none; }

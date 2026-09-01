@@ -49,6 +49,29 @@ const UI = {
     return token;
   },
 
+  /** Copy text to the clipboard. navigator.clipboard when available,
+      execCommand fallback for plain-HTTP LAN installs. */
+  async copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      try {
+        await navigator.clipboard.writeText(text);
+        return true;
+      } catch (_) {
+        /* clipboard API blocked (permissions/permissions prompt) — try the legacy path */
+      }
+    }
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand("copy"); } catch (_) { ok = false; }
+    ta.remove();
+    return ok;
+  },
+
   /** "8,16" -> [8,16] (tolerant) */
   parseIntList(raw) {
     if (!raw || !raw.trim()) return [];

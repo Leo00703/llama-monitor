@@ -290,28 +290,10 @@ $("btn-toggle-log").addEventListener("click", () => {
   $("btn-toggle-log").textContent = collapsed ? "Show" : "Hide";
 });
 
-async function copyText(text) {
-  if (navigator.clipboard && window.isSecureContext) {
-    await navigator.clipboard.writeText(text);
-    return true;
-  }
-  // plain-HTTP fallback (panel served over http://<lan-ip>:8000)
-  const ta = document.createElement("textarea");
-  ta.value = text;
-  ta.style.position = "fixed";
-  ta.style.opacity = "0";
-  document.body.appendChild(ta);
-  ta.select();
-  let ok = false;
-  try { ok = document.execCommand("copy"); } catch (_) { ok = false; }
-  ta.remove();
-  return ok;
-}
-
 $("btn-copy-log").addEventListener("click", async () => {
   const lines = logEl.children.length;
   if (!lines) { UI.toast("log is empty", "err"); return; }
-  const ok = await copyText(logEl.innerText);
+  const ok = await UI.copyText(logEl.innerText);
   UI.toast(ok ? `copied ${lines} log lines` : "clipboard copy failed", ok ? "ok" : "err");
 });
 
