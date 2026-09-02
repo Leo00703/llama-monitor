@@ -102,6 +102,10 @@ async def run_version(exe: str) -> Optional[BuildInfo]:
             *spawn_argv(exe, "--version"),
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.PIPE,
+            # runs on EVERY page load (Backend.init → /api/backend/versions):
+            # without CREATE_NO_WINDOW a windowless build flashes a console
+            # window on each load (Windows) — same reason as nvidia-smi (#57)
+            **no_window_kwargs(),
         )
     except (OSError, ValueError):
         return None
