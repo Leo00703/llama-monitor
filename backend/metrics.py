@@ -13,10 +13,13 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import os
 import re
 import shutil
 import subprocess
+import sys
 import time
+from pathlib import Path
 from typing import Any, Optional
 
 import httpx
@@ -125,12 +128,119 @@ def run_nvidia_smi() -> Optional[list[dict]]:
     return gpus
 
 
+class CpuSensors:
+    """CPU package temperature + power from sysfs (Linux only).
+
+    Windows exposes neither cleanly without elevation: WMI thermal zones
+    (MSAcpi_ThermalZoneTemperature) require admin, and RAPL needs MSR
+    access — both stay None there and the UI hides the fields. RAM has no
+    sensor on either OS. All reads are plain sysfs file opens (no process
+    spawns), called from the metrics loop thread.
+    """
+
+    # thermal zone types that mean "CPU package", best match first
+    _TEMP_ZONE_PRIORITY = ("x86_pkg_temp", "cpu_thermal", "intel_thermal")
+
+    def __init__(self, sysroot: str = "/sys") -> None:
+        self._zones: list[tuple[int, Path]] = []
+        self._rapl_energy: Optional[Path] = None
+        self._hwmon_power: Optional[Path] = None
+        self._last_sample: Optional[tuple[float, float]] = None  # (ts, energy_uj)
+        if sys.platform.startswith("linux"):
+            self._discover(sysroot)
+
+    def _discover(self, sysroot: str) -> None:
+        cap = Path(sysroot) / "class" / "powercap"
+        with contextlib.suppress(OSError):
+            for entry in sorted(os.listdir(cap)):
+                if not entry.startswith("intel-rapl"):
+                    continue
+                base = cap / entry
+                try:
+                    name = (base / "name").read_text().strip()
+                except OSError:
+                    continue
+                # use the "Package" domain (not DRAM/core sub-domains)
+                if name == "Package" and (base / "energy_uj").is_file():
+                    self._rapl_energy = base / "energy_uj"
+                    break
+        # AMD fallback: zenpower hwmon exposes package power in microwatts
+        # (Intel RAPL above is preferred when present)
+        hwmon = Path(sysroot) / "class" / "hwmon"
+        with contextlib.suppress(OSError):
+            for entry in sorted(os.listdir(hwmon)):
+                base = hwmon / entry
+                try:
+                    name = (base / "name").read_text().strip()
+                except OSError:
+                    continue
+                if name == "zenpower" and not self._rapl_energy:
+                    for f in ("power1_average", "power1_input"):
+                        p = base / f
+                        if p.is_file():
+                            self._hwmon_power = p
+                            break
+                if self._hwmon_power:
+                    break
+        thermal = Path(sysroot) / "class" / "thermal"
+        with contextlib.suppress(OSError):
+            for entry in sorted(os.listdir(thermal)):
+                if not entry.startswith("thermal_zone"):
+                    continue
+                base = thermal / entry
+                try:
+                    ztype = (base / "type").read_text().strip()
+                except OSError:
+                    continue
+                if ztype in self._TEMP_ZONE_PRIORITY and (base / "temp").is_file():
+                    self._zones.append((self._TEMP_ZONE_PRIORITY.index(ztype), base))
+        self._zones.sort(key=lambda t: t[0])
+
+    def temp_c(self) -> Optional[float]:
+        """Hottest CPU package zone in °C, or None when no zone is exposed."""
+        best: Optional[float] = None
+        for _, base in self._zones:
+            try:
+                v = int(base.joinpath("temp").read_text().strip())
+            except (OSError, ValueError):
+                continue
+            t = v / 1000.0
+            if best is None or t > best:
+                best = t
+        return round(best, 1) if best is not None else None
+
+    def power_w(self) -> Optional[float]:
+        """Package power in watts (RAPL energy delta, or AMD hwmon average)."""
+        if self._rapl_energy is not None:
+            try:
+                energy = int(self._rapl_energy.read_text().strip())
+            except (OSError, ValueError):
+                return None
+            now = time.time()
+            prev = self._last_sample
+            self._last_sample = (now, energy)
+            if prev is None or now - prev[0] < 0.5:
+                return None
+            de = energy - prev[1]
+            if de < 0:  # counter wrap / driver reset — resync next tick
+                return None
+            return round(de / 1e6 / (now - prev[0]), 2)
+        if self._hwmon_power is not None:
+            try:
+                v = int(self._hwmon_power.read_text().strip())
+            except (OSError, ValueError):
+                return None
+            return round(v / 1e6, 2)
+        return None
+
+
 class MetricsCollector:
     """Polls system + inference metrics and computes live tok/s deltas."""
 
     def __init__(self) -> None:
         psutil.cpu_percent()
         psutil.cpu_percent(percpu=True)
+        self._cpu_sensors = CpuSensors()
         self._baseline: Optional[dict[str, Any]] = None
 
     async def snapshot(self, port: Optional[int]) -> dict:
@@ -139,6 +249,7 @@ class MetricsCollector:
         total = psutil.cpu_percent()
         ram = psutil.virtual_memory()
         gpus = await asyncio.to_thread(run_nvidia_smi)
+        cpu_sensors = await asyncio.to_thread(self._cpu_sensors_sample)
         inference = await self._inference(port) if port else None
         freq = psutil.cpu_freq()  # None on platforms without a freq source
         return {
@@ -148,6 +259,7 @@ class MetricsCollector:
                 "per_core": [round(v, 1) for v in per_core],
                 "freq_ghz": round(freq.current / 1000, 2) if freq and freq.current else None,
             },
+            "cpu_sensors": cpu_sensors,
             "ram": {
                 "used_gb": round(ram.used / 1073741824, 2),
                 "total_gb": round(ram.total / 1073741824, 2),
@@ -155,6 +267,12 @@ class MetricsCollector:
             },
             "gpus": gpus or [],
             "inference": inference,
+        }
+
+    def _cpu_sensors_sample(self) -> dict[str, Optional[float]]:
+        return {
+            "temp_c": self._cpu_sensors.temp_c(),
+            "power_w": self._cpu_sensors.power_w(),
         }
 
     async def _inference(self, port: int) -> Optional[dict]:

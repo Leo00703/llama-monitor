@@ -118,6 +118,11 @@ async def _metrics_loop(collector: MetricsCollector, manager: LlamaServerManager
             log.exception("metrics collection failed")
             continue
         total_w = sum(g["power_w"] for g in data.get("gpus", []) if g.get("power_w") is not None)
+        # CPU package power joins the energy total where the OS exposes it
+        # (Linux RAPL/AMD hwmon; None on Windows — see CpuSensors)
+        cpu_w = (data.get("cpu_sensors") or {}).get("power_w")
+        if cpu_w is not None:
+            total_w += cpu_w
         power.add(float(data.get("ts") or time.time()), total_w if total_w > 0 else None)
         _enrich_inference(data, tracker, live_log)
         tracker.tick()

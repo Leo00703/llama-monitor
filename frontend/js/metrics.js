@@ -358,6 +358,23 @@ const Metrics = (() => {
     } else {
       ghzItem.style.display = "none";
     }
+    // CPU temp/power: only shown where the OS exposes a sensor (Linux
+    // sysfs). Windows has none without admin — hidden, not faked (#61).
+    const sensors = data.cpu_sensors || {};
+    const tempItem = $("cpu-temp-item");
+    if (tempItem) {
+      if (sensors.temp_c != null) {
+        tempItem.style.display = "";
+        $("cpu-temp").textContent = `${sensors.temp_c.toFixed(0)} °C`;
+      } else tempItem.style.display = "none";
+    }
+    const powerItem = $("cpu-power-item");
+    if (powerItem) {
+      if (sensors.power_w != null) {
+        powerItem.style.display = "";
+        $("cpu-power").textContent = `${sensors.power_w.toFixed(0)} W`;
+      } else powerItem.style.display = "none";
+    }
 
     const ramValue = $("ram-value");
     const ramDetail = $("ram-detail");
