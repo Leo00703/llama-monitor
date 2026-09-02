@@ -43,7 +43,11 @@ line:
   parallel slots (`-np`, **auto** by default), continuous batching
   and the unified KV buffer, each auto / on / off.
 - **Resource monitoring** — CPU (per-core), RAM, and one card per detected GPU
-  (utilization, VRAM, temperature, power draw) via `nvidia-smi`,
+  (utilization, VRAM, temperature, power draw) via `nvidia-smi`.
+  On Linux the CPU card also shows package temperature (sysfs thermal zones)
+  and power draw (Intel RAPL / AMD hwmon), and CPU power joins the per-request
+  energy estimate; Windows exposes neither without admin, so the fields are
+  hidden there.
   plus inference metrics (prompt/generation tok/s, per-slot context usage,
   draft acceptance for spec decode) sourced from the server's own log lines,
   with `/slots` and `/metrics` as fallbacks. The card also shows the running server's live slot count and turns orange when the active preset's parallel-slots setting differs (the server needs a restart to pick it up). The usage cards render as
