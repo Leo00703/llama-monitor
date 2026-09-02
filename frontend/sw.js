@@ -19,7 +19,12 @@
  */
 "use strict";
 
-const CACHE = "llama-monitor-v1";
+/* Bump the version whenever the shell must be re-cached from scratch.
+   v2 (#58 era): the v1 cache could hold a MIXED shell (new index.html + old
+   js/css after a deploy, since the browser disk cache had no explicit
+   Cache-Control). The backend now sends no-cache on shell files; this bump
+   wipes any stale v1 cache that is already out there. */
+const CACHE = "llama-monitor-v2";
 const SHELL = [
   "/",
   "/css/style.css",
@@ -67,10 +72,10 @@ self.addEventListener("activate", (event) => {
 const NAV_TIMEOUT = 4000;
 const RES_TIMEOUT = 3000;
 
-function timedFetch(req, ms) {
+function timedFetch(req, ms, init) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), ms);
-  return fetch(req, { signal: ctrl.signal }).finally(() => clearTimeout(t));
+  return fetch(req, { ...init, signal: ctrl.signal }).finally(() => clearTimeout(t));
 }
 
 self.addEventListener("fetch", (event) => {
@@ -82,8 +87,13 @@ self.addEventListener("fetch", (event) => {
   if (p.startsWith("/api/") || p.startsWith("/ws") || p.startsWith("/v1/")) return;
 
   const timeout = req.mode === "navigate" ? NAV_TIMEOUT : RES_TIMEOUT;
+  // Shell files must never be served stale from the browser's HTTP disk
+  // cache (heuristic freshness): revalidate on every load — an etag
+  // round-trip that is free on a LAN. Offline the revalidation fails and
+  // the SW cache below wins, exactly as before.
+  const cacheMode = req.mode === "navigate" ? { cache: "reload" } : { cache: "no-cache" };
   event.respondWith(
-    timedFetch(req, timeout)
+    timedFetch(req, timeout, cacheMode)
       .then((res) => {
         if (res.ok) {
           const clone = res.clone();

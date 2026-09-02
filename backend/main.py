@@ -53,6 +53,25 @@ log = logging.getLogger("llama-monitor")
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 METRICS_INTERVAL = 1.5
 
+# Shell files (html/js/css) must ALWAYS revalidate (etag) — never served
+# stale from the browser's disk cache. Without explicit Cache-Control Chrome
+# applies heuristic freshness and, after a deploy, can serve the NEW index.html
+# together with OLD js/css (mixed shell: new markup the old scripts don't
+# know about — e.g. the loading screen stranded on screen, #58). Fonts/icons
+# are content-stable and safe to cache hard; the SW cache version bump
+# covers the offline shell.
+class _CacheAwareStaticFiles(StaticFiles):
+    async def get_response(self, path: str, scope) -> Response:
+        response = await super().get_response(path, scope)
+        ctype = response.headers.get("content-type", "")
+        # key on content-type: the "/" navigation resolves to index.html
+        # with no extension in the request path
+        if ctype.startswith("text/html") or path.lower().endswith((".js", ".css")):
+            response.headers["cache-control"] = "no-cache"
+        else:
+            response.headers["cache-control"] = "public, max-age=31536000, immutable"
+        return response
+
 # Set by the tray launcher (set_restart_hook) to relaunch the app after an
 # update is pulled. None in dev/uvicorn mode: the pull still works, the
 # restart is reported as manual. Called with deferred=True when the
@@ -1076,7 +1095,7 @@ def create_app() -> FastAPI:
     # static frontend
     # ------------------------------------------------------------------
 
-    app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
+    app.mount("/", _CacheAwareStaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
     return app
 
 
