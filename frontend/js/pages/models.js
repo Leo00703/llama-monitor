@@ -59,7 +59,7 @@ const Models = {
 
   async refresh() {
     try {
-      const data = await API.get("/api/models");
+      const data = await API.get("/api/models", 60000);
       this.models = data.models || [];
       this.root = data.root || "";
     } catch (e) {

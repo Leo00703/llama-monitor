@@ -93,10 +93,26 @@ def _platform_key() -> str:
     return "nt" if os.name == "nt" else "posix"
 
 
+# run_version spawns a subprocess — noticeable on a saturated machine, and
+# /api/backend/versions runs on EVERY page load. Cache the parsed result per
+# (exe path, mtime) so a burst of page loads costs at most one spawn.
+_PROV_TTL = 60.0
+_prov_cache: dict[tuple[str, float], tuple[float, Optional["BuildInfo"]]] = {}
+
+
 async def run_version(exe: str) -> Optional[BuildInfo]:
-    """Run `<exe> --version` (printed to stderr) and parse the version line."""
+    """Run `<exe> --version` (printed to stderr) and parse the version line.
+
+    Cached per (exe, mtime) for _PROV_TTL seconds (see _prov_cache)."""
     if not exe:
         return None
+    try:
+        key = (os.path.realpath(exe), os.path.getmtime(exe))
+        hit = _prov_cache.get(key)
+        if hit is not None and time.monotonic() - hit[0] < _PROV_TTL:
+            return hit[1]
+    except OSError:
+        key = None
     try:
         proc = await asyncio.create_subprocess_exec(
             *spawn_argv(exe, "--version"),
@@ -118,9 +134,12 @@ async def run_version(exe: str) -> Optional[BuildInfo]:
             pass
         return None
     m = _VERSION_RE.search(err.decode("utf-8", "replace"))
-    if not m:
-        return None
-    return BuildInfo(m.group(1), int(m.group(2)), m.group(3))
+    info = BuildInfo(m.group(1), int(m.group(2)), m.group(3)) if m else None
+    if key is not None:
+        if len(_prov_cache) >= 8:
+            _prov_cache.clear()  # small TTL cache; bound it, never let it grow
+        _prov_cache[key] = (time.monotonic(), info)
+    return info
 
 
 async def provenance(exe: str) -> dict[str, Any]:
@@ -150,49 +169,83 @@ async def provenance(exe: str) -> dict[str, Any]:
 
 _rel_cache: dict[str, Any] = {"at": 0.0, "data": None}
 _rel_lock = asyncio.Lock()
+_rel_refreshing = False
 
 
-async def fetch_releases(force: bool = False) -> dict[str, Any]:
+async def fetch_releases(force: bool = False, stale_ok: bool = False) -> dict[str, Any]:
     """Latest stable tag + its pinned nightly + the latest nightly (b-tag).
 
     Cached for RELEASE_CACHE_TTL seconds; `force` bypasses the cache
     (manual "Check now"). Raises httpx errors to the caller.
+
+    stale_ok (used by /api/backend/versions, which every page load calls):
+    a stale-but-present cache is returned IMMEDIATELY and refreshed in the
+    background — a cold GitHub call (30 s timeout) must never hold up a page
+    load. Manual checks use stale_ok=False and always await fresh data.
     """
     if (not force and _rel_cache["data"]
             and time.time() - _rel_cache["at"] < RELEASE_CACHE_TTL):
+        return _rel_cache["data"]
+    if not force and stale_ok and _rel_cache["data"] is not None:
+        await _kick_background_refresh()
         return _rel_cache["data"]
     async with _rel_lock:
         if (not force and _rel_cache["data"]
                 and time.time() - _rel_cache["at"] < RELEASE_CACHE_TTL):
             return _rel_cache["data"]
-        headers = {"Accept": "application/vnd.github+json", "User-Agent": USER_AGENT}
-        async with httpx.AsyncClient(timeout=30, headers=headers,
-                                     follow_redirects=True) as client:
-            latest = (await client.get(f"{API_BASE}/releases/latest")).json()
-            stable_tag = latest.get("tag_name") or ""
-            pinned: Optional[str] = None
-            for a in latest.get("assets", []):
-                if a["name"] == "nightly-tag.txt":
-                    txt = (await client.get(a["browser_download_url"])).text.strip()
-                    if _BTAG_RE.match(txt):
-                        pinned = txt
-            rels = (await client.get(
-                f"{API_BASE}/releases", params={"per_page": 15})).json()
-            nightly: Optional[str] = None
-            for r in rels:
-                t = r.get("tag_name") or ""
-                if _BTAG_RE.match(t):
-                    nightly = t
-                    break
-        data = {
-            "stable_tag": stable_tag,
-            "pinned_nightly": pinned,
-            "latest_nightly": nightly,
-            "fetched_at": datetime.now().isoformat(timespec="seconds"),
-        }
+        data = await _fetch_releases_network()
     _rel_cache["at"] = time.time()
     _rel_cache["data"] = data
     return data
+
+
+async def _fetch_releases_network() -> dict[str, Any]:
+    """The actual GitHub calls (releases/latest + releases list)."""
+    headers = {"Accept": "application/vnd.github+json", "User-Agent": USER_AGENT}
+    async with httpx.AsyncClient(timeout=30, headers=headers,
+                                 follow_redirects=True) as client:
+        latest = (await client.get(f"{API_BASE}/releases/latest")).json()
+        stable_tag = latest.get("tag_name") or ""
+        pinned: Optional[str] = None
+        for a in latest.get("assets", []):
+            if a["name"] == "nightly-tag.txt":
+                txt = (await client.get(a["browser_download_url"])).text.strip()
+                if _BTAG_RE.match(txt):
+                    pinned = txt
+        rels = (await client.get(
+            f"{API_BASE}/releases", params={"per_page": 15})).json()
+        nightly: Optional[str] = None
+        for r in rels:
+            t = r.get("tag_name") or ""
+            if _BTAG_RE.match(t):
+                nightly = t
+                break
+    return {
+        "stable_tag": stable_tag,
+        "pinned_nightly": pinned,
+        "latest_nightly": nightly,
+        "fetched_at": datetime.now().isoformat(timespec="seconds"),
+    }
+
+
+async def _kick_background_refresh() -> None:
+    """Refresh the stale release cache in the background (one at a time).
+    Failures keep the stale data; the next call retries."""
+    global _rel_refreshing
+    if _rel_refreshing:
+        return
+    _rel_refreshing = True
+
+    async def _bg() -> None:
+        global _rel_refreshing
+        try:
+            await fetch_releases(force=True)
+        except Exception:
+            pass
+        finally:
+            _rel_refreshing = False
+
+    asyncio.create_task(_bg())
 
 
 def asset_name_for(tag: str, variant: str) -> Optional[str]:

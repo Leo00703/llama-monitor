@@ -658,7 +658,10 @@ def create_app() -> FastAPI:
     async def backend_versions() -> dict:
         current = await be_current()
         try:
-            remote = await backend_update.fetch_releases()
+            # stale_ok: this endpoint runs on EVERY page load, so a cold/stale
+            # GitHub call must never hold it up — serve the cached copy and
+            # refresh in the background. Manual checks use force=True instead.
+            remote = await backend_update.fetch_releases(stale_ok=True)
             remote_error: Optional[str] = None
         except (httpx.HTTPError, OSError, ValueError) as exc:
             remote, remote_error = None, str(exc)

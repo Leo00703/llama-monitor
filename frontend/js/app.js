@@ -157,7 +157,7 @@ function applyState(state) {
 
 async function refreshState() {
   try {
-    const state = await API.get("/api/state");
+    const state = await API.get("/api/state", 5000); // lightweight probe: fail fast to "offline"
     applyState(state);
     setHost(true);
   } catch (_) {
@@ -202,7 +202,7 @@ async function doStart() {
   if (!requirePreset()) return;
   setBusy(true);
   try {
-    const res = await API.post("/api/server/start", { preset_id: selectedPresetId() });
+    const res = await API.post("/api/server/start", { preset_id: selectedPresetId() }, 90000);
     if (res.warnings && res.warnings.length) {
       showPage("dashboard");
       Dashboard.showLaunchResult(res);
@@ -223,7 +223,7 @@ async function doStart() {
 async function doStop() {
   setBusy(true);
   try {
-    await API.post("/api/server/stop");
+    await API.post("/api/server/stop", undefined, 60000);
   } catch (e) {
     appendLogLine(`[panel] stop failed: ${e}`);
   } finally {
@@ -236,7 +236,7 @@ async function doRestart() {
   if (!requirePreset()) return;
   setBusy(true);
   try {
-    const res = await API.post("/api/server/restart", { preset_id: selectedPresetId() });
+    const res = await API.post("/api/server/restart", { preset_id: selectedPresetId() }, 90000);
     if (res.warnings && res.warnings.length) {
       showPage("dashboard");
       Dashboard.showLaunchResult(res);
@@ -260,6 +260,10 @@ API.connect("/ws/logs", (event) => {
     renderLog(event.lines || []);
     applyState(event.state || {});
     setHost(true);
+    // (re)connect after an outage: the server may have moved while we were
+    // away — re-pull the REST-loaded lists so cards aren't stale/empty (#57)
+    Dashboard.refreshPresets();
+    if (!$("page-models").classList.contains("hidden")) Models.refresh();
   } else if (event.type === "log") {
     appendLogLine(event.line);
   } else if (event.type === "state") {

@@ -315,7 +315,7 @@ const Backend = {
     b.disabled = true;
     b.textContent = "Checking…";
     try {
-      const res = await API.post("/api/backend/check");
+      const res = await API.post("/api/backend/check", undefined, 60000);
       if (res.ok) {
         await this.refresh();
         const t = this.target();
@@ -436,7 +436,7 @@ const Backend = {
     this.openModal({ kind: "progress", title: `Updating to ${tag}…`, status: "stopping the server, installing the build", okLabel: "" });
     this.applying = true;
     try {
-      const res = await API.post("/api/backend/apply", { dir });
+      const res = await API.post("/api/backend/apply", { dir }, 300000);
       if (!res.ok) {
         this.modalFail(res.error || "update failed");
         return;
