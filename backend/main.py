@@ -477,13 +477,24 @@ def create_app() -> FastAPI:
         return res
 
     async def be_download(tag: str, variant: str) -> dict:
-        """Download + extract + verify a build into the storage folder."""
+        """Download + extract + verify a build into the storage folder.
+
+        The client started this task from a POST that already returned —
+        every failure path must broadcast `llama.update.failed`, or the
+        client's progress modal spins forever (it only hears the one-shot
+        `downloaded`/`failed` WS messages, #59)."""
         nonlocal be_downloading
         if be_downloading:
             return {"ok": False, "error": "a download is already in progress"}
         be_downloading = True
         t0 = time.time()
         zip_path: Path | None = None
+
+        def fail(msg: str) -> dict:
+            manager.broadcast({"type": "llama.update.failed",
+                               "data": {"tag": tag, "error": msg}})
+            return {"ok": False, "error": msg}
+
         try:
             storage = be_storage()
             storage.mkdir(parents=True, exist_ok=True)
@@ -492,15 +503,14 @@ def create_app() -> FastAPI:
                                          follow_redirects=True) as client:
                 asset = await backend_update.find_asset(client, tag, variant)
             if asset is None:
-                return {"ok": False,
-                        "error": f"no {variant} build for {tag} on this platform"}
+                return fail(f"no {variant} build for {tag} on this platform")
             # A6: free space for the zip + the extracted copy
             free = backend_update.free_bytes(storage)
             needed = (asset.get("size") or 0) * 2
             if free is not None and free < needed:
-                return {"ok": False, "error": (
+                return fail(
                     f"not enough free space in {storage}: need ~"
-                    f"{needed / 1048576:.0f} MB, have {free / 1048576:.0f} MB")}
+                    f"{needed / 1048576:.0f} MB, have {free / 1048576:.0f} MB")
             zip_path = storage / asset["name"]
 
             def progress(done: int, total: int) -> None:
@@ -518,7 +528,7 @@ def create_app() -> FastAPI:
             if not ver["ok"]:
                 shutil.rmtree(build_dir, ignore_errors=True)
                 zip_path.unlink(missing_ok=True)
-                return {"ok": False, "error": ver["error"]}
+                return fail(ver["error"])
             backend_update.write_manifest(
                 build_dir, tag, variant, asset["browser_download_url"],
                 asset.get("size") or 0)
@@ -540,7 +550,7 @@ def create_app() -> FastAPI:
             # and keeping it reproduces the per-version accumulation (#51)
             if zip_path is not None:
                 zip_path.unlink(missing_ok=True)
-            return {"ok": False, "error": str(exc)}
+            return fail(str(exc))
         finally:
             be_downloading = False
 

@@ -12,6 +12,8 @@ const Backend = {
   modalOpen: false,
   modalKind: "",    // confirm | progress
   modalOnDone: null,
+  pollTimer: null,   // download-reconciliation poll (#59)
+  downloadTag: "",
 
   init() {
     const pick = document.getElementById("be-pick");
@@ -55,7 +57,23 @@ const Backend = {
     // modal buttons
     document.getElementById("be-modal-ok").addEventListener("click", () => this.modalOk());
     document.getElementById("be-modal-cancel").addEventListener("click", () => this.modalCancel());
-    this.refresh();
+    this.refresh().then(() => this.restoreDownloadState());
+  },
+
+  // a download already in progress (the page was reloaded mid-download, or
+  // the completion WS was missed) re-opens the progress modal — the
+  // reconciliation poll then converges it instead of leaving a stuck
+  // spinner (#59)
+  restoreDownloadState() {
+    const d = this.data || {};
+    const pend = (d.settings || {}).pending || {};
+    if (d.downloading && pend.tag) {
+      this.downloading = true;
+      this.downloadTag = pend.tag;
+      this.openModal({ kind: "progress", title: `Downloading ${pend.tag}…`,
+        status: "download in progress", okLabel: "" });
+      this.startPoll(pend.tag);
+    }
   },
 
   /* ------------------------------------------------------------ data */
@@ -342,15 +360,58 @@ const Backend = {
     this.closeModal();
     this.openModal({ kind: "progress", title: `Downloading ${tag}…`, status: "contacting the release server", okLabel: "" });
     this.downloading = true;
+    this.downloadTag = tag;
+    // The POST only proves the task STARTED (it returns immediately); the
+    // outcome arrives as a one-shot WS broadcast. If that message is lost
+    // (device sleep, background tab, network blip) the poll below converges
+    // the modal instead of spinning forever (#59).
+    this.startPoll(tag);
     try {
       const res = await API.post("/api/backend/download", { tag });
       if (!res.ok) {
-        this.modalFail(res.error || "download could not start");
+        this.modalFail(res.error || "download could not start", "Download failed");
         return;
       }
-      // progress + completion arrive over the websocket
+      // progress + completion arrive over the websocket (poll = fallback)
     } catch (e) {
-      this.modalFail(`download could not start: ${e}`);
+      this.modalFail(`download could not start: ${e}`, "Download failed");
+    }
+  },
+
+  /* ------------------------------------------------- download reconcile */
+
+  startPoll(tag) {
+    this.stopPoll();
+    this.pollTimer = setInterval(() => this.pollDownload(tag), 5000);
+  },
+
+  stopPoll() {
+    if (this.pollTimer) { clearInterval(this.pollTimer); this.pollTimer = null; }
+  },
+
+  async pollDownload(tag) {
+    if (this.modalKind !== "progress" || !this.modalOpen) { this.stopPoll(); return; }
+    let d;
+    try { d = await API.get("/api/backend/versions"); } catch (_) { return; }
+    if (d.downloading) return;  // task still running — keep polling
+    this.stopPoll();
+    const pend = (d.settings || {}).pending || {};
+    // success = persisted pending "downloaded" for this tag, or the build
+    // dir now present in the storage folder (covers a manual download of a
+    // tag that isn't the channel target — pending may carry a different tag)
+    const done = (pend.state === "downloaded" && pend.tag === tag)
+      || (d.local || []).some((b) => b.tag === tag);
+    if (done) {
+      this.openModal({
+        kind: "progress",
+        title: `${tag} downloaded`,
+        status: "Downloaded — it is NOT installed yet. Open 'Update llama.cpp' and pick it to install.",
+        spinner: false,
+        okLabel: "Close",
+        onDone: () => { this.closeModal(); this.refresh(); },
+      });
+    } else {
+      this.modalFail(`the ${tag} download did not complete — try again (details in the panel log)`, "Download failed");
     }
   },
 
@@ -430,6 +491,12 @@ const Backend = {
       const pct = p.percent != null ? ` · ${p.percent}%` : "";
       const mb = p.total ? `${(p.done / 1048576).toFixed(0)} / ${(p.total / 1048576).toFixed(0)} MB` : "";
       el.textContent = `downloading ${p.tag || ""} ${mb}${pct}`;
+    } else if (msg.type === "llama.update.failed") {
+      const f = msg.data || {};
+      if (this.modalKind === "progress"
+          && (!this.downloadTag || f.tag === this.downloadTag)) {
+        this.modalFail(f.error ? `${f.tag ? f.tag + " — " : ""}${f.error}` : "download failed", "Download failed");
+      }
     } else if (msg.type === "llama.update.downloaded") {
       const tag = (msg.data || {}).tag || "";
       if (this.modalKind === "progress") {
@@ -448,7 +515,8 @@ const Backend = {
 
   /* ------------------------------------------------------------ modal */
 
-  openModal({ kind, title, status, okLabel = "OK", onDone = null }) {
+  openModal({ kind, title, status, okLabel = "OK", onDone = null, spinner = null }) {
+    this.stopPoll();  // a fresh modal supersedes any reconciliation poll
     this.modalOpen = true;
     this.modalKind = kind;
     this.modalOnDone = onDone;
@@ -457,7 +525,10 @@ const Backend = {
     const st = document.getElementById("be-modal-status");
     st.textContent = status;
     st.classList.toggle("be-modal-err", kind === "fail");
-    document.getElementById("be-modal-spinner").hidden = kind !== "progress" || st.classList.contains("be-modal-err");
+    // spinner defaults to "on while progressing" but is overridden per call —
+    // the "downloaded" success state must NOT spin (it reads as still loading)
+    const showSpinner = (spinner ?? (kind === "progress")) && !st.classList.contains("be-modal-err");
+    document.getElementById("be-modal-spinner").hidden = !showSpinner;
     const ok = document.getElementById("be-modal-ok");
     ok.textContent = okLabel;
     ok.hidden = !okLabel;
@@ -468,8 +539,8 @@ const Backend = {
     if (okLabel) ok.focus();
   },
 
-  modalFail(msg) {
-    this.openModal({ kind: "fail", title: "Backend update failed", status: msg, okLabel: "Close", onDone: () => this.refresh() });
+  modalFail(msg, title = "Backend update failed") {
+    this.openModal({ kind: "fail", title, status: msg, okLabel: "Close", onDone: () => this.refresh() });
   },
 
   modalOk() {
@@ -484,10 +555,12 @@ const Backend = {
   },
 
   closeModal() {
+    this.stopPoll();
     this.modalOpen = false;
     this.modalKind = "";
     this.downloading = false;
     this.applying = false;
+    this.downloadTag = "";
     const ov = document.getElementById("be-modal-overlay");
     ov.hidden = true;
     ov.classList.remove("neutral");
