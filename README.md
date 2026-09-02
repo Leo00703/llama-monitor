@@ -76,6 +76,13 @@ line:
   `tailscale cert` (or `tailscale serve`) gives a fully trusted certificate.
   `localhost` (the desktop/tray case) is installable without TLS, and iOS
   can add the home-screen app even over plain http.
+- **Loading screen** — every open/reload first shows a branded loading
+  screen (logo + progress bar) that fades out the moment the first state
+  round-trip arrives; while each dataset is still pending (metrics,
+  presets, server log) the cards show skeleton placeholders that are
+  replaced in place, so data arriving causes no layout shift. If the host
+  is unreachable the screen gives way to the offline error state instead of
+  spinning forever.
 - **Self-updating** — the panel checks the git remote in the background and
   offers a one-click **Update now** (bottom-right toast, also in Settings):
   it pulls the latest commits from the repo and restarts the app. The repo
