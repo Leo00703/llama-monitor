@@ -310,25 +310,50 @@
             <fieldset class="fieldset">
               <legend>Speculative decoding</legend>
               <div class="grid3">
-                <div class="field"><label class="field-label" for="pf-spectype">Type (--spec-type)</label>
+                <div class="field"><label class="field-label" for="pf-spectype">Draft-model type (--spec-type)</label>
                   <select id="pf-spectype">
-                    <option value="none">none</option>
+                    <option value="none">none (ngram-only below)</option>
                     <option value="draft-mtp">draft-mtp (built-in or external MTP head)</option>
                     <option value="draft-simple">draft-simple</option>
                     <option value="draft-eagle3">draft-eagle3</option>
                     <option value="draft-dflash">draft-dflash (DFlash / DFlash2 — auto-detected)</option>
                     <option value="draft-dspark">draft-dspark</option>
-                    <option value="ngram-simple">ngram-simple</option>
-                    <option value="ngram-cache">ngram-cache</option>
-                    <option value="ngram-map-k">ngram-map-k</option>
-                    <option value="ngram-map-k4v">ngram-map-k4v</option>
-                    <option value="ngram-mod">ngram-mod</option>
                   </select>
                 </div>
                 <div class="field hidden" id="pf-draftwrap"><label id="pf-draft-label" class="field-label" for="pf-draft">Drafter model (--spec-draft-model)</label><input type="text" id="pf-draft" list="models-datalist" spellcheck="false"></div>
-                <div class="field"><label class="field-label" for="pf-dnmax">Max draft tokens (--spec-draft-n-max)</label><input type="number" id="pf-dnmax" min="0" step="1"></div>
-                <div class="field"><label class="field-label" for="pf-dnmin">Min draft tokens (--spec-draft-n-min)</label><input type="number" id="pf-dnmin" min="0" step="1"></div>
+                <div class="field hidden" id="pf-dnmaxwrap"><label class="field-label" for="pf-dnmax">Max draft tokens (--spec-draft-n-max)</label><input type="number" id="pf-dnmax" min="0" step="1"></div>
+                <div class="field hidden" id="pf-dnminwrap"><label class="field-label" for="pf-dnmin">Min draft tokens (--spec-draft-n-min)</label><input type="number" id="pf-dnmin" min="0" step="1"></div>
                 <div class="field hidden" id="pf-dconfwrap"><label class="field-label" for="pf-dconf">Min draft confidence (--spec-draft-p-min, 0 = off)</label><input type="number" id="pf-dconf" min="0" max="1" step="0.01"></div>
+              </div>
+              <div class="field ngram-combo" id="pf-ng-combo">
+                <label class="field-label">ngram fallbacks (--spec-type, combined — tried first, draft model is the fallback)</label>
+                <div class="checkrow ngram-checks" id="spec-ngram-checks">
+                  <label class="check"><input type="checkbox" id="pf-ng-simple" value="ngram-simple"> ngram-simple</label>
+                  <label class="check"><input type="checkbox" id="pf-ng-mapk" value="ngram-map-k"> ngram-map-k</label>
+                  <label class="check"><input type="checkbox" id="pf-ng-mapk4v" value="ngram-map-k4v"> ngram-map-k4v</label>
+                  <label class="check"><input type="checkbox" id="pf-ng-mod" value="ngram-mod"> ngram-mod</label>
+                  <label class="check"><input type="checkbox" id="pf-ng-cache" value="ngram-cache"> ngram-cache</label>
+                </div>
+              </div>
+              <div class="grid3 hidden" id="pf-ng-simple-params">
+                <div class="field"><label class="field-label" for="pf-ng-simple-n">ngram-simple size-n (lookup length, default 12)</label><input type="number" id="pf-ng-simple-n" min="1" step="1"></div>
+                <div class="field"><label class="field-label" for="pf-ng-simple-m">ngram-simple size-m (draft length, default 48)</label><input type="number" id="pf-ng-simple-m" min="1" step="1"></div>
+                <div class="field"><label class="field-label" for="pf-ng-simple-hits">ngram-simple min-hits (default 1)</label><input type="number" id="pf-ng-simple-hits" min="1" step="1"></div>
+              </div>
+              <div class="grid3 hidden" id="pf-ng-mapk-params">
+                <div class="field"><label class="field-label" for="pf-ng-mapk-n">ngram-map-k size-n (lookup length, default 12)</label><input type="number" id="pf-ng-mapk-n" min="1" step="1"></div>
+                <div class="field"><label class="field-label" for="pf-ng-mapk-m">ngram-map-k size-m (draft length, default 48)</label><input type="number" id="pf-ng-mapk-m" min="1" step="1"></div>
+                <div class="field"><label class="field-label" for="pf-ng-mapk-hits">ngram-map-k min-hits (default 1)</label><input type="number" id="pf-ng-mapk-hits" min="1" step="1"></div>
+              </div>
+              <div class="grid3 hidden" id="pf-ng-mapk4v-params">
+                <div class="field"><label class="field-label" for="pf-ng-mapk4v-n">ngram-map-k4v size-n (lookup length, default 12)</label><input type="number" id="pf-ng-mapk4v-n" min="1" step="1"></div>
+                <div class="field"><label class="field-label" for="pf-ng-mapk4v-m">ngram-map-k4v size-m (draft length, default 48)</label><input type="number" id="pf-ng-mapk4v-m" min="1" step="1"></div>
+                <div class="field"><label class="field-label" for="pf-ng-mapk4v-hits">ngram-map-k4v min-hits (default 1)</label><input type="number" id="pf-ng-mapk4v-hits" min="1" step="1"></div>
+              </div>
+              <div class="grid3 hidden" id="pf-ng-mod-params">
+                <div class="field"><label class="field-label" for="pf-ng-mod-match">ngram-mod n-match (lookup length, default 24)</label><input type="number" id="pf-ng-mod-match" min="1" step="1"></div>
+                <div class="field"><label class="field-label" for="pf-ng-mod-nmin">ngram-mod n-min (default 48)</label><input type="number" id="pf-ng-mod-nmin" min="1" step="1"></div>
+                <div class="field"><label class="field-label" for="pf-ng-mod-nmax">ngram-mod n-max (default 64)</label><input type="number" id="pf-ng-mod-nmax" min="1" step="1"></div>
               </div>
             </fieldset>
 

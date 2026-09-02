@@ -987,6 +987,11 @@ fieldset.fieldset legend {
   margin-top: 14px;
 }
 
+/* speculative decoding: ngram combo row + per-type param grids */
+.ngram-combo { margin-top: 14px; }
+.ngram-combo .checkrow { margin-top: 6px; }
+.ngram-combo + .grid3 { margin-top: 12px; }
+
 .form-head {
   display: flex;
   align-items: center;

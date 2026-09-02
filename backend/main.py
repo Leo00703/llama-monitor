@@ -380,17 +380,19 @@ def create_app() -> FastAPI:
 
         # spec types the installed build doesn't document would make
         # llama-server abort at startup — block with a clear message
-        st = preset.launch.spec.spec_type
-        if spec_types and st not in spec_types:
-            return {
-                "ok": False,
-                "args": [],
-                "warnings": warnings,
-                "errors": [
-                    f"spec type '{st}' is not documented by this llama-server build — "
-                    "update llama-server first"
-                ],
-            }
+        # (spec_type may be a comma list, #55 — check every type in it)
+        if spec_types:
+            unknown = [t for t in preset.launch.spec.types if t not in spec_types]
+            if unknown:
+                return {
+                    "ok": False,
+                    "args": [],
+                    "warnings": warnings,
+                    "errors": [
+                        f"spec type(s) {', '.join(unknown)} are not documented by this "
+                        "llama-server build — update llama-server first"
+                    ],
+                }
 
         args, flag_warnings = build_args(
             preset.launch,

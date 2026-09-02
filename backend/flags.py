@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from .config import no_window_kwargs, spawn_argv
-from .schema import LaunchSettings
+from .schema import LaunchSettings, SpecSettings
 from .spec import get as get_spec_technique
 
 # ---------------------------------------------------------------------------
@@ -61,11 +61,16 @@ def validate_settings(
             errors.append(f"{label} file not found: {p}")
 
     _check_model_file("model", s.model)
-    if s.spec.spec_type != "none":
+    if s.spec.has_draft:
         _check_model_file("drafter model", s.spec.draft_model)
+    if s.spec.draft_model.strip() and not s.spec.has_draft:
+        warnings.append(
+            "spec.draft_model is set but no draft-model spec type is enabled "
+            "(ngram-only) — it will be ignored"
+        )
 
     # spec decoding validation (per-technique modules, backend/spec/)
-    tech = get_spec_technique(s.spec.spec_type)
+    tech = get_spec_technique(s.spec.draft_type)
     if tech is not None:
         errors.extend(tech.validate(s))
 
@@ -191,25 +196,47 @@ def _r_cache_reuse(s: LaunchSettings, c: FlagContext) -> Optional[list[str]]:
     return ["--cache-reuse", str(s.cache_reuse)] if s.cache_reuse > 0 else None
 
 
-def _r_spec(s: LaunchSettings, c: FlagContext) -> Optional[list[str]]:
-    """--spec-type plus technique tokens (one module per technique, #17).
+def _ngram_flags(spec: SpecSettings) -> list[str]:
+    """Per-ngram-type params (issue #55). Emitted when the type is enabled;
+    values default to the server's own defaults, so a plain enable adds no
+    behavioural change. ngram-cache has no per-type params."""
+    out: list[str] = []
+    for t in spec.ngram_types:
+        if t == "ngram-simple":
+            p = spec.ngram_simple
+            out += ["--spec-ngram-simple-size-n", str(p.size_n),
+                    "--spec-ngram-simple-size-m", str(p.size_m),
+                    "--spec-ngram-simple-min-hits", str(p.min_hits)]
+        elif t == "ngram-map-k":
+            p = spec.ngram_map_k
+            out += ["--spec-ngram-map-k-size-n", str(p.size_n),
+                    "--spec-ngram-map-k-size-m", str(p.size_m),
+                    "--spec-ngram-map-k-min-hits", str(p.min_hits)]
+        elif t == "ngram-map-k4v":
+            p = spec.ngram_map_k4v
+            out += ["--spec-ngram-map-k4v-size-n", str(p.size_n),
+                    "--spec-ngram-map-k4v-size-m", str(p.size_m),
+                    "--spec-ngram-map-k4v-min-hits", str(p.min_hits)]
+        elif t == "ngram-mod":
+            p = spec.ngram_mod
+            out += ["--spec-ngram-mod-n-match", str(p.n_match),
+                    "--spec-ngram-mod-n-min", str(p.n_min),
+                    "--spec-ngram-mod-n-max", str(p.n_max)]
+    return out
 
-    Types without a registry entry (ngram-*, unknown) keep the legacy
-    drafter/n-max/n-min token set.
-    """
+
+def _r_spec(s: LaunchSettings, c: FlagContext) -> Optional[list[str]]:
+    """--spec-type (comma list, #55) plus draft-technique tokens (one module
+    per draft-model technique, #17). The draft-model / n-max / n-min / p-min
+    tokens only apply when a draft-model type is enabled; ngram types add
+    their per-type params instead (they use no draft context)."""
     if s.spec.spec_type == "none":
         return None
     out = ["--spec-type", s.spec.spec_type]
-    tech = get_spec_technique(s.spec.spec_type)
+    tech = get_spec_technique(s.spec.draft_type)
     if tech is not None:
         out.extend(tech.flags(s.spec, c.resolve))
-        return out
-    if s.spec.draft_model.strip():
-        out.extend(["--spec-draft-model", c.resolve(s.spec.draft_model)])
-    if s.spec.draft_n_max > 0:
-        out.extend(["--spec-draft-n-max", str(s.spec.draft_n_max)])
-    if s.spec.draft_n_min > 0:
-        out.extend(["--spec-draft-n-min", str(s.spec.draft_n_min)])
+    out.extend(_ngram_flags(s.spec))
     return out
 
 

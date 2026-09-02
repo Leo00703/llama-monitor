@@ -1,10 +1,11 @@
 """Speculative decoding techniques (issue #17) — one module per technique.
 
-The registry maps the --spec-type values implemented by llama.cpp main
-to Technique objects (UI metadata, extra fields, flag translation,
-validation). The ngram-* family stays selectable via the raw type field
-(schema.SPEC_TYPES superset) but has no registry entry — it needs no
-drafter or extra fields.
+The registry maps the DRAFT-MODEL --spec-type values implemented by
+llama.cpp main to Technique objects (UI metadata, extra fields, flag
+translation, validation). spec_type is a comma-separated list (#55): at
+most one draft-model type (the only kind with a registry entry — it owns
+the shared draft context) plus any number of ngram types, which need no
+drafter or extra fields and are handled directly in flags._ngram_flags.
 """
 
 from __future__ import annotations

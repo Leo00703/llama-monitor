@@ -26,11 +26,24 @@ const Presets = {
     ["pf-b", "batch_size", "int"],
     ["pf-ub", "micro_batch", "int"],
     ["pf-reuse", "cache_reuse", "int0"],
-    ["pf-spectype", "spec.spec_type", "str"],
+    /* spec.spec_type is handled separately (select + ngram checkboxes,
+       stored as a comma list) */
     ["pf-draft", "spec.draft_model", "str"],
     ["pf-dnmax", "spec.draft_n_max", "int0"],
     ["pf-dnmin", "spec.draft_n_min", "int0"],
     ["pf-dconf", "spec.draft_conf_min", "float0"],
+    ["pf-ng-simple-n", "spec.ngram_simple.size_n", "int"],
+    ["pf-ng-simple-m", "spec.ngram_simple.size_m", "int"],
+    ["pf-ng-simple-hits", "spec.ngram_simple.min_hits", "int"],
+    ["pf-ng-mapk-n", "spec.ngram_map_k.size_n", "int"],
+    ["pf-ng-mapk-m", "spec.ngram_map_k.size_m", "int"],
+    ["pf-ng-mapk-hits", "spec.ngram_map_k.min_hits", "int"],
+    ["pf-ng-mapk4v-n", "spec.ngram_map_k4v.size_n", "int"],
+    ["pf-ng-mapk4v-m", "spec.ngram_map_k4v.size_m", "int"],
+    ["pf-ng-mapk4v-hits", "spec.ngram_map_k4v.min_hits", "int"],
+    ["pf-ng-mod-match", "spec.ngram_mod.n_match", "int"],
+    ["pf-ng-mod-nmin", "spec.ngram_mod.n_min", "int"],
+    ["pf-ng-mod-nmax", "spec.ngram_mod.n_max", "int"],
     ["pf-slots", "slots", "int"],
     ["pf-cb", "cont_batching", "str"],
     ["pf-kvu", "kv_unified", "str"],
@@ -51,7 +64,13 @@ const Presets = {
     override_tensors: [], flash_attn: "auto", cache_type_k: "f16", cache_type_v: "f16",
     load_mode: "mmap", tensor_split: [], main_gpu: 0, split_mode: "layer",
     threads: 0, threads_batch: 0, batch_size: 2048, micro_batch: 512, cache_reuse: 0,
-    spec: { spec_type: "none", draft_model: "", draft_n_max: 3, draft_n_min: 0, draft_conf_min: 0 },
+    spec: {
+      spec_type: "none", draft_model: "", draft_n_max: 3, draft_n_min: 0, draft_conf_min: 0,
+      ngram_simple: { size_n: 12, size_m: 48, min_hits: 1 },
+      ngram_map_k: { size_n: 12, size_m: 48, min_hits: 1 },
+      ngram_map_k4v: { size_n: 12, size_m: 48, min_hits: 1 },
+      ngram_mod: { n_match: 24, n_min: 48, n_max: 64 },
+    },
     slots: -1, cont_batching: "auto", kv_unified: "auto",
     host: "0.0.0.0", port: 8080, api_key: "",
     jinja: true, reasoning_preserve: false, merge_qkv: false, graph_reuse: 0,
@@ -78,8 +97,11 @@ const Presets = {
       const card = e.target.closest(".preset-card");
       if (card) this.openForm(card.dataset.id);
     });
-    document.getElementById("pf-spectype").addEventListener("change", (e) => {
-      this.syncSpecFields(e.target.value);
+    document.getElementById("pf-spectype").addEventListener("change", () => {
+      this.syncSpecFields();
+    });
+    document.querySelectorAll("#spec-ngram-checks input[type=checkbox]").forEach((cb) => {
+      cb.addEventListener("change", () => this.syncSpecFields());
     });
     this.loadSpecGating().then((supported) => this.applySpecGating(supported));
     document.getElementById("pf-model").addEventListener("change", () => this.suggestMmproj());
@@ -110,22 +132,51 @@ const Presets = {
     if (m && m.mmproj.length) mmprojEl.value = m.mmproj[0];
   },
 
-  syncSpecFields(specType) {
-    const needsDrafter = ["draft-simple", "draft-eagle3", "draft-dflash", "draft-dspark", "draft-mtp"].includes(specType);
-    document.getElementById("pf-draftwrap").classList.toggle("hidden", !needsDrafter);
+  /* spec_type is stored as the comma list the server expects (#55):
+     at most one draft-model type + any number of ngram types. The UI
+     splits it into the primary select and the ngram checkboxes. */
+  specTypeFromDOM() {
+    const primary = document.getElementById("pf-spectype").value;
+    const ngrams = [...document.querySelectorAll("#spec-ngram-checks input[type=checkbox]")]
+      .filter((cb) => cb.checked).map((cb) => cb.value);
+    const parts = (primary !== "none" ? [primary] : []).concat(ngrams);
+    return parts.length ? parts.join(",") : "none";
+  },
+
+  /* push a full comma list into the select + checkboxes (form fill) */
+  setSpecTypeUI(specType) {
+    const types = (specType || "none").split(",").map((t) => t.trim()).filter(Boolean);
+    const primary = types.find((t) => !t.startsWith("ngram-")) || "none";
+    document.getElementById("pf-spectype").value = primary;
+    document.querySelectorAll("#spec-ngram-checks input[type=checkbox]").forEach((cb) => {
+      cb.checked = types.includes(cb.value);
+    });
+    this.syncSpecFields();
+  },
+
+  /* visibility of the drafter / n-max / n-min / p-min fields (draft-model
+     types only) and the per-ngram param blocks (each checked type) */
+  syncSpecFields() {
+    const primary = document.getElementById("pf-spectype").value;
+    const ngrams = new Set([...document.querySelectorAll("#spec-ngram-checks input[type=checkbox]")]
+      .filter((cb) => cb.checked).map((cb) => cb.value));
+    const hasDraft = primary !== "none";
+    document.getElementById("pf-draftwrap").classList.toggle("hidden", !hasDraft);
+    document.getElementById("pf-dnmaxwrap").classList.toggle("hidden", !hasDraft);
+    document.getElementById("pf-dnminwrap").classList.toggle("hidden", !hasDraft);
     // draft-mtp: the drafter is optional — empty = the target's built-in MTP head
-    document.getElementById("pf-draft-label").textContent = specType === "draft-mtp"
+    document.getElementById("pf-draft-label").textContent = primary === "draft-mtp"
       ? "MTP model (--spec-draft-model, optional — empty = built-in head)"
       : "Drafter model (--spec-draft-model)";
     // confidence early-stop (--spec-draft-p-min): DSpark and DFlash/DFlash2
     document.getElementById("pf-dconfwrap").classList.toggle(
-      "hidden", !specType || (specType !== "draft-dspark" && specType !== "draft-dflash")
+      "hidden", primary !== "draft-dspark" && primary !== "draft-dflash"
     );
-    // Parallel slots stay fully editable with spec decode: modern builds
-    // (b10xxx+, "parallel drafting") draft for all slots at once.
-    const slots = document.getElementById("pf-slots");
-    slots.disabled = false;
-    slots.title = "";
+    const show = (id, t) => document.getElementById(id).classList.toggle("hidden", !ngrams.has(t));
+    show("pf-ng-simple-params", "ngram-simple");
+    show("pf-ng-mapk-params", "ngram-map-k");
+    show("pf-ng-mapk4v-params", "ngram-map-k4v");
+    show("pf-ng-mod-params", "ngram-mod");
   },
 
   /* --spec-type gating: types the installed build doesn't document are
@@ -148,6 +199,11 @@ const Presets = {
       const blocked = !!supported && !supported.includes(opt.value);
       opt.disabled = blocked;
       opt.title = blocked ? "Not documented by this llama-server build — update llama-server to enable it" : "";
+    }
+    for (const cb of document.querySelectorAll("#spec-ngram-checks input[type=checkbox]")) {
+      const blocked = !!supported && !supported.includes(cb.value);
+      cb.disabled = blocked;
+      cb.title = blocked ? "Not documented by this llama-server build — update llama-server to enable it" : "";
     }
   },
 
@@ -189,7 +245,7 @@ const Presets = {
     if (p.alias) chips.push(`<span class="chip">${UI.esc(p.alias)}</span>`);
     if (p.context_size) chips.push(`<span class="chip chip-params">${Number(p.context_size).toLocaleString()} ctx</span>`);
     if (p.n_gpu_layers != null && p.n_gpu_layers !== "") chips.push(`<span class="chip chip-quant">${p.n_gpu_layers} ngl</span>`);
-    if (p.spec_type && p.spec_type !== "none") chips.push(`<span class="chip chip-vision">${UI.esc(p.spec_type)}</span>`);
+    if (p.spec_type && p.spec_type !== "none") chips.push(`<span class="chip chip-vision">${UI.esc(p.spec_type.replace(/,/g, ", "))}</span>`);
     if (p.port) chips.push(`<span class="chip">port ${p.port}</span>`);
     return chips;
   },
@@ -295,6 +351,7 @@ const Presets = {
       } else v = el.value;
       this.setPath(launch, path, v);
     }
+    this.setPath(launch, "spec.spec_type", this.specTypeFromDOM());
     return launch;
   },
 
@@ -306,6 +363,7 @@ const Presets = {
       else if (type === "strlist" || type === "intlist") el.value = (v || []).join(",");
       else el.value = v == null ? "" : v;
     }
+    this.setSpecTypeUI(this.getPath(launch, "spec.spec_type") || "none");
   },
 
   applyDefaults(launch) {
@@ -314,7 +372,16 @@ const Presets = {
       if (Array.isArray(d)) {
         if (!Array.isArray(launch[key])) launch[key] = [...d];
       } else if (key === "spec") {
-        launch.spec = Object.assign({ ...d }, launch.spec || {});
+        // deep-merge the per-ngram sub-objects (presets saved before #55
+        // lack them — the backend fills pydantic defaults, but a fresh
+        // in-form save must not write zeros)
+        const spec = Object.assign({ ...d }, launch.spec || {});
+        for (const k of Object.keys(d)) {
+          if (typeof d[k] === "object" && d[k] !== null) {
+            spec[k] = Object.assign({}, d[k], spec[k] || {});
+          }
+        }
+        launch.spec = spec;
       } else if (launch[key] === undefined || launch[key] === "" || launch[key] === null) {
         launch[key] = d;
       }
@@ -344,7 +411,6 @@ const Presets = {
       document.getElementById("pf-name").value = "New preset";
       this.fillFields(this.DEFAULTS);
     }
-    this.syncSpecFields(document.getElementById("pf-spectype").value);
     this.applySpecGating(await this.loadSpecGating());
   },
 
