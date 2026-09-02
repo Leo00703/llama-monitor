@@ -17,9 +17,19 @@ line:
   `llama-server` flags at launch time, and validates them against the actually
   installed version via `llama-server --help` — unknown flags are reported as
   warnings instead of blocking the start. Speculative decoding is organized
-  per technique (MTP, DFlash, DSpark, draft-simple, EAGLE-3); types the
-  installed build doesn't document are greyed out in the editor and blocked
-  at launch with a clear message. **DFlash also covers DFlash2**: since
+  per technique (MTP, DFlash, DSpark, draft-simple, EAGLE-3), and any
+  draft-model type can be **combined with any number of ngram fallbacks**
+  (`ngram-simple`, `ngram-map-k`, `ngram-map-k4v`, `ngram-mod`,
+  `ngram-cache`) — or the ngram fallbacks can run **on their own, with no
+  drafter at all**. A combo is sent as a single comma-separated
+  `--spec-type` list; on every decode step the server tries the ngram
+  fallbacks first and falls back to the draft model (so ngram types are a
+  cheap, stateless add-on that needs no extra VRAM). At most one draft-model
+  type is allowed, since all of them share a single draft context. Each
+  ngram type has its own tunable lookup parameters (size-n / size-m /
+  min-hits, or n-match / n-min / n-max for `ngram-mod`), shown in the editor
+  only when that type is checked. Types the installed build doesn't document
+  are greyed out in the editor and blocked at launch with a clear message. **DFlash also covers DFlash2**: since
   [llama.cpp #27342](https://github.com/ggml-org/llama.cpp/pull/27342) the
   DFlash2 checkpoint (grouped dynamic depthwise convolution + candidate
   selector, ≈1.8× decode on Qwen3.8-class targets) is auto-detected from the
@@ -204,8 +214,9 @@ backend/
   schema.py      Pydantic models for launch settings, specs, and API payloads
   process.py     llama-server child-process manager (state machine, log capture)
   flags.py       semantic settings -> CLI flags translation + --help validation
-  spec/          speculative decoding: one module per technique (mtp, dflash,
-                 dspark, draft-simple, eagle3) + registry
+  spec/          speculative decoding: one module per draft-model technique
+                 (mtp, dflash, dspark, draft-simple, eagle3) + registry;
+                 ngram-* types are flag-only (no drafter / extra fields, #55)
   presets.py     preset CRUD (JSON files under <data-dir>/presets)
   metrics.py     CPU/RAM (psutil), GPU (nvidia-smi), inference metrics
   models.py      recursive .gguf browser + mmproj detection
