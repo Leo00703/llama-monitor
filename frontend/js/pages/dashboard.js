@@ -6,6 +6,9 @@ const Dashboard = {
   presets: [],
   activeId: "",
   selectedId: "",
+  // first successful /api/presets fetch (false until then: the card shows a
+  // skeleton row, not the empty state — #58)
+  loaded: false,
   pickOpen: false,
   // the preset the server is ACTUALLY running (from the server state);
   // source of truth for the card while the server is up (#56)
@@ -54,9 +57,11 @@ const Dashboard = {
     try {
       data = await API.get("/api/presets");
     } catch (e) {
+      this.loaded = true; // fall back to the empty state; toast explains
       UI.toast(`failed to load presets: ${e}`, "err");
       return;
     }
+    this.loaded = true;
     this.presets = data.presets || [];
     this.activeId = data.active_id || "";
     this.userPicked = false;
@@ -117,6 +122,11 @@ const Dashboard = {
     const check = `<span class="preset-pick-check" aria-hidden="true">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>
     </span>`;
+    if (!this.loaded) {
+      pick.innerHTML = '<div class="sk sk-row"></div>';
+      list.innerHTML = "";
+      return;
+    }
     if (!this.presets.length) {
       pick.innerHTML = `<span class="preset-pick-empty">No presets yet — click to create one</span>${chev}`;
       list.innerHTML = "";

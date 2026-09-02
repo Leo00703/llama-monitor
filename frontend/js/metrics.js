@@ -331,6 +331,9 @@ const Metrics = (() => {
 
   function update(data) {
     if (!data) return;
+    // first live sample: replace the skeleton placeholders in place (#58)
+    const grid = $("metrics-grid");
+    if (grid) grid.classList.remove("sk");
     applyMode(data.usage_style || "graph");
 
     const cpu = data.cpu || {};

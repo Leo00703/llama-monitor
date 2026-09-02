@@ -15,6 +15,13 @@
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
+<div id="splash" role="status" aria-label="Loading llama-monitor">
+  <div class="splash-inner">
+    <img class="splash-icon" src="icons/icon-512.png" alt="" width="96" height="96">
+    <div class="splash-word">llama-monitor</div>
+    <div class="splash-bar" aria-hidden="true"><div class="splash-bar-fill"></div></div>
+  </div>
+</div>
 <div id="nav-overlay" class="nav-overlay hidden"></div>
 
 <div class="layout">
@@ -84,7 +91,9 @@
             <h2>Server</h2>
             <button id="btn-preview" class="btn" type="button">Preview launch command</button>
           </div>
-          <div id="preset-pick" role="button" tabindex="0" aria-expanded="false" aria-controls="preset-pick-list"></div>
+          <div id="preset-pick" role="button" tabindex="0" aria-expanded="false" aria-controls="preset-pick-list">
+            <div class="sk sk-row"></div>
+          </div>
           <div id="running-hint" class="running-hint hidden"></div>
           <div id="preset-pick-list" class="preset-pick-list hidden" role="listbox"></div>
           <div class="preview-wrap">
@@ -102,7 +111,7 @@
           </div>
         </section>
 
-        <section class="metrics-grid mode-graph" id="metrics-grid">
+        <section class="metrics-grid mode-graph sk" id="metrics-grid">
           <div class="card metric-card metric-card--spark" id="cpu-card">
             <canvas id="cpu-spark" class="spark spark-bleed"></canvas>
             <div class="card-head">
@@ -187,7 +196,7 @@
               <button id="btn-toggle-log" class="btn" type="button">Hide</button>
             </div>
           </div>
-          <pre id="log" class="log" aria-live="polite"></pre>
+          <pre id="log" class="log" aria-live="polite"><div class="sk sk-line"></div><div class="sk sk-line"></div><div class="sk sk-line sk-line--short"></div></pre>
         </section>
       </section>
 

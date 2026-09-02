@@ -139,7 +139,18 @@ function setHost(online) {
   hostBadge.title = online ? "host online" : "host unreachable";
 }
 
+/* Splash (#58): hidden the moment the first state round-trip lands — REST
+   probe or WS init — and on the offline path too, so a dead host surfaces
+   its error instead of spinning. A CSS 10s safety net covers broken JS. */
+function hideSplash() {
+  const s = $("splash");
+  if (!s || s.classList.contains("done")) return;
+  s.classList.add("done");
+  setTimeout(() => s.remove(), 600);
+}
+
 function applyState(state) {
+  hideSplash();
   Dashboard.syncRunning(state); // dashboard card follows the running preset
   serverState = state.state;
   const label = STATE_LABELS[serverState] || serverState;
@@ -162,6 +173,7 @@ async function refreshState() {
     applyState(state);
     setHost(true);
   } catch (_) {
+    hideSplash(); // server unreachable: show the panel + its error, no spin
     statusText.textContent = "offline";
     badge.className = "badge badge-error";
     setHost(false);
