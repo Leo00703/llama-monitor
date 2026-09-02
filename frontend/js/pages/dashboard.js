@@ -7,6 +7,12 @@ const Dashboard = {
   activeId: "",
   selectedId: "",
   pickOpen: false,
+  // the preset the server is ACTUALLY running (from the server state);
+  // source of truth for the card while the server is up (#56)
+  runningId: "",
+  // set when the user explicitly picks in the session — suppresses the
+  // auto-snap to the running preset until the next refresh/reconnect
+  userPicked: false,
 
   init() {
     const pick = document.getElementById("preset-pick");
@@ -53,14 +59,52 @@ const Dashboard = {
     }
     this.presets = data.presets || [];
     this.activeId = data.active_id || "";
-    // keep the current pick when possible, otherwise fall back to the
-    // persisted active preset, then the first one
-    if (!this.presets.some((p) => p.id === this.selectedId)) {
+    this.userPicked = false;
+    // while the server is up, the card shows the preset it's actually
+    // running — not the persisted/last pick (#56); otherwise keep the
+    // current pick when possible, then the active preset, then the first
+    if (this.runningId && this.presets.some((p) => p.id === this.runningId)) {
+      this.selectedId = this.runningId;
+    } else if (!this.presets.some((p) => p.id === this.selectedId)) {
       this.selectedId = this.presets.some((p) => p.id === this.activeId)
         ? this.activeId
         : (this.presets[0] ? this.presets[0].id : "");
     }
     this.renderPick();
+    this.renderRunningHint();
+  },
+
+  /** Called from applyState (REST + WS) with the latest server state. */
+  syncRunning(state) {
+    const up = state && (state.state === "running" || state.state === "external");
+    const newId = up ? (state.preset_id || "") : "";
+    const changed = newId !== this.runningId;
+    this.runningId = newId;
+    if (changed && this.presets.length) {
+      // snap the card to the running preset (covers the first state arriving
+      // after the presets rendered) unless the user already picked
+      if (this.runningId && !this.userPicked
+          && this.presets.some((p) => p.id === this.runningId)
+          && this.selectedId !== this.runningId) {
+        this.selectedId = this.runningId;
+      }
+      this.renderPick(); // refreshes the "running" chip on/off
+    }
+    this.renderRunningHint();
+  },
+
+  /* explicit "next" vs "running" distinction: when the pick differs from
+     what the server is running, say so under the card (#56) */
+  renderRunningHint() {
+    const el = document.getElementById("running-hint");
+    if (!el) return;
+    if (this.runningId && this.selectedId && this.selectedId !== this.runningId) {
+      const run = this.presets.find((p) => p.id === this.runningId);
+      el.textContent = `server is running “${run ? run.name : this.runningId}” — your pick applies on next start / restart`;
+      el.classList.remove("hidden");
+    } else {
+      el.classList.add("hidden");
+    }
   },
 
   /* the picker card (current selection + chevron) and the in-flow list */
@@ -79,7 +123,9 @@ const Dashboard = {
       return;
     }
     const p = this.presets.find((x) => x.id === this.selectedId) || this.presets[0];
-    pick.innerHTML = Presets.cardInner(p, chev);
+    const runningChip = (this.runningId && p.id === this.runningId)
+      ? '<span class="chip chip-running">running</span>' : "";
+    pick.innerHTML = Presets.cardInner(p, chev, runningChip);
     list.innerHTML = this.presets.map((x) =>
       Presets.cardHtml(x, {
         trailing: x.id === this.selectedId ? check : "",
@@ -119,7 +165,9 @@ const Dashboard = {
   selectPreset(id) {
     if (id !== this.selectedId) {
       this.selectedId = id;
+      this.userPicked = true;
       this.renderPick();
+      this.renderRunningHint();
       // keep a visible preview in sync with the new selection
       const pre = document.getElementById("flag-preview");
       if (!pre.classList.contains("hidden")) this.preview(true);

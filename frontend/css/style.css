@@ -1382,6 +1382,7 @@ code {
 
 .chip-vision { border-color: rgba(173, 70, 255, 0.5); background: rgba(173, 70, 255, 0.1); color: #c98fff; }
 .chip-ok     { border-color: rgba(0, 188, 125, 0.5);  background: rgba(0, 188, 125, 0.08); color: #4de2a8; }
+.chip-running { border-color: rgba(246, 94, 0, 0.55); background: rgba(246, 94, 0, 0.1);  color: #ff8a3d; }
 .chip-warn   { border-color: rgba(254, 154, 0, 0.5); background: rgba(254, 154, 0, 0.09); color: #ffc766; }
 .chip-params { border-color: rgba(20, 71, 230, 0.55); background: rgba(20, 71, 230, 0.12); color: #8aa2ff; }
 .chip-quant  { border-color: rgba(0, 188, 125, 0.5);  background: rgba(0, 188, 125, 0.08); color: #4de2a8; }
@@ -1582,6 +1583,14 @@ expansion) and reuses .preset-card for its items. */
 #preset-pick:hover { background: var(--panel-strong); }
 #preset-pick:focus-visible { outline: 2px solid rgba(246, 94, 0, 0.7); outline-offset: 1px; }
 #preset-pick.open { border-color: rgba(246, 94, 0, 0.55); }
+
+/* "next" pick vs "running" preset — shown under the pick while they differ */
+.running-hint {
+  padding: 6px 14px 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--muted);
+}
 
 .preset-pick-chev {
   grid-area: chev;

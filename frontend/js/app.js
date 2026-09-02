@@ -140,6 +140,7 @@ function setHost(online) {
 }
 
 function applyState(state) {
+  Dashboard.syncRunning(state); // dashboard card follows the running preset
   serverState = state.state;
   const label = STATE_LABELS[serverState] || serverState;
   statusText.textContent = label;

@@ -195,9 +195,11 @@ const Presets = {
   },
 
   /* the card body (logo / name + chips / sub + trailing cell) — shared with
-     the dashboard picker, which passes its own chevron/check as trailing */
-  cardInner(p, trailingHtml) {
+     the dashboard picker, which passes its own chevron/check as trailing and
+     may append extra chips (e.g. the "running" marker) */
+  cardInner(p, trailingHtml, extraChips = "") {
     const chips = this.chipsFor(p);
+    if (extraChips) chips.push(extraChips);
     const sub = `${UI.esc(p.model || "no model set")} · updated ${UI.timeAgo(p.updated_at)}`;
     return `
         ${this.logoForPreset(p)}
