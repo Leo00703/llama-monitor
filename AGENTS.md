@@ -305,6 +305,19 @@ To stay focused on the current work:
   (a full-replace once wiped `active_preset_id` on every Settings save).
   Nested models are still **fully replaced** when their key is sent — a
   client sending `panel` must send both `host` and `port`.
+- **Shell files must stay cache-coherent after a deploy**: the backend
+  serves the frontend through `_CacheAwareStaticFiles` (main.py) —
+  html/js/css get `Cache-Control: no-cache` (etag revalidation), everything
+  else `public, max-age=1y, immutable`. Without explicit headers Chrome's
+  HEURISTIC freshness served the NEW index.html with OLD js/css from the
+  disk cache after a deploy (mixed shell: new markup the old scripts don't
+  know — the #58 loading screen stranded on screen; the #55 ngram
+  checkboxes with no fields). Keep both halves: the SW (sw.js) fetches
+  navigations with `cache: "reload"` and subresources with `cache:
+  "no-cache"` so the HTTP disk cache can't shadow the network-first path.
+  When you change shell files in a way that must invalidate already-cached
+  copies in the field, bump the `CACHE` name in sw.js (currently v2) —
+  activate() wipes older versions.
 - **Self-update = git pull, repo layout is load-bearing**: `update.py` runs
   git in the *repo root* (frozen: exe dir; dev: repo checkout), so updates
   work only when the app runs from a real git checkout with an `origin`
