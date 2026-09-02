@@ -271,7 +271,8 @@ API.connect("/ws/logs", (event) => {
     Update.maybeShow(event.data);
   } else if (event.type === "llama.update.available" ||
              event.type === "llama.update.progress" ||
-             event.type === "llama.update.downloaded") {
+             event.type === "llama.update.downloaded" ||
+             event.type === "llama.update.failed") {
     Backend.onWs(event);
   }
 });
