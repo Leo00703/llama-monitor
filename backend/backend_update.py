@@ -22,6 +22,7 @@ Release facts (ggml-org/llama.cpp, verified 2026-08-23):
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -291,27 +292,34 @@ ProgressCb = Callable[[int, int], None]
 
 
 async def download_file(asset: dict, dest: Path, progress: Optional[ProgressCb] = None) -> None:
-    """Stream the release asset to dest (atomic replace; .part on failure)."""
+    """Stream the release asset to dest (atomic replace; .part removed on failure)."""
     tmp = dest.parent / (dest.name + ".part")
-    total = asset.get("size") or 0
-    done = 0
-    last_tick = 0.0
-    async with httpx.AsyncClient(timeout=httpx.Timeout(300, connect=20),
-                                 follow_redirects=True) as client:
-        async with client.stream("GET", asset["browser_download_url"]) as resp:
-            if resp.status_code != 200:
-                raise UpdateError(f"download failed (HTTP {resp.status_code})")
-            with open(tmp, "wb") as f:
-                async for chunk in resp.aiter_bytes(256 * 1024):
-                    f.write(chunk)
-                    done += len(chunk)
-                    now = time.time()
-                    if progress and now - last_tick > 0.3:
-                        last_tick = now
-                        progress(done, total)
-            if progress:  # fast (local) downloads may never hit the tick
-                progress(done, total)
-    tmp.replace(dest)
+    try:
+        total = asset.get("size") or 0
+        done = 0
+        last_tick = 0.0
+        async with httpx.AsyncClient(timeout=httpx.Timeout(300, connect=20),
+                                     follow_redirects=True) as client:
+            async with client.stream("GET", asset["browser_download_url"]) as resp:
+                if resp.status_code != 200:
+                    raise UpdateError(f"download failed (HTTP {resp.status_code})")
+                with open(tmp, "wb") as f:
+                    async for chunk in resp.aiter_bytes(256 * 1024):
+                        f.write(chunk)
+                        done += len(chunk)
+                        now = time.time()
+                        if progress and now - last_tick > 0.3:
+                            last_tick = now
+                            progress(done, total)
+                if progress:  # fast (local) downloads may never hit the tick
+                    progress(done, total)
+        tmp.replace(dest)
+    except BaseException:
+        # never leave stale partials — retries used to re-download over them
+        # and they accumulated as multi-GB orphans (#72)
+        with contextlib.suppress(OSError):
+            tmp.unlink()
+        raise
 
 
 def extract_archive(archive: Path, dest: Path) -> None:
