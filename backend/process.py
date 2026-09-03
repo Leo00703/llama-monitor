@@ -66,7 +66,8 @@ class LlamaServerManager:
     State transitions:
       stopped -> starting -> running -> stopped
                                      -> error (unexpected exit / start failure)
-      stopped -> external (port occupied by a process not started by the panel)
+      stopped -> external (a llama-server is already running, or the port is
+                    occupied by a process not started by the panel)
     """
 
     def __init__(self, get_config: Callable[[], Any]) -> None:
@@ -131,7 +132,21 @@ class LlamaServerManager:
                 return {"ok": False, "error": msg}
 
             port = self._port_from_args(args) or self._get_config().default_server_port
-            if self._pid_on_port(port) is not None:
+            pid = self._pid_on_port(port)
+            if pid is not None:
+                # If the occupant is a llama-server on exactly that port, adopt
+                # it as an external server (the user can Stop it from the
+                # panel); otherwise refuse (#68).
+                if self._llama_server_port(pid) is not None:
+                    self._state = ServerState.EXTERNAL
+                    self._port = port
+                    self._error = f"port {port} is occupied by pid {pid} (not started by this panel)"
+                    self._publish_log(
+                        f"[panel] external server on port {port} (pid {pid}) — marked "
+                        "external; use Stop to release the port"
+                    )
+                    self._publish_state()
+                    return {"ok": True, "state": ServerState.EXTERNAL.value, "pid": pid}
                 msg = f"port {port} is already in use"
                 self._set_error_state(msg)
                 return {"ok": False, "error": msg}
@@ -190,8 +205,10 @@ class LlamaServerManager:
                 self._publish_state()
                 return {"ok": True, "state": self._state.value}
 
-            # No child process: maybe an external server occupies the port.
-            pid = self._pid_on_port(self._get_config().default_server_port)
+            # No child process: maybe an external server occupies the port
+            # (current_port() — the port it was detected/adopted on, #68).
+            port = self.current_port() or self._get_config().default_server_port
+            pid = self._pid_on_port(port)
             if pid is not None:
                 self._publish_log(f"[panel] stopping external server (pid {pid})")
                 self._terminate_pid(pid)
@@ -313,7 +330,19 @@ class LlamaServerManager:
         self._publish_state()
 
     def _detect_external(self) -> None:
-        """If a llama-server (or anything) already listens on the port, mark it."""
+        """If a server is already running, mark it external instead of erroring.
+
+        Prefers a process scan — finds a llama-server on ANY port (even before
+        it is listening); falls back to the legacy probe of default_server_port
+        (any process on the port). (#68)"""
+        found = self._find_external_server()
+        if found is not None:
+            pid, port = found
+            self._state = ServerState.EXTERNAL
+            self._port = port
+            self._error = f"port {port} is occupied by pid {pid} (not started by this panel)"
+            self._publish_log(f"[panel] detected external server on port {port} (pid {pid})")
+            return
         port = self._get_config().default_server_port
         pid = self._pid_on_port(port)
         if pid is not None and (self._proc is None or self._proc.returncode is not None):
@@ -420,6 +449,45 @@ class LlamaServerManager:
             if arg in ("--port",) and i + 1 < len(args):
                 with contextlib.suppress(ValueError):
                     return int(args[i + 1])
+        return None
+
+    @staticmethod
+    def _llama_server_port(pid: int) -> Optional[int]:
+        """The --port flag of a llama-server process (llama.cpp default 8080),
+        or None if the pid is not a llama-server."""
+        try:
+            p = psutil.Process(pid)
+            name = (p.name() or "").lower()
+            if name.endswith(".exe"):
+                name = name[:-4]
+            if name != "llama-server":
+                return None
+            cmdline = p.cmdline()
+        except (psutil.Error, OSError):
+            return None
+        port = 8080  # llama.cpp default
+        for i, arg in enumerate(cmdline):
+            if arg == "--port" and i + 1 < len(cmdline):
+                with contextlib.suppress(ValueError):
+                    port = int(cmdline[i + 1])
+                break
+        return port
+
+    @classmethod
+    def _find_external_server(cls) -> Optional[tuple[int, int]]:
+        """(pid, port) of a running llama-server not started by this panel, or None."""
+        for p in psutil.process_iter(["name"]):
+            try:
+                name = (p.info.get("name") or "").lower()
+                if name.endswith(".exe"):
+                    name = name[:-4]
+                if name != "llama-server":
+                    continue
+                port = cls._llama_server_port(p.pid)
+                if port is not None:
+                    return p.pid, port
+            except (psutil.Error, OSError):
+                continue
         return None
 
     @staticmethod
