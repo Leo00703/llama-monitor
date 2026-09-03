@@ -312,6 +312,12 @@ class LlamaServerManager:
                 hook(line)
         self._broadcast({"type": "log", "line": line})
 
+    def note(self, line: str) -> None:
+        """Publish a panel-generated line to the log view.
+        (The log card is visible in dev AND frozen builds — stdout is
+        devnull in the tray exe, so plain logging would be invisible.)"""
+        self._publish_log(line)
+
     def _publish_state(self) -> None:
         self._broadcast({"type": "state", **self.snapshot()})
 

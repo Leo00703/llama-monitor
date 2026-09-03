@@ -16,6 +16,7 @@ from typing import Any, AsyncIterator, Callable, Optional
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel, Field, ValidationError
 
@@ -248,6 +249,34 @@ def _model_from_args(args: list[str]) -> str:
     return ""
 
 
+SLOW_REQUEST_SECONDS = 5.0
+
+
+class SlowRequestLogger(BaseHTTPMiddleware):
+    """Surface slow requests in the panel's own log view (#77).
+
+    The log card is the only diagnostic visible in BOTH dev and frozen
+    builds (stdout is devnull in the tray exe), so the next "panel hangs
+    during inference" report should name the offending endpoint instead of
+    requiring a server-side capture that the user can't see.
+    """
+
+    def __init__(self, app, manager) -> None:
+        super().__init__(app)
+        self.manager = manager
+
+    async def dispatch(self, request, call_next):
+        start = time.monotonic()
+        response = await call_next(request)
+        elapsed = time.monotonic() - start
+        # /proxy/ streams generations for minutes by design
+        if elapsed > SLOW_REQUEST_SECONDS and not request.url.path.startswith("/proxy/"):
+            self.manager.note(
+                f"[panel] slow request: {request.method} {request.url.path} took {elapsed:.1f}s"
+            )
+        return response
+
+
 def create_app() -> FastAPI:
     config: AppConfig = load_config()
     manager = LlamaServerManager(lambda: config)
@@ -378,6 +407,11 @@ def create_app() -> FastAPI:
     # (243 KB -> 81 KB on first view). Streamed bodies (proxy SSE) are
     # compressed chunk-by-chunk, not buffered.
     app.add_middleware(GZipMiddleware, minimum_size=200)
+
+    # (#77) When the panel is slow, say WHICH request was slow: the log
+    # card is the only place visible in both dev and frozen builds, and the
+    # next "panel hangs during inference" report should name the endpoint.
+    app.add_middleware(SlowRequestLogger, manager=manager)
 
     # ------------------------------------------------------------------
     # launch preparation (presets -> validated, version-checked flags)
