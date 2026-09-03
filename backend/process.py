@@ -23,6 +23,11 @@ from .metrics import run_nvidia_smi
 log = logging.getLogger("llama-monitor.process")
 
 LOG_BUFFER_SIZE = 4000
+# (#77) The WS "init" payload carries the recent log to every (re)connecting
+# client — on a lossy link (tailnet) right after a long generation the full
+# 4000-line buffer is a multi-MB blob before the client's first useful sync.
+# The log card shows recent history, so the init sends only the tail.
+WS_INIT_LOG_LIMIT = 1000
 STOP_TIMEOUT = 10.0
 KILL_TIMEOUT = 5.0
 

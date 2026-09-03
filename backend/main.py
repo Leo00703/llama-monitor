@@ -41,7 +41,7 @@ from . import backend_update
 from .flags import build_args, parse_help, validate_settings
 from .metrics import MetricsCollector
 from .models import list_models
-from .process import LlamaServerManager
+from .process import LlamaServerManager, WS_INIT_LOG_LIMIT
 from .presets import PresetStore
 from .proxy import INJECT_PATHS, ProxyOffline, ServerProxy
 from .schema import LaunchSettings, Preset, SPEC_TYPES
@@ -1082,7 +1082,7 @@ def create_app() -> FastAPI:
         await ws.accept()
         queue = manager.subscribe()
         try:
-            await ws.send_json({"type": "init", "lines": manager.log_history(), "state": manager.snapshot()})
+            await ws.send_json({"type": "init", "lines": manager.log_history()[-WS_INIT_LOG_LIMIT:], "state": manager.snapshot()})
             while True:
                 event = await queue.get()
                 await ws.send_json(event)
