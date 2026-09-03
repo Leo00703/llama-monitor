@@ -48,9 +48,9 @@ line:
   and power draw (Intel RAPL / AMD hwmon), and CPU power joins the per-request
   energy estimate; Windows exposes neither without admin, so the fields are
   hidden there.
-  plus inference metrics (prompt/generation tok/s, per-slot context usage,
-  draft acceptance for spec decode) sourced from the server's own log lines,
-  with `/slots` and `/metrics` as fallbacks. The card also shows the running server's live slot count and turns orange when the active preset's parallel-slots setting differs (the server needs a restart to pick it up). The usage cards render as
+  It also shows inference metrics (prompt/generation tok/s, per-slot context
+  usage, draft acceptance for spec decode) sourced from the server's own log
+  lines, with `/slots` and `/metrics` as fallbacks. The card also shows the running server's live slot count and turns orange when the active preset's parallel-slots setting differs (the server needs a restart to pick it up). The usage cards render as
   sparkline graphs (default) or big traffic-light bars — switchable live
   from **Settings** ("Dashboard usage display").
 - **Generation parameters** — sampling / penalties / control fields that are
@@ -180,8 +180,9 @@ clients at `http://<server-ip>:8000/proxy/v1/...` to have generation parameters
 applied to every request through the panel.
 
 > Note: the panel only manages `llama-server` processes it started itself.
-> If a server is already running on the configured port, the panel marks it
-> as **external** and can still stop it.
+> If a `llama-server` is already running on the port you try to use, the
+> panel marks it as **external** and you can stop it from the panel (at
+> startup it finds running `llama-server`s on any port).
 
 ### Diagnostics
 
