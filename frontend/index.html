@@ -13,6 +13,27 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="llama-monitor">
 <link rel="stylesheet" href="css/style.css">
+<script>
+/* Last-resort splash kill (#77) — inline on purpose, zero dependencies:
+   it runs even when css/style.css or js/app.js never arrive (hung host),
+   which is exactly when the other nets (JS hideSplash, the CSS 10s
+   splash-kill animation) are unavailable. Without it the loading screen
+   can spin forever on a flaky link. */
+setTimeout(function () {
+  var s = document.getElementById("splash");
+  if (s && !s.classList.contains("done")) {
+    s.style.transition = "opacity .3s";
+    s.style.opacity = "0";
+    s.style.visibility = "hidden";
+    var d = document.createElement("div");
+    d.id = "splash-fail-hint";
+    d.textContent = "connection problem — please reload the page";
+    d.style.cssText = "position:fixed;bottom:16px;left:0;right:0;text-align:center;"
+      + "font:13px system-ui,sans-serif;color:#fe9a00;z-index:9999;";
+    document.body.appendChild(d);
+  }
+}, 12000);
+</script>
 </head>
 <body>
 <div id="splash" role="status" aria-label="Loading llama-monitor">
