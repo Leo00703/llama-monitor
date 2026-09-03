@@ -415,6 +415,10 @@ const Presets = {
     const name = document.getElementById("pf-name").value.trim() || "Untitled preset";
     const launch = this.readFields();
     this.applyDefaults(launch);
+    if (!Number.isInteger(launch.port) || launch.port < 1 || launch.port > 65535) {
+      UI.toast("port must be a number between 1 and 65535", "err");
+      return;
+    }
     const body = { name, launch };
     try {
       let res;

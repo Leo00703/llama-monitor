@@ -175,7 +175,7 @@ class LaunchSettings(BaseModel):
 
     # network & observability
     host: str = "0.0.0.0"
-    port: int = 8080
+    port: int = Field(8080, ge=1, le=65535)
     api_key: str = ""
     jinja: bool = True
     reasoning_preserve: bool = False

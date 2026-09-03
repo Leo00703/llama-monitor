@@ -174,7 +174,7 @@ migrate_legacy_data()
 
 class PanelSettings(BaseModel):
     host: str = "0.0.0.0"
-    port: int = 8000
+    port: int = Field(8000, ge=1, le=65535)
     # optional TLS (empty = plain http): the paths point at a PEM cert and
     # its key. Needed for PWA installs on LAN / tailscale — browsers only
     # offer "install as app" on a secure context (https or localhost).
@@ -212,7 +212,7 @@ class AppConfig(BaseModel):
 
     llama_server_exe: str = ""
     models_root: str = ""
-    default_server_port: int = 8080
+    default_server_port: int = Field(8080, ge=1, le=65535)
     panel: PanelSettings = Field(default_factory=PanelSettings)
     active_preset_id: str = ""
     energy_price_eur_kwh: float = 0.20
