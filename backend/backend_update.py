@@ -29,6 +29,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tarfile
 import time
 import zipfile
@@ -329,7 +330,12 @@ def extract_archive(archive: Path, dest: Path) -> None:
             z.extractall(dest)
     elif archive.name.endswith(".tar.gz"):
         with tarfile.open(archive, "r:gz") as t:
-            t.extractall(dest, filter="data")
+            # `filter` exists only on 3.12+; on older interpreters fall back
+            # to the plain extract (trusted GitHub-release archives only, #73)
+            if sys.version_info >= (3, 12):
+                t.extractall(dest, filter="data")
+            else:
+                t.extractall(dest)
     else:
         raise UpdateError(f"unsupported archive: {archive.name}")
 
