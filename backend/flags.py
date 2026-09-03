@@ -13,6 +13,7 @@ know are dropped with a warning instead of blocking the launch.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import re
 import shlex
 from dataclasses import dataclass
@@ -446,7 +447,15 @@ async def parse_help(exe: str) -> tuple[set[str], set[str]]:
             stderr=asyncio.subprocess.DEVNULL,
             **no_window_kwargs(),
         )
-        out, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
+        try:
+            out, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
+        except asyncio.TimeoutError:
+            # A hung --help must not leak a subprocess — failures are not
+            # cached, so one orphan would accumulate per launch attempt (#69).
+            proc.kill()
+            with contextlib.suppress(Exception):
+                await proc.wait()
+            raise
         result = _parse_help_output(out)
         _help_cache[key] = result
         return result

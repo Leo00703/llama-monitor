@@ -522,7 +522,15 @@ class LlamaServerManager:
                 stderr=asyncio.subprocess.STDOUT,
                 **self._spawn_kwargs(),
             )
-            out, _ = await asyncio.wait_for(proc.communicate(), timeout=15)
+            try:
+                out, _ = await asyncio.wait_for(proc.communicate(), timeout=15)
+            except asyncio.TimeoutError:
+                # kill on timeout — an orphaned --version would accumulate
+                # per version probe (#69)
+                proc.kill()
+                with contextlib.suppress(Exception):
+                    await proc.wait()
+                raise
             lines = [ln for ln in out.decode(errors="replace").splitlines() if ln.strip()]
             return lines[0] if lines else ""
         except (OSError, asyncio.TimeoutError):
