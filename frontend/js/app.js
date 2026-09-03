@@ -26,6 +26,7 @@ const MAX_DOM_LINES = 2000;
 
 let serverState = "stopped";
 let busy = false;
+let hostWasOnline = true; // (#77) one-shot toast on the online→offline edge
 // last non-empty server version: re-applies (setBusy) carry it through so
 // the top-bar label doesn't blink empty between an action and the next
 // state event
@@ -172,11 +173,16 @@ async function refreshState() {
     const state = await API.get("/api/state", 5000); // lightweight probe: fail fast to "offline"
     applyState(state);
     setHost(true);
+    hostWasOnline = true;
   } catch (_) {
     hideSplash(); // server unreachable: show the panel + its error, no spin
     statusText.textContent = "offline";
     badge.className = "badge badge-error";
     setHost(false);
+    if (hostWasOnline) { // (#77) the badge alone is easy to miss — say it once
+      hostWasOnline = false;
+      UI.toast("can't reach the panel — retrying every 10 s", "err");
+    }
   }
 }
 
