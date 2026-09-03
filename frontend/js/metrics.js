@@ -263,10 +263,16 @@ const Metrics = (() => {
         if (g.vram_total_mb) {
           const used = (g.vram_used_mb ?? 0) / 1024;
           const tot = g.vram_total_mb / 1024;
-          const pct = Math.round((g.vram_used_mb / g.vram_total_mb) * 100);
+          // (#78) always a bounded whole number: used can momentarily
+          // exceed total (driver accounting) and bad data must never turn
+          // into 1e308% — render "—" instead
+          const ratio = (g.vram_used_mb ?? 0) / g.vram_total_mb;
+          const pct = Number.isFinite(ratio)
+            ? Math.min(100, Math.max(0, Math.round(ratio * 100)))
+            : null;
           els.nums.style.display = "";
           els.barMain.textContent = `${used.toFixed(1)} / ${tot.toFixed(1)} GB`;
-          els.barPct.textContent = `${pct}%`;
+          els.barPct.textContent = pct == null ? "—" : `${pct}%`;
           setUsage(els.barPct, pct);
           setBar(els.barFill, pct);
         } else {
