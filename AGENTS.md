@@ -297,7 +297,11 @@ To stay focused on the current work:
   `--headless=new`; verify with `document.documentElement.scrollWidth <= w`).
   In CDP `/json` targets, pick `type === "page"` — `targets[0]` may be a
   chrome-extension background page (symptom: `net::ERR_ABORTED` on navigate,
-  empty eval results).
+  empty eval results). Chrome auto-updates can BREAK this: on 152.x (observed
+  2026-09) `--remote-debugging-port` binds nothing and even `--dump-dom`
+  prints nothing — check `--version` first, and when CDP is dead fall back
+  to node-based verification (stub the DOM/SW APIs, run the real file source,
+  exercise the exact branches) plus a real uvicorn process + HTTP/WS clients.
 - **Restarting a dev panel**: `pkill -f "uvicorn backend.main"` does NOT
   match (the venv `python.exe` launcher stub re-execs core Python with a
   different command line). Find the real PID via `netstat -ano | grep :PORT`
