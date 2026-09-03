@@ -38,8 +38,10 @@ def _scan(root: Path) -> list[dict[str, Any]]:
         return []
     models: list[dict[str, Any]] = []
     mmproj_by_parent: dict[str, list[str]] = {}
-    for path in sorted(root.rglob("*.gguf")):
-        if not path.is_file():
+    for path in sorted(root.rglob("*")):
+        # fnmatch patterns are case-sensitive on Linux — match the .gguf
+        # suffix in Python so MODEL.GGUF isn't missed there (#71)
+        if not path.is_file() or path.suffix.lower() != ".gguf":
             continue
         rel = path.relative_to(root).as_posix()
         if path.name.lower().startswith("mmproj"):
