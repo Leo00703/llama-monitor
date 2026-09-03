@@ -73,8 +73,13 @@ manual/ad-hoc (see Verification below).
   repo with legacy data next to `llama-monitor.exe` migrates on first
   start.
 - `config.example.json` is the source of truth for config keys.
-- The panel only manages `llama-server` processes it started itself; a server
-  already running on the port is treated as **external**.
+- The panel only manages `llama-server` processes it started itself. A
+  `llama-server` already running is treated as **external**: at startup
+  `_find_external_server()` (process scan by name, port from its `--port`
+  flag) finds it on ANY port, falling back to probing `default_server_port`
+  for any process; `start()` adopts a llama-server on the requested port
+  instead of failing (ok:true, state external); `stop()` kills the owner of
+  `current_port()` (#68).
 
 ## Git workflow
 
