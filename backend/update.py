@@ -343,7 +343,10 @@ def _write_bootstrap_ps1(
         "Remove-Item -LiteralPath $PSCommandPath -ErrorAction SilentlyContinue\r\n"
     )
     ps_path = DATA_DIR / "update-bootstrap.ps1"
-    ps_path.write_text(ps, encoding="ascii")
+    # utf-8-sig (BOM): powershell 5.1 reads BOM-less .ps1 files as ANSI, so a
+    # non-ASCII path in the script would garble or break the update; the BOM
+    # makes it parse as UTF-8. Plain "ascii" crashed on non-ASCII paths (#67).
+    ps_path.write_text(ps, encoding="utf-8-sig")
     return ps_path
 
 
