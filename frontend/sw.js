@@ -23,8 +23,11 @@
    v2 (#58 era): the v1 cache could hold a MIXED shell (new index.html + old
    js/css after a deploy, since the browser disk cache had no explicit
    Cache-Control). The backend now sends no-cache on shell files; this bump
-   wipes any stale v1 cache that is already out there. */
-const CACHE = "llama-monitor-v2";
+   wipes any stale v1 cache that is already out there.
+   v3 (#77): the v2 precache was all-or-nothing and unbounded — one failed
+   `cache.addAll` fetch (busy host, flaky link) rejected the whole install
+   and the device was left WITHOUT any of the timeout bounds above. */
+const CACHE = "llama-monitor-v3";
 const SHELL = [
   "/",
   "/css/style.css",
@@ -49,11 +52,30 @@ const SHELL = [
   "/js/app.js",
 ];
 
+/* Precache every entry independently, each bounded by a timeout. A single
+   failed entry (busy host mid-inference, flaky link) must never reject the
+   install — an uninstalled SW leaves the page with NO bounds at all, which
+   is what froze navigation on the phone (#77). Missing entries fill in via
+   the fetch handler's `cache.put` on the first real visit. */
+const PRECACHE_TIMEOUT = 8000;
+
+async function precache(cache) {
+  await Promise.allSettled(
+    SHELL.map(async (url) => {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), PRECACHE_TIMEOUT);
+      try {
+        const res = await fetch(url, { signal: ctrl.signal });
+        if (res.ok) await cache.put(url, res);
+      } catch (_) { /* keep going — one entry failing is not fatal */ }
+      finally { clearTimeout(t); }
+    })
+  );
+}
+
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE)
-      .then((cache) => cache.addAll(SHELL))
-      .then(() => self.skipWaiting())
+    caches.open(CACHE).then((cache) => precache(cache)).then(() => self.skipWaiting())
   );
 });
 
