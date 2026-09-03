@@ -86,6 +86,13 @@ jobs:
             --hidden-import wsproto `
             tray.py
 
+      # The onefile bootloader path (self-extract + the retried native
+      # import bootstrap in tray.py, #64) is only exercised by running the
+      # actual exe — the dev smoke above cannot catch a frozen-only break.
+      - name: Smoke test the frozen exe
+        if: steps.skip.outputs.skip != 'true'
+        run: .\dist\llama-monitor.exe --smoke
+
       - name: Commit refreshed exe to the repo root (so `git pull` ships it)
         if: steps.skip.outputs.skip != 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: bash

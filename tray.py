@@ -8,11 +8,9 @@ Build into a single .exe with PyInstaller (see build_exe.bat / CI).
 from __future__ import annotations
 
 import argparse
-import ctypes
 import logging
 import os
 import shutil
-import subprocess
 import sys
 import threading
 import time
@@ -20,16 +18,188 @@ import webbrowser
 from pathlib import Path
 from typing import Optional
 
-import httpx
-import pystray
-import uvicorn
-from PIL import Image, ImageDraw
+# The native/third-party runtime (ctypes, httpx, pystray, uvicorn, PIL and
+# the backend package) is imported by _load_stack() below — with retries —
+# instead of at module level: in a frozen onefile build those C extensions
+# live in the freshly self-extracted %TEMP%\_MEI* folder, and a real-time
+# antivirus scan can lock or quarantine DLLs for seconds right after
+# extraction. A top-level import would then die with a raw traceback
+# (a --noconsole build has no console to show it in); _load_stack()
+# retries, and _bootstrap_failure() explains what happened and where to
+# look instead (#64).
 
-from backend.config import (
-    DATA_DIR, AppConfig, load_config, no_window_kwargs, onefile_relaunch_env
-)
-from backend.main import create_app, set_restart_hook
-from backend.process import set_linger_server
+_BOOTSTRAP_RETRIES = 10
+_BOOTSTRAP_RETRY_WAIT = 2.0
+
+
+def _data_dir_fallback() -> Path:
+    """Resolve the user data dir without importing backend.config (which
+    may itself be the module that failed to import). Mirrors
+    backend.config: LLAMA_MONITOR_DATA env var, then the platform default."""
+    env = os.environ.get("LLAMA_MONITOR_DATA", "").strip()
+    if env:
+        return Path(env).expanduser()
+    if os.name == "nt":
+        return Path(os.environ.get("APPDATA", str(Path.home()))) / "llama-monitor"
+    return Path.home() / ".config" / "llama-monitor"
+
+
+def _bootstrap_failure(exc: BaseException) -> int:
+    """Last-resort startup handler: the native runtime could not be
+    imported even after retries (#64).
+
+    Uses pure-stdlib facilities only — the modules that failed here
+    (ctypes, PIL, ...) are unusable, and a frozen --noconsole build has
+    no console for a traceback to land in. Writes a diagnostic log
+    (with the DLLs actually found in the self-extracted bundle), and
+    outside --smoke shows a detached message box via powershell
+    (always present on Windows, no native imports of its own).
+    """
+    import traceback
+
+    _mp = getattr(sys, "_MEIPASS", None)
+    meipass = Path(_mp) if _mp else None
+    if meipass is not None and not meipass.exists():
+        meipass = None
+    if getattr(sys, "frozen", False):
+        # next to the executable — the folder the user knows
+        log_path = Path(sys.executable).resolve().parent / "llama-monitor-startup-error.log"
+    else:
+        log_path = _data_dir_fallback() / "startup-error.log"
+
+    dlls = "  (not a frozen build)"
+    if meipass is not None and meipass.is_dir():
+        found = sorted(
+            f"{p.name} ({p.stat().st_size} bytes)"
+            for p in meipass.iterdir()
+            if p.is_file() and p.suffix.lower() in (".dll", ".pyd")
+        )
+        dlls = "\n".join(f"  {f}" for f in found) or "  (none found)"
+    pyi_env = ", ".join(
+        f"{k}={v}" for k, v in sorted(os.environ.items()) if k.startswith("_PYI_")
+    ) or "(none)"
+
+    try:
+        if not getattr(sys, "frozen", False):
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text(
+            "llama-monitor startup failure\n"
+            f"time: {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+            f"python: {sys.version}\n"
+            f"frozen: {getattr(sys, 'frozen', False)}\n"
+            f"_MEIPASS: {meipass or '(dev mode)'}\n"
+            f"TEMP: {os.environ.get('TEMP', '')}\n"
+            f"env _PYI_*: {pyi_env}\n"
+            f"error: {type(exc).__name__}: {exc}\n"
+            "\ntraceback:\n"
+            f"{traceback.format_exc()}\n"
+            "\nDLLs present in the self-extracted bundle:\n"
+            f"{dlls}\n",
+            encoding="utf-8",
+        )
+    except OSError:
+        pass
+
+    if "--smoke" not in sys.argv:
+        # A detached WinForms dialog (powershell 5.1 is on every Win10/11);
+        # skipped in --smoke so CI never blocks on a dialog, and silently
+        # dropped if powershell/subprocess are themselves unavailable.
+        body = (
+            "A required runtime component could not be loaded.\n\n"
+            "This usually means antivirus software quarantined or is still\n"
+            "scanning the files the app extracts to the system temp folder,\n"
+            "or the executable is incomplete.\n\n"
+            "1. Wait a moment, then start llama-monitor again.\n"
+            "2. If it keeps failing, add an antivirus exclusion for the\n"
+            "   temp folder (or the app folder), then try again.\n"
+            "3. Re-download the executable (git pull or the in-app update).\n\n"
+            f"Details: {log_path}"
+        )
+        try:
+            import subprocess
+            ps = ("Add-Type -AssemblyName System.Windows.Forms; "
+                  "[System.Windows.Forms.MessageBox]::Show('"
+                  + body.replace("\n", "`n").replace("'", "''")
+                  + "', 'llama-monitor - startup failed')")
+            subprocess.Popen(
+                ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
+                 "-Command", ps],
+                creationflags=(getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+                               | 0x0200),  # + CREATE_NEW_PROCESS_GROUP
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception:
+            pass
+
+    try:
+        if sys.stderr:
+            print(f"llama-monitor startup failure: {exc}\n"
+                  f"details: {log_path}", file=sys.stderr)
+    except Exception:
+        pass
+    return 1
+
+
+def _load_stack() -> None:
+    """Import the native/third-party runtime and bind it as module globals.
+
+    Retries with a short wait: right after a onefile self-extraction the
+    antivirus may still be holding the fresh DLLs, and a failed
+    C-extension import is usually transient and succeeds a couple of
+    seconds later (#64).
+    """
+    last_exc: Optional[BaseException] = None
+    for attempt in range(1, _BOOTSTRAP_RETRIES + 1):
+        try:
+            import ctypes as _ctypes
+            import httpx as _httpx
+            import pystray as _pystray
+            import subprocess as _subprocess
+            import uvicorn as _uvicorn
+            from PIL import Image as _Image, ImageDraw as _ImageDraw
+            from backend.config import (
+                DATA_DIR as _DATA_DIR,
+                AppConfig as _AppConfig,
+                load_config as _load_config,
+                no_window_kwargs as _no_window_kwargs,
+                onefile_relaunch_env as _onefile_relaunch_env,
+            )
+            from backend.main import (
+                create_app as _create_app,
+                set_restart_hook as _set_restart_hook,
+            )
+            from backend.process import set_linger_server as _set_linger_server
+        except Exception as exc:  # ImportError in practice
+            last_exc = exc
+            if attempt < _BOOTSTRAP_RETRIES:
+                time.sleep(_BOOTSTRAP_RETRY_WAIT)
+            continue
+        globals().update({
+            "ctypes": _ctypes,
+            "httpx": _httpx,
+            "pystray": _pystray,
+            "subprocess": _subprocess,
+            "uvicorn": _uvicorn,
+            "Image": _Image,
+            "ImageDraw": _ImageDraw,
+            "DATA_DIR": _DATA_DIR,
+            "AppConfig": _AppConfig,
+            "load_config": _load_config,
+            "no_window_kwargs": _no_window_kwargs,
+            "onefile_relaunch_env": _onefile_relaunch_env,
+            "create_app": _create_app,
+            "set_restart_hook": _set_restart_hook,
+            "set_linger_server": _set_linger_server,
+        })
+        return
+    raise last_exc
+
+
+try:
+    _load_stack()
+except Exception as _bootstrap_exc:
+    sys.exit(_bootstrap_failure(_bootstrap_exc))
 
 # Named for the historical exe (llama-monitor-tray.exe); the exe was renamed
 # to llama-monitor.exe but the name is kept so old + new builds still count
