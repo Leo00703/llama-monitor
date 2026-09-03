@@ -11,6 +11,15 @@ const Generation = {
 
   EXTRA_ALWAYS: ["stop", "grammar", "json_schema", "logit_bias"],
 
+  // Servers report defaults as float32, so e.g. 0.95 comes back as
+  // 0.949999988079071 — display (and compare) a cleaned 4-significant-digit
+  // form. Integers pass through untouched.
+  cleanNum(v) {
+    const n = Number(v);
+    if (!Number.isFinite(n) || Number.isInteger(n)) return v;
+    return parseFloat(n.toPrecision(4));
+  },
+
   FIELDS: {
     temperature:        { label: "Temperature", type: "num", tab: "sampling" },
     dynatemp_range:     { label: "Dynamic temp range", type: "num", tab: "sampling" },
@@ -144,7 +153,7 @@ const Generation = {
       el = document.createElement("input");
       el.type = "number";
       if (spec.type === "int") el.step = "1";
-      el.value = shown === "" ? "" : shown;
+      el.value = shown === "" ? "" : this.cleanNum(shown);
     } else if (spec.type.startsWith("sel:")) {
       el = document.createElement("select");
       for (const opt of spec.type.slice(4).split(",")) {
@@ -245,9 +254,13 @@ const Generation = {
 
     const generation = {};
     for (const [key, value] of Object.entries(values)) {
-      if (key in this.serverDefaults &&
-          JSON.stringify(this.serverDefaults[key]) === JSON.stringify(value)) {
-        continue; // same as server default: nothing to save
+      const sd = this.serverDefaults[key];
+      if (key in this.serverDefaults) {
+        if (typeof value === "number" && typeof sd === "number" &&
+            this.cleanNum(value) === this.cleanNum(sd)) {
+          continue; // same as server default once float32 noise is ignored
+        }
+        if (JSON.stringify(sd) === JSON.stringify(value)) continue;
       }
       generation[key] = value;
     }
