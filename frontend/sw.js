@@ -13,7 +13,7 @@
  * source of truth — so a panel update is picked up on the next load and
  * the installed app can never be stuck on stale JS.
  *
- * /api/*, /ws* and /v1/* are NEVER touched by the service worker:
+ * /api/*, /ws*, /v1/* and /proxy/* are NEVER touched by the service worker:
  * live data (health, metrics, logs, proxied inference) always goes to
  * the network, and the app's own WS auto-reconnect handles outages.
  */
@@ -84,7 +84,7 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
   const p = url.pathname;
-  if (p.startsWith("/api/") || p.startsWith("/ws") || p.startsWith("/v1/")) return;
+  if (p.startsWith("/api/") || p.startsWith("/ws") || p.startsWith("/v1/") || p.startsWith("/proxy/")) return;
 
   const timeout = req.mode === "navigate" ? NAV_TIMEOUT : RES_TIMEOUT;
   // Shell files must never be served stale from the browser's HTTP disk
