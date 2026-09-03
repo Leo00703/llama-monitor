@@ -194,6 +194,28 @@ To stay focused on the current work:
   `uvicorn.protocols.websockets.auto`, `uvicorn.protocols.websockets.wsproto_impl`,
   `uvicorn.protocols.websockets.websockets_impl`, `websockets`, `wsproto`,
   `six`, `pystray._win32`).
+- **Frozen startup bootstrap = retried native imports (#64)**: `tray.py` no
+  longer imports the native/third-party runtime at module level — `_load_stack()`
+  does, with 10 × 2 s retries, because the DLLs it imports live in the freshly
+  self-extracted `%TEMP%\_MEI*` folder and a real-time AV scan can lock or
+  quarantine them for seconds right after extraction (a top-level import then
+  died with a raw `DLL load failed ... _ctypes` traceback — a --noconsole
+  build has no console to show it in; the exact report in issue #64). The
+  bundle itself is complete: every CI exe ever shipped contains
+  `VCRUNTIME140.dll`/`VCRUNTIME140_1.dll`/`libffi-8.dll`/`ucrtbase.dll` +
+  `python312.dll`, all Authenticode-valid (Microsoft / Python Software
+  Foundation) — so "missing runtime DLL" in the bundle is not the cause,
+  AV interference with the extraction is. On persistent failure
+  `_bootstrap_failure()` (pure stdlib only — ctypes/PIL are the things that
+  broke) writes `llama-monitor-startup-error.log` next to the exe (dev: 
+  `startup-error.log` in the data dir) with the traceback + the DLLs actually
+  found in `_MEIPASS` + `_PYI_*` env, and shows a detached WinForms dialog via
+  `powershell` (skipped for `--smoke`). The message box must stay
+  powershell-based — never `ctypes.windll` there (ctypes may be the module
+  that failed). CI runs `dist\llama-monitor.exe --smoke` after the build
+  (frozen-only breakage the dev smoke can't catch); locally the fresh exe is
+  often blocked by Smart App Control (unsigned, by hash) — that's the machine,
+  not the build. `requirements-tray.txt` pins `pyinstaller>=6,<7`.
 - **PyInstaller ≥ 6.22 onefile relaunch = environment poisoning**: an onefile
   exe determines its process role *solely* from inherited env vars
   (`_PYI_ARCHIVE_FILE`, `_PYI_PARENT_PROCESS_LEVEL`, `_PYI_APPLICATION_HOME_DIR`).

@@ -216,6 +216,15 @@ the same process (uvicorn in a daemon thread) on the configured
 A single-instance mutex prevents duplicate panels; a log is written to
 `launcher.log` in the data directory.
 
+If the `.exe` fails at startup before the tray icon appears (e.g. an
+`ImportError` / `DLL load failed`), the launcher retries the native imports
+for a few seconds — antivirus often locks the freshly self-extracted
+`%TEMP%\_MEI*` files for a moment — and then, on a persistent failure, shows a
+dialog and writes a diagnostic log (`llama-monitor-startup-error.log` next to
+the exe, or `startup-error.log` in the data dir when run from source) listing
+the DLLs actually found in the bundle. Re-running the exe, adding an antivirus
+exclusion for the temp folder, or re-downloading the exe usually resolves it.
+
 ## Project layout
 
 ```
