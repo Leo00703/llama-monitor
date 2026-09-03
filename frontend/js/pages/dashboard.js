@@ -133,9 +133,7 @@ const Dashboard = {
       return;
     }
     const p = this.presets.find((x) => x.id === this.selectedId) || this.presets[0];
-    const runningChip = (this.runningId && p.id === this.runningId)
-      ? '<span class="chip chip-running">running</span>' : "";
-    pick.innerHTML = Presets.cardInner(p, chev, runningChip);
+    pick.innerHTML = Presets.cardInner(p, chev);
     list.innerHTML = this.presets.map((x) =>
       Presets.cardHtml(x, {
         trailing: x.id === this.selectedId ? check : "",

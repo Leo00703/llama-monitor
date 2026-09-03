@@ -241,12 +241,9 @@ const Presets = {
   /* info chips for a preset card (shared with the dashboard picker) */
   chipsFor(p) {
     const chips = [];
-    if (p.id === this.activeId) chips.push('<span class="chip chip-ok">active</span>');
     if (p.alias) chips.push(`<span class="chip">${UI.esc(p.alias)}</span>`);
     if (p.context_size) chips.push(`<span class="chip chip-params">${Number(p.context_size).toLocaleString()} ctx</span>`);
-    if (p.n_gpu_layers != null && p.n_gpu_layers !== "") chips.push(`<span class="chip chip-quant">${p.n_gpu_layers} ngl</span>`);
     if (p.spec_type && p.spec_type !== "none") chips.push(`<span class="chip chip-vision">${UI.esc(p.spec_type.replace(/,/g, ", "))}</span>`);
-    if (p.port) chips.push(`<span class="chip">port ${p.port}</span>`);
     return chips;
   },
 
