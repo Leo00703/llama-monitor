@@ -593,7 +593,25 @@ def run_tray(restarting: bool = False) -> int:
             _message_box("llama-monitor", "The previous instance did not release its lock in time.")
             return 1
     elif not acquire_single_instance():
-        _message_box("llama-monitor", "llama-monitor is already running (see system tray).")
+        # A live instance owns the mutex: open its dashboard instead of a
+        # popup (#82) — the browser focuses an already-open tab. The probe
+        # stays bounded: a frozen first launch can still be extracting
+        # under Defender, so wait at most ~10 s.
+        url = ""
+        try:
+            url = panel_url(load_config())
+        except RuntimeError:
+            pass
+        if url and wait_health(url, 10.0):
+            webbrowser.open(url)
+            return 0
+        if url:
+            _message_box(
+                "llama-monitor",
+                "llama-monitor is already starting up — try again in a moment.")
+        else:
+            _message_box("llama-monitor",
+                         "llama-monitor is already running (see system tray).")
         return 0
 
     try:
