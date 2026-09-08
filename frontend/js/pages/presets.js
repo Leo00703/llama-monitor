@@ -243,6 +243,13 @@ const Presets = {
     const chips = [];
     if (p.alias) chips.push(`<span class="chip">${UI.esc(p.alias)}</span>`);
     if (p.context_size) chips.push(`<span class="chip chip-params">${Number(p.context_size).toLocaleString()} ctx</span>`);
+    // KV cache quant chip (#80): one token when K/V match, K/V order when mixed
+    {
+      const ctk = p.cache_type_k || "f16";
+      const ctv = p.cache_type_v || "f16";
+      const kv = ctk === ctv ? `KV ${ctk}` : `KV ${ctk}/${ctv}`;
+      chips.push(`<span class="chip chip-params">${UI.esc(kv)}</span>`);
+    }
     if (p.spec_type && p.spec_type !== "none") {
       // suffix the draft-model type with its --spec-draft-n-max (#79);
       // ngram types are stateless and don't get a suffix

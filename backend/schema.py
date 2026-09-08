@@ -208,6 +208,9 @@ class Preset(BaseModel):
             # shown in the card's spec chip as a suffix on the draft type
             # (draft-mtp -> draft-mtp-3); ngram-only presets don't use it
             "draft_n_max": self.launch.spec.draft_n_max,
+            # shown as the card's KV chip (KV f16 / KV q8_0 / KV q8_0/f16)
+            "cache_type_k": self.launch.cache_type_k,
+            "cache_type_v": self.launch.cache_type_v,
             "port": self.launch.port,
             "updated_at": self.updated_at,
         }
