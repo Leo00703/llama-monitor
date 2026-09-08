@@ -214,8 +214,10 @@ the same process (uvicorn in a daemon thread) on the configured
 - **Run from source** — `python tray.py` (Windows only; `--smoke` runs the
   headless self-test used by CI).
 
-A single-instance mutex prevents duplicate panels; a log is written to
-`launcher.log` in the data directory.
+A single-instance mutex prevents duplicate panels: re-launching the exe
+while it is already running opens the running instance's dashboard in the
+default browser (if it is still starting up, it waits ~10 s, then says so). A
+log is written to `launcher.log` in the data directory.
 
 If the `.exe` fails at startup before the tray icon appears (e.g. an
 `ImportError` / `DLL load failed`), the launcher retries the native imports
