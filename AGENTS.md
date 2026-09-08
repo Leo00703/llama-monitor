@@ -29,7 +29,8 @@ llama-monitor: a lightweight web control panel for a local `llama-server`
   - `analytics.py` print_timing parser + SQLite request/energy history
   - `update.py` git self-update (fetch/ff-only pull of origin, version info)
   - `backend_update.py` llama.cpp build updater (release check, download,
-    verify, install/rollback, retention)
+    verify, install/rollback, retention; Windows CUDA runtime-DLL probe
+    + companion asset — see Gotchas #81)
 - `frontend/` — single-page vanilla app: `index.html`, `css/style.css`,
   `js/` (app shell + `pages/`), `fonts/` (bundled Geist Mono woff2),
   `manifest.webmanifest` + `sw.js` + `icons/icon-*.png` (PWA — network-first
@@ -292,6 +293,40 @@ To stay focused on the current work:
   with a prefix-match fallback; `suggest_variant()` reads the nvidia-smi
   driver major (≥580 → cuda-13.3, else cuda-12.4; no nvidia-smi → cpu) and
   only ever SUGGESTS — the user confirms.
+- **Windows CUDA builds need a SECOND asset (#81, verified against b10566)**:
+  the official Windows CUDA zip does NOT contain the proprietary NVIDIA
+  runtime DLLs (`cublas64_13.dll`, `cublasLt64_13.dll`, `cudart64_13.dll`
+  — separately licensed); they ship in a companion asset whose name
+  carries **NO build tag** (`cudart-llama-bin-win-cuda-13.3-x64.zip`,
+  `…-cuda-12.4-…` — the DLLs depend only on the CUDA major, so every
+  release attaches the same companion assets; ~370 MB zip, 488 MB
+  unpacked, flat layout). Without them `ggml-cuda.dll` fails to load
+  SILENTLY (release builds) and every inference runs on the CPU with no
+  error. The install flow (be_download, cuda variant + Windows only)
+  probes the freshly extracted build with `--list-devices` (60 s timeout
+  — AV scans the first launch of a fresh exe; a tight timeout would
+  misread that as "no GPU" and fetch 370 MB for nothing); only when no
+  non-CPU device appears it downloads + extracts the companion into the
+  build dir, records it in the manifest (`cuda_runtime`), and re-probes;
+  still no GPU → install fails with the missing-DLL list. The probe (not
+  DLL file existence) is the gate — a CUDA Toolkit on the PATH
+  legitimately satisfies the loader. `probe_gpu()` caches per (exe
+  realpath, mtime) for 60 s (`force` bypasses — the "Recheck" button).
+  Runtime detection: `LiveLogStats.gpu_offload` ("offloaded N/M layers to
+  GPU") + `.loaded_weights` ("loaded weights in") are SERVER-lifetime
+  flags — `reset()` is request-boundary, `invalidate()` is
+  server-boundary (stop/restart). The metrics loop sets
+  `gpu_offload_missing` (preset wants >0 gpu layers, panel-launched
+  server only — `manager.preset_id`) → the dashboard `#gpu-banner`
+  warns. `GET /api/backend/gpu?force=1` (Settings card: cross-references
+  the probe with nvidia-smi; `managed_dir` + `variant` when the exe is a
+  panel-managed build) and `POST /api/backend/repair` (companion-only
+  repair for pre-#81 installs — the main zip is NOT re-downloaded) round
+  it out. `main_gpu` out-of-range is a warn-only check in flags.py
+  (real GPU count from `prepare_launch` via `run_nvidia_smi`; nvidia-smi
+  absent → count 0 → check off). The Settings hint (`#be-gpu-hint`) is
+  variant-aware: cuda build + no GPU → DLLs/repair; non-cuda build on a
+  GPU machine → "download a CUDA build"; no nvidia-smi at all → generic.
 - **Headless Chrome** clamps window width to ~500px — set the viewport with
   CDP `Emulation.setDeviceMetricsOverride` per width (works with
   `--headless=new`; verify with `document.documentElement.scrollWidth <= w`).

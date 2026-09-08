@@ -106,7 +106,7 @@ line:
   and offers to restart the current preset. Every downloaded build stays on
   disk (retention: current + previous), so the same picker is also the
   rollback path; the latest nightly is always listed in the picker (even in stable mode), and the channel / variant selects apply live (no Save round-trip). Custom / PR-branch builds are detected from the
-  `--version` output and never touched — updates stay fully manual for them.
+  `--version` output and never touched — updates stay fully manual for them. Windows **CUDA** builds additionally fetch the proprietary NVIDIA runtime DLLs (cublas, cublasLt, cudart) from a separate release asset — but only if the freshly extracted build can't see the GPU (`llama-server --list-devices`; a CUDA Toolkit already on the PATH makes the ~370 MB extra unnecessary) — and installs made before that can fetch them afterwards with **Repair CUDA DLLs**. If a running server loads a model but never reports a GPU offload, the dashboard warns that inference is silently running on the CPU.
 
 ## Screenshots
 
