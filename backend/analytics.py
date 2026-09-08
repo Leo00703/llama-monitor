@@ -162,6 +162,12 @@ _N_GEN_RE = re.compile(
     r"task\s+(-?\d+)\s*\|\s*n_gen =\s*(\d+), tg =\s*([\d.]+) t/s"
     r"(?:,\s*tg_3s =\s*([\d.]+) t/s)?"
 )
+# Model-load lines (printed once, at startup). The offload line is the
+# positive signal for "the GPU backend actually loaded"; its ABSENCE after
+# weights loaded = CPU fallback (#81). Both are whitespace-tolerant (log
+# lines are space-padded, see gotchas).
+_OFFLOAD_RE = re.compile(r"offloaded\s+\d+\s*/\s*\d+\s+layers?\s+to GPU")
+_LOADED_WEIGHTS_RE = re.compile(r"loaded weights in")
 
 
 class LiveLogStats:
@@ -177,6 +183,10 @@ class LiveLogStats:
     def __init__(self) -> None:
         self.reset_count = 0
         self.reset()
+        # Startup flags (server-lifetime, NOT request-lifetime — see
+        # invalidate()): the lines are printed once, at model load.
+        self.gpu_offload = False    # "offloaded N/M layers to GPU"
+        self.loaded_weights = False  # "loaded weights in ... s"
 
     def reset(self) -> None:
         self.reset_count += 1
@@ -188,7 +198,20 @@ class LiveLogStats:
         self.gen_tokens: Optional[int] = None
         self.gen_ts: float = 0.0
 
+    def invalidate(self) -> None:
+        """Server boundary (stop/restart): full reset PLUS the startup
+        flags — they belong to one server process and must not survive
+        across restarts (a CPU-fallback line from a dead process would
+        poison the next one's GPU-offload check, #81)."""
+        self.reset()
+        self.gpu_offload = False
+        self.loaded_weights = False
+
     def feed(self, line: str) -> None:
+        if not self.gpu_offload and _OFFLOAD_RE.search(line):
+            self.gpu_offload = True
+        if not self.loaded_weights and _LOADED_WEIGHTS_RE.search(line):
+            self.loaded_weights = True
         m = _PROMPT_PROGRESS_RE.search(line)
         if m:
             self.task = int(m.group(1))

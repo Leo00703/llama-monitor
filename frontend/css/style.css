@@ -1365,6 +1365,10 @@ code {
 .banner-err  { border-color: rgba(255, 100, 103, 0.5);  background: rgba(255, 100, 103, 0.1);  color: #ff9a9c; }
 .banner-info { border-color: rgba(173, 70, 255, 0.45); background: rgba(173, 70, 255, 0.1); color: #c98fff; }
 
+/* GPU-offload sanity hint (Settings → llama.cpp backend card, #81): the
+   action row sits under the warn banner (its margin-bottom spaces it) */
+.be-gpu-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.14); border-radius: 6px; border: 2px solid transparent; background-clip: content-box; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.25); background-clip: content-box; }

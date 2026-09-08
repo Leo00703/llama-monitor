@@ -437,6 +437,22 @@ const Metrics = (() => {
       stateEl.classList.remove("slots-mismatch");
       if (draftCell) draftCell.hidden = true;
     }
+    // GPU-offload sanity (#81): the preset asks for GPU layers, the model
+    // finished loading, but the startup log never reported an offload — the
+    // build is running on the CPU (usually missing CUDA runtime DLLs on
+    // Windows). Only set for servers the panel started itself.
+    const gpuBanner = $("gpu-banner");
+    if (gpuBanner) {
+      if (data.gpu_offload_missing) {
+        if (!gpuBanner.childElementCount) {
+          UI.banner(gpuBanner, "warn", [
+            "GPU offload not active — the model loaded but the server never reported “offloaded … layers to GPU”, so inference is running on the CPU. On Windows the CUDA runtime DLLs (cublas, cublasLt, cudart) are usually missing from the build folder: see Settings → llama.cpp backend (Repair CUDA DLLs).",
+          ]);
+        }
+      } else if (gpuBanner.childElementCount) {
+        UI.clearBanner(gpuBanner);
+      }
+    }
     updateInference(inf);
   }
 

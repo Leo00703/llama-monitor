@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import shutil
 import threading
 import time
@@ -40,7 +41,7 @@ from .config import (
 )
 from . import backend_update
 from .flags import build_args, parse_help, validate_settings
-from .metrics import MetricsCollector
+from .metrics import MetricsCollector, run_nvidia_smi
 from .models import list_models
 from .process import LlamaServerManager, WS_INIT_LOG_LIMIT
 from .presets import PresetStore
@@ -155,8 +156,21 @@ async def _metrics_loop(collector: MetricsCollector, manager: LlamaServerManager
             # (needs a restart).
             pid = manager.preset_id or config.active_preset_id
             preset = store.get(pid) if pid else None
-            if preset is not None and preset.launch.slots > 0:
-                data["preset_slots"] = preset.launch.slots
+            if preset is not None:
+                if preset.launch.slots > 0:
+                    data["preset_slots"] = preset.launch.slots
+                # GPU-offload sanity check (#81): the preset asks for GPU
+                # layers, the model finished loading, but the startup log
+                # never reported an offload — the CUDA backend most likely
+                # failed to load (Windows: missing runtime DLLs) and every
+                # inference silently runs on the CPU. Only for servers the
+                # panel started itself (manager.preset_id): their logs are
+                # the ones we can parse.
+                if (manager.preset_id is not None
+                        and preset.launch.n_gpu_layers > 0
+                        and live_log.loaded_weights
+                        and not live_log.gpu_offload):
+                    data["gpu_offload_missing"] = True
         manager.broadcast({"type": "metrics", "data": data})
 
 
@@ -424,7 +438,12 @@ def create_app() -> FastAPI:
             return {"ok": False, "args": [], "warnings": [], "errors": [f"preset '{preset_id}' not found"]}
 
         models_root = config.model_root()
-        warnings, errors = validate_settings(preset.launch, gpu_count=0, models_root=models_root)
+        # GPU count for setting validation (tensor-split / main-gpu range).
+        # None = nvidia-smi absent → count 0 = "unknown", checks stay off.
+        gpus = await asyncio.to_thread(run_nvidia_smi)
+        gpu_count = len(gpus or [])
+        warnings, errors = validate_settings(preset.launch, gpu_count=gpu_count,
+                                             models_root=models_root)
         if errors:
             return {"ok": False, "args": [], "warnings": warnings, "errors": errors}
 
@@ -562,11 +581,20 @@ def create_app() -> FastAPI:
             async with httpx.AsyncClient(timeout=30, headers=headers,
                                          follow_redirects=True) as client:
                 asset = await backend_update.find_asset(client, tag, variant)
+                # Windows CUDA builds ship the proprietary NVIDIA runtime
+                # DLLs (cublas/cublasLt/cudart) in a SEPARATE asset — see
+                # the CUDA section below; None for other variants/platforms.
+                companion = await backend_update.find_companion_asset(
+                    client, tag, variant)
             if asset is None:
                 return fail(f"no {variant} build for {tag} on this platform")
-            # A6: free space for the zip + the extracted copy
+            # A6: free space for the zip(s) + the extracted copy/copies.
+            # The CUDA companion (zip + ~480 MB of extracted DLLs) is
+            # accounted for up front so the install can't fail halfway (#81).
             free = backend_update.free_bytes(storage)
             needed = (asset.get("size") or 0) * 2
+            if companion is not None:
+                needed += (companion.get("size") or 0) * 2
             if free is not None and free < needed:
                 return fail(
                     f"not enough free space in {storage}: need ~"
@@ -596,6 +624,66 @@ def create_app() -> FastAPI:
             # manifest is the managed artifact; keeping the ~100-200 MB zip
             # would accumulate one per version in the storage folder (#51)
             zip_path.unlink(missing_ok=True)
+            # --- Windows CUDA runtime DLLs (#81) -------------------------
+            # The official Windows CUDA zip does NOT contain the
+            # proprietary NVIDIA DLLs — without them ggml-cuda.dll fails
+            # to load SILENTLY (release builds) and every inference runs
+            # on the CPU. The --list-devices probe decides whether they
+            # are needed on THIS machine: a CUDA Toolkit on the PATH (or
+            # DLLs already in the folder) satisfies the loader, so the
+            # ~370 MB companion zip is fetched only when the GPU is
+            # genuinely invisible.
+            if variant.startswith("cuda") and os.name == "nt":
+                exe_path = build_dir / backend_update.server_exe_name()
+                # 60 s: a freshly extracted exe is often scanned by AV on
+                # first launch — a tight timeout would misread that as "no
+                # GPU" and trigger the 370 MB companion download for nothing
+                gpu = await backend_update.probe_gpu(
+                    str(exe_path), timeout=60.0)
+                if not gpu["gpu"] and companion is not None:
+                    czip = storage / companion["name"]
+                    cfree = backend_update.free_bytes(storage)
+                    cneed = (companion.get("size") or 0) * 2
+                    if cfree is not None and cfree < cneed:
+                        shutil.rmtree(build_dir, ignore_errors=True)
+                        return fail(
+                            f"not enough free space for the CUDA runtime "
+                            f"DLLs: need ~{cneed / 1048576:.0f} MB, have "
+                            f"{cfree / 1048576:.0f} MB")
+
+                    def progress_cuda(done: int, total: int) -> None:
+                        manager.broadcast({"type": "llama.update.progress",
+                                           "data": {
+                                               "tag": tag,
+                                               "stage": "cuda-runtime",
+                                               "done": done,
+                                               "total": total,
+                                               "percent": (
+                                                   round(done * 100 / total)
+                                                   if total else 0),
+                                           }})
+
+                    await backend_update.download_file(
+                        companion, czip, progress_cuda)
+                    backend_update.extract_archive(czip, build_dir)
+                    czip.unlink(missing_ok=True)
+                    backend_update.record_cuda_runtime(
+                        build_dir, companion["browser_download_url"],
+                        companion.get("size") or 0)
+                    gpu = await backend_update.probe_gpu(
+                        str(exe_path), force=True, timeout=60.0)
+                if not gpu["gpu"]:
+                    missing = backend_update.missing_cuda_dlls(build_dir)
+                    detail = (f" (missing in the build folder: "
+                              f"{', '.join(missing)})" if missing else "")
+                    shutil.rmtree(build_dir, ignore_errors=True)
+                    return fail(
+                        f"CUDA runtime not active after install{detail} — "
+                        "the server lists no GPU device (llama-server "
+                        "--list-devices). Check the NVIDIA driver "
+                        "(nvidia-smi) and the selected variant, then "
+                        "re-download; the DLLs may also be available via a "
+                        "CUDA Toolkit on the PATH")
             config.llama_backend.pending = LlamaBackendPending(
                 tag=tag, variant=variant, state="downloaded")
             save_config(config)
@@ -763,6 +851,150 @@ def create_app() -> FastAPI:
     async def backend_apply(body: dict[str, Any] | None = None) -> dict:
         return await be_apply(body or {})
 
+    @app.get("/api/backend/gpu")
+    async def backend_gpu(force: bool = False) -> dict:
+        """Does the configured llama-server see a GPU? Cross-references the
+        build's own `--list-devices` probe with nvidia-smi (Settings hint,
+        #81). `force` bypasses the 60 s probe cache ("Recheck")."""
+        exe = config.resolved_exe() or ""
+        probe = await backend_update.probe_gpu(exe, force=force)
+        gpus = await asyncio.to_thread(run_nvidia_smi)
+        nvidia = gpus is not None
+        # repair is only meaningful for panel-managed builds (manifest
+        # inside the storage folder) — the UI shows the button accordingly
+        managed_dir: Optional[str] = None
+        variant = ""
+        if exe:
+            storage = be_storage().resolve()
+            try:
+                folder = Path(exe).expanduser().resolve().parent
+                manifest = backend_update.read_manifest(folder)
+                if manifest:
+                    variant = manifest.get("variant") or ""
+                    folder.relative_to(storage)
+                    managed_dir = str(folder)
+            except (OSError, ValueError, RuntimeError):
+                pass
+        return {
+            "ok": True,
+            "exe": exe,
+            "probe": probe,
+            "nvidia_smi": {
+                "present": nvidia,
+                "count": len(gpus or []),
+                "names": [g.get("name") for g in (gpus or [])],
+            },
+            "managed_dir": managed_dir,
+            "variant": variant,
+        }
+
+    async def be_repair(body: dict) -> dict:
+        """Fetch the separate CUDA runtime DLLs into an existing Windows
+        CUDA build — for installs made before the companion download
+        existed (#81). The main build zip is NOT re-downloaded."""
+        nonlocal be_downloading
+        if be_downloading:
+            return {"ok": False, "error": "a download is already in progress"}
+        d = (body or {}).get("dir") or ""
+        if not d:
+            return {"ok": False, "error": "missing build dir"}
+        try:
+            build_dir = Path(d).expanduser().resolve()
+        except (OSError, RuntimeError):
+            return {"ok": False, "error": "invalid build dir"}
+        storage = be_storage().resolve()
+        try:
+            build_dir.relative_to(storage)
+        except ValueError:
+            return {"ok": False,
+                    "error": f"build dir is not inside the storage folder ({storage})"}
+        manifest = backend_update.read_manifest(build_dir)
+        if not manifest:
+            return {"ok": False,
+                    "error": "no panel manifest in that folder — it is not a panel-managed build"}
+        tag = manifest.get("tag") or ""
+        variant = manifest.get("variant") or ""
+        if not tag or not variant.startswith("cuda"):
+            return {"ok": False,
+                    "error": f"build {tag or '?'} is a '{variant or '?'}' build — the CUDA runtime DLLs don't apply"}
+        if os.name != "nt":
+            return {"ok": False,
+                    "error": "the split CUDA runtime asset only exists for Windows builds"}
+        exe = build_dir / backend_update.server_exe_name()
+        if not exe.exists():
+            return {"ok": False, "error": f"no {exe.name} in that build folder"}
+        be_downloading = True
+        czip: Optional[Path] = None
+        try:
+            headers = {"User-Agent": backend_update.USER_AGENT}
+            async with httpx.AsyncClient(timeout=30, headers=headers,
+                                         follow_redirects=True) as client:
+                gpu = await backend_update.probe_gpu(str(exe), force=True)
+                if gpu["gpu"]:
+                    return {"ok": True, "changed": False,
+                            "note": "the server already sees the GPU — nothing to repair"}
+                companion = await backend_update.find_companion_asset(
+                    client, tag, variant)
+                if companion is None:
+                    missing = backend_update.missing_cuda_dlls(build_dir)
+                    detail = (f" (missing in the build folder: "
+                              f"{', '.join(missing)})" if missing else "")
+                    return {"ok": False, "error": (
+                        f"no CUDA runtime asset found for {tag}{detail} — "
+                        "the DLLs may already ship inside the build; check "
+                        "the NVIDIA driver (nvidia-smi) and the variant")}
+                free = backend_update.free_bytes(storage)
+                need = (companion.get("size") or 0) * 2
+                if free is not None and free < need:
+                    return {"ok": False, "error": (
+                        f"not enough free space for the CUDA runtime DLLs: "
+                        f"need ~{need / 1048576:.0f} MB, have "
+                        f"{free / 1048576:.0f} MB")}
+                czip = storage / companion["name"]
+
+                def progress(done: int, total: int) -> None:
+                    manager.broadcast({"type": "llama.update.progress",
+                                       "data": {
+                                           "tag": tag,
+                                           "stage": "cuda-runtime",
+                                           "done": done,
+                                           "total": total,
+                                           "percent": (
+                                               round(done * 100 / total)
+                                               if total else 0),
+                                       }})
+
+                await backend_update.download_file(companion, czip, progress)
+            backend_update.extract_archive(czip, build_dir)
+            czip.unlink(missing_ok=True)
+            backend_update.record_cuda_runtime(
+                build_dir, companion["browser_download_url"],
+                companion.get("size") or 0)
+            gpu = await backend_update.probe_gpu(str(exe), force=True)
+        except (httpx.HTTPError, OSError, ValueError,
+                backend_update.UpdateError) as exc:
+            log.exception("CUDA runtime repair failed")
+            if czip is not None:
+                czip.unlink(missing_ok=True)
+            return {"ok": False, "error": str(exc)}
+        finally:
+            be_downloading = False
+        if gpu["gpu"]:
+            return {"ok": True, "changed": True,
+                    "note": "CUDA runtime DLLs installed — the server now sees: "
+                            + "; ".join(gpu["devices"][:2])}
+        missing = backend_update.missing_cuda_dlls(build_dir)
+        detail = (f" (missing in the build folder: {', '.join(missing)})"
+                  if missing else "")
+        return {"ok": False, "error": (
+            f"CUDA runtime installed but the server still sees no GPU{detail} — "
+            "check the NVIDIA driver (nvidia-smi) and the variant (driver "
+            "≥ 580 needs the CUDA 13.3 build)")}
+
+    @app.post("/api/backend/repair")
+    async def backend_repair(body: dict[str, Any] | None = None) -> dict:
+        return await be_repair(body or {})
+
     @app.post("/api/backend/config")
     async def backend_set_config(body: dict[str, Any]) -> dict:
         fields = LlamaBackendSettings.model_fields
@@ -814,7 +1046,7 @@ def create_app() -> FastAPI:
     async def server_stop() -> dict:
         result = await manager.stop()
         tracker.reset()
-        live_log.reset()
+        live_log.invalidate()
         return result
 
     @app.post("/api/server/restart")
@@ -830,7 +1062,7 @@ def create_app() -> FastAPI:
             response_extra = {}
         result = await manager.restart(args)
         tracker.reset()
-        live_log.reset()
+        live_log.invalidate()
         if result.get("ok"):
             manager.set_preset_id((body.preset_id if body and body.preset_id else None))
             proxy.invalidate_props_cache()

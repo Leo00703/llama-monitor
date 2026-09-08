@@ -162,6 +162,7 @@ const Backend = {
       dl.title = "";
     }
     this.renderPick();
+    this.checkGpu();  // GPU-offload sanity hint (#81) — cached probe server-side
   },
 
   when(iso) {
@@ -347,10 +348,15 @@ const Backend = {
   confirmDownload(tag, fromButton = false) {
     const d = this.data || {};
     const variant = (d.settings || {}).variant || "cpu";
+    // Windows CUDA builds carry the proprietary NVIDIA DLLs in a separate
+    // asset — fetched only when the build can't see the GPU (#81)
+    const cudaNote = variant.startsWith("cuda")
+      ? " If the build can't see the GPU, the separate CUDA runtime DLLs (~370 MB) are fetched too."
+      : "";
     this.openModal({
       kind: "confirm",
       title: `Download ${tag}?`,
-      status: `Downloads the ${variant} build for ${tag} into the storage folder. It is NOT installed automatically — you choose when to install it from "Update llama.cpp".`,
+      status: `Downloads the ${variant} build for ${tag} into the storage folder.${cudaNote} It is NOT installed automatically — you choose when to install it from "Update llama.cpp".`,
       okLabel: "Download",
       onDone: () => this.startDownload(tag, fromButton),
     });
@@ -477,6 +483,76 @@ const Backend = {
     }
   },
 
+  /* ----------------------------------------------- GPU check (issue #81) */
+
+  // Windows CUDA builds may be missing the proprietary CUDA runtime DLLs —
+  // the server then silently runs on the CPU. Cross-reference the build's
+  // own --list-devices probe with nvidia-smi and offer a repair.
+  async checkGpu(force = false) {
+    const el = document.getElementById("be-gpu-hint");
+    if (!el) return;
+    el.innerHTML = "";
+    el.classList.add("hidden");
+    let g;
+    try { g = await API.get(`/api/backend/gpu${force ? "?force=1" : ""}`); }
+    catch (_) { return; }
+    const probe = g.probe || {};
+    const nv = g.nvidia_smi || {};
+    const variant = g.variant || "";
+    if (!g.exe) return;                    // nothing configured — nothing to probe
+    if (probe.ok && probe.gpu) return;     // GPU visible — all good
+    let lines;
+    if (!probe.ok) {
+      lines = [probe.error ? `GPU probe failed: ${probe.error}` : "GPU probe failed"];
+    } else if (!nv.present) {
+      lines = ["This build sees no GPU (llama-server --list-devices finds none; nvidia-smi is not available either)."];
+    } else if (variant && !variant.startsWith("cuda")) {
+      lines = [`This build sees no GPU — it is a ${variant} build, so it cannot offload even though nvidia-smi detects ${nv.count} GPU(s) (${(nv.names || []).join(", ")}). For GPU acceleration download a CUDA build (the "Detect" button suggests the variant that matches the driver).`];
+    } else {
+      lines = [`This build sees no GPU — nvidia-smi detects ${nv.count} GPU(s) (${(nv.names || []).join(", ")}) but llama-server --list-devices finds none. On Windows the CUDA runtime DLLs (cublas, cublasLt, cudart) are usually missing from the build folder.`];
+    }
+    UI.banner(el, "warn", lines);
+    const row = document.createElement("div");
+    row.className = "be-gpu-actions";
+    if (probe.ok && !probe.gpu) {
+      if (g.managed_dir) {
+        const rep = document.createElement("button");
+        rep.type = "button";
+        rep.className = "btn";
+        rep.textContent = "Repair CUDA DLLs";
+        rep.title = "Downloads the official CUDA runtime DLLs into this build — the main build is NOT re-downloaded";
+        rep.addEventListener("click", () => this.repair(g.managed_dir, rep));
+        row.appendChild(rep);
+      }
+      const rc = document.createElement("button");
+      rc.type = "button";
+      rc.className = "btn";
+      rc.textContent = "Recheck";
+      rc.title = "Re-run the --list-devices probe (bypasses the 60 s cache)";
+      rc.addEventListener("click", () => this.checkGpu(true));
+      row.appendChild(rc);
+    }
+    el.appendChild(row);
+    el.classList.remove("hidden");
+  },
+
+  async repair(dir, btn) {
+    if (btn) { btn.disabled = true; btn.textContent = "Repairing…"; }
+    try {
+      const res = await API.post("/api/backend/repair", { dir }, 1800000);
+      if (res.ok) UI.toast(res.note || "repaired", "ok");
+      else UI.toast(res.error || "repair failed", "err");
+      this.refresh();
+    } catch (e) {
+      UI.toast(`repair failed: ${e}`, "err");
+    } finally {
+      if (btn && document.contains(btn)) {
+        btn.disabled = false;
+        btn.textContent = "Repair CUDA DLLs";
+      }
+    }
+  },
+
   /* ---------------------------------------------------------- websock */
 
   onWs(msg) {
@@ -486,11 +562,18 @@ const Backend = {
         this.refresh();
     } else if (msg.type === "llama.update.progress") {
       const p = msg.data || {};
-      if (this.modalKind !== "progress") return;
-      const el = document.getElementById("be-modal-status");
       const pct = p.percent != null ? ` · ${p.percent}%` : "";
       const mb = p.total ? `${(p.done / 1048576).toFixed(0)} / ${(p.total / 1048576).toFixed(0)} MB` : "";
-      el.textContent = `downloading ${p.tag || ""} ${mb}${pct}`;
+      const label = p.stage === "cuda-runtime" ? "CUDA runtime DLLs" : `${p.tag || ""}`;
+      const text = `downloading ${label} ${mb}${pct}`;
+      if (this.modalKind === "progress") {
+        const el = document.getElementById("be-modal-status");
+        if (el) el.textContent = text;
+      } else {
+        // e.g. the CUDA runtime repair (no modal) — surface it on the card
+        const st = document.getElementById("be-status");
+        if (st) st.textContent = text;
+      }
     } else if (msg.type === "llama.update.failed") {
       const f = msg.data || {};
       if (this.modalKind === "progress"

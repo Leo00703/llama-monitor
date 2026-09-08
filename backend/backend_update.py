@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import fnmatch
 import json
 import logging
 import os
@@ -142,6 +143,83 @@ async def run_version(exe: str) -> Optional[BuildInfo]:
             _prov_cache.clear()  # small TTL cache; bound it, never let it grow
         _prov_cache[key] = (time.monotonic(), info)
     return info
+
+
+# --list-devices output (common/arg.cpp common_print_available_devices):
+#   Available devices:
+#     CUDA0: NVIDIA GeForce RTX 5070 (8150 MiB, 7000 MiB free)
+# or, when no non-CPU backend loads:
+#   Available devices:
+#     (none)
+# With the CUDA runtime DLLs missing, ggml-cuda.dll fails to load SILENTLY
+# (release builds) and the list is empty — so this is the build-proof
+# functional check for a usable GPU (#81).
+_PROBE_TTL = 60.0
+_probe_cache: dict[tuple[str, float], tuple[float, dict]] = {}
+
+
+def parse_devices(text: str) -> list[str]:
+    """Non-CPU device lines from `--list-devices` output (empty = none)."""
+    devices: list[str] = []
+    in_list = False
+    for line in text.splitlines():
+        s = line.strip()
+        if s.startswith("Available devices"):
+            in_list = True
+            continue
+        if not in_list:
+            continue
+        if not s or s == "(none)":
+            continue
+        devices.append(s)
+    return devices
+
+
+async def probe_gpu(exe: str, timeout: float = 25.0, force: bool = False) -> dict:
+    """Run `<exe> --list-devices` and report whether the server sees any
+    non-CPU device.
+
+    Returns {ok, gpu, devices, error}. Cached per (exe, mtime) for
+    _PROBE_TTL seconds (GPU state changes on driver installs, which the
+    user can force-recheck from the UI)."""
+    res: dict[str, Any] = {"ok": False, "gpu": False, "devices": [], "error": ""}
+    if not exe or not Path(exe).exists():
+        res["error"] = "executable not found" if exe else "no executable configured"
+        return res
+    key = None
+    if not force:
+        try:
+            key = (os.path.realpath(exe), os.path.getmtime(exe))
+            hit = _probe_cache.get(key)
+            if hit is not None and time.monotonic() - hit[0] < _PROBE_TTL:
+                return dict(hit[1])
+        except OSError:
+            pass
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *spawn_argv(exe, "--list-devices"),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            **no_window_kwargs(),
+        )
+    except (OSError, ValueError):
+        res["error"] = "could not launch llama-server --list-devices"
+        return res
+    try:
+        out, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    except (asyncio.TimeoutError, OSError):
+        with contextlib.suppress(OSError):
+            proc.kill()
+        res["error"] = "llama-server --list-devices timed out"
+        return res
+    res["ok"] = True
+    res["devices"] = parse_devices(out.decode("utf-8", "replace"))
+    res["gpu"] = bool(res["devices"])
+    if key is not None:
+        if len(_probe_cache) >= 8:
+            _probe_cache.clear()
+        _probe_cache[key] = (time.monotonic(), res)
+    return res
 
 
 async def provenance(exe: str) -> dict[str, Any]:
@@ -285,6 +363,49 @@ async def find_asset(client: httpx.AsyncClient, tag: str, variant: str) -> Optio
     return None
 
 
+def companion_asset_name_for(variant: str) -> Optional[str]:
+    """The SEPARATE asset carrying the proprietary NVIDIA DLLs (cublas,
+    cublasLt, cudart) for Windows CUDA builds (release.yml "Copy and pack
+    Cuda runtime" step). NOTE: the name carries NO build tag — the DLLs
+    depend only on the CUDA major, not on the llama.cpp build, so every
+    release attaches the same companion assets (verified against b10566:
+    `cudart-llama-bin-win-cuda-13.3-x64.zip`, …-cuda-12.4-…). None when
+    the variant has no companion (non-cuda or posix)."""
+    if not variant.startswith("cuda") or os.name != "nt":
+        return None
+    suffix = VARIANTS.get(variant, {}).get(_platform_key())
+    if not suffix:
+        return None
+    return f"cudart-llama-bin-{suffix}"
+
+
+async def find_companion_asset(
+    client: httpx.AsyncClient, tag: str, variant: str
+) -> Optional[dict]:
+    """Asset dict for the CUDA runtime DLLs, or None.
+
+    None is valid and NOT an error: a future release may merge the DLLs
+    into the main zip (the probe stays the gate, so the install flow just
+    stops fetching the extra zip)."""
+    # EXACT name only: the runtime DLLs are CUDA-major-specific
+    # (cublas64_13.dll won't load into a cuda-12.4 build), so a fuzzy
+    # match could pair the wrong runtime with the build
+    want = companion_asset_name_for(variant)
+    if not want:
+        return None
+    try:
+        rel = (await client.get(f"{API_BASE}/releases/tags/{tag}")).json()
+    except httpx.HTTPError as exc:
+        log.warning("release lookup for %s failed: %s", tag, exc)
+        return None
+    if not isinstance(rel, dict) or rel.get("message"):
+        return None
+    for a in rel.get("assets") or []:
+        if a["name"] == want:
+            return a
+    return None
+
+
 # ----------------------------------------------------------------------
 # download / extract / verify
 # ----------------------------------------------------------------------
@@ -357,6 +478,18 @@ async def verify_build(build_dir: Path, expected_tag: str) -> dict[str, Any]:
     return {"ok": True, "info": info}
 
 
+def read_manifest(build_dir: Path) -> Optional[dict]:
+    """The panel manifest in a build dir, or None (not panel-managed / bad)."""
+    p = build_dir / MANIFEST_NAME
+    if not p.exists():
+        return None
+    try:
+        m = json.loads(p.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return m if isinstance(m, dict) else None
+
+
 def write_manifest(build_dir: Path, tag: str, variant: str,
                    url: str, size: int) -> None:
     manifest = {
@@ -368,6 +501,51 @@ def write_manifest(build_dir: Path, tag: str, variant: str,
     }
     (build_dir / MANIFEST_NAME).write_text(
         json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+
+# The Windows CUDA prebuilt does NOT contain the proprietary NVIDIA runtime
+# DLLs (they are separately licensed): they ship in the companion zip above.
+# Without them ggml-cuda.dll cannot load and — silently, in release builds —
+# the server falls back to CPU-only (#81). The globs tolerate the CUDA major
+# suffix (cublas64_12.dll vs cublas64_13.dll).
+CUDA_DLL_PATTERNS = ("cublas64*.dll", "cublasLt64*.dll", "cudart64*.dll")
+
+
+def missing_cuda_dlls(build_dir: Path) -> list[str]:
+    """The CUDA runtime DLL glob patterns still absent from the build folder
+    (empty when the folder is self-sufficient). Windows-only concern: posix
+    builds bundle everything into one archive."""
+    if os.name != "nt":
+        return []
+    try:
+        names = {p.name for p in build_dir.iterdir() if p.is_file()}
+    except OSError:
+        return list(CUDA_DLL_PATTERNS)
+    missing = []
+    for pat in CUDA_DLL_PATTERNS:
+        if not any(fnmatch.fnmatch(name, pat) for name in names):
+            missing.append(pat)
+    return missing
+
+
+def record_cuda_runtime(build_dir: Path, url: str, size_bytes: int) -> None:
+    """Record the installed companion CUDA-runtime asset in the panel
+    manifest (diagnostics + repair). No-op when the manifest does not
+    exist yet (the install flow writes it right before calling this)."""
+    p = build_dir / MANIFEST_NAME
+    try:
+        m = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    if not isinstance(m, dict):
+        return
+    m["cuda_runtime"] = {
+        "url": url,
+        "size_bytes": size_bytes,
+        "installed_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    with contextlib.suppress(OSError):
+        p.write_text(json.dumps(m, indent=2) + "\n", encoding="utf-8")
 
 
 def resolve_storage(config) -> Path:

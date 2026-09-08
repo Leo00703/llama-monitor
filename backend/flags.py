@@ -80,6 +80,13 @@ def validate_settings(
             f"tensor-split has {len(s.tensor_split)} values but {gpu_count} GPUs were detected"
         )
 
+    if gpu_count > 0 and s.main_gpu > 0 and s.main_gpu >= gpu_count:
+        warnings.append(
+            f"main-gpu {s.main_gpu} is out of range — only {gpu_count} GPU(s) "
+            f"were detected (valid indices: 0..{gpu_count - 1}); the server "
+            "will warn and ignore the flag"
+        )
+
     if s.split_mode == "tensor":
         warnings.append(
             "split-mode 'tensor' is incompatible with quantized KV cache"
