@@ -205,6 +205,9 @@ class Preset(BaseModel):
             "context_size": self.launch.context_size,
             "n_gpu_layers": self.launch.n_gpu_layers,
             "spec_type": self.launch.spec.spec_type,
+            # shown in the card's spec chip as a suffix on the draft type
+            # (draft-mtp -> draft-mtp-3); ngram-only presets don't use it
+            "draft_n_max": self.launch.spec.draft_n_max,
             "port": self.launch.port,
             "updated_at": self.updated_at,
         }

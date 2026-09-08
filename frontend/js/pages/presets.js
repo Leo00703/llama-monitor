@@ -243,7 +243,19 @@ const Presets = {
     const chips = [];
     if (p.alias) chips.push(`<span class="chip">${UI.esc(p.alias)}</span>`);
     if (p.context_size) chips.push(`<span class="chip chip-params">${Number(p.context_size).toLocaleString()} ctx</span>`);
-    if (p.spec_type && p.spec_type !== "none") chips.push(`<span class="chip chip-vision">${UI.esc(p.spec_type.replace(/,/g, ", "))}</span>`);
+    if (p.spec_type && p.spec_type !== "none") {
+      // suffix the draft-model type with its --spec-draft-n-max (#79);
+      // ngram types are stateless and don't get a suffix
+      const label = p.spec_type
+        .split(",")
+        .map((t) => {
+          const s = t.trim();
+          return s && !s.startsWith("ngram-") && p.draft_n_max != null ? `${s}-${p.draft_n_max}` : s;
+        })
+        .filter(Boolean)
+        .join(", ");
+      chips.push(`<span class="chip chip-vision">${UI.esc(label)}</span>`);
+    }
     return chips;
   },
 
