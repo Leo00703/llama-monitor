@@ -265,6 +265,24 @@ To stay focused on the current work:
   generated bootstrap ps1 repeats both before `Start-Process` as
   defense-in-depth). Do NOT "fix" by pinning PyInstaller: the validation is
   legitimate, the inherited role vars are the bug.
+- **Agent sessions and the tracked exe make git operations non-obvious**:
+  (a) in a non-TTY agent shell the default credential helper starts an
+  interactive device-code flow and the push dies (`could not read Username for
+  'https://github.com'`) — push with
+  `git -c credential.helper= -c credential.helper='!f() { echo "username=<account>"; echo "password=$(gh auth token)"; }; f' push origin main`.
+  (b) every push triggers `build-exe.yml`, so the CI bot commit `Build: refresh
+  bundled tray exe` is normally sitting on `main` when you go to push — rebase
+  onto it, never `--force` it away. (c) if the tray app is running **from the
+  repo-root `llama-monitor.exe`**, a `git pull --rebase` that has to update that
+  file dies with `unable to unlink old 'llama-monitor.exe': Invalid argument`
+  (Windows keeps the running image mapped) and leaves the working tree reverted
+  to the pre-pull content — `git checkout -- <your files>` first. Windows does
+  allow a RENAME of the mapped exe, so the unattended path is: `mv
+  llama-monitor.exe .old.exe` → `git checkout -- llama-monitor.exe` → `git pull
+  --rebase` (git can now write the new blob) → push → `rm .old.exe` (works while
+  the process holds it share-delete; if it fails the stray copy is untracked —
+  there is no `*.exe` ignore rule — so delete it after quitting the tray).
+  Quitting the tray first is the simpler path.
 - **Unsigned exes**: Smart App Control (enforce mode) blocks freshly built exes
   by hash; SmartScreen warns on any unsigned exe. Known environment caveat,
   not a code bug.
