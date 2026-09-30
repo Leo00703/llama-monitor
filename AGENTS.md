@@ -74,6 +74,9 @@ manual/ad-hoc (see Verification below).
   repo with legacy data next to `llama-monitor.exe` migrates on first
   start.
 - `config.example.json` is the source of truth for config keys.
+- **Config values shown publicly are placeholders.** `config.example.json`,
+  README examples and docs never contain a real path/host from a working
+  machine (see Privacy below).
 - The panel only manages `llama-server` processes it started itself. A
   `llama-server` already running is treated as **external**: at startup
   `_find_external_server()` (process scan by name, port from its `--port`
@@ -82,6 +85,31 @@ manual/ad-hoc (see Verification below).
   instead of failing (ok:true, state external); `stop()` kills the owner of
   `current_port()` (#68).
 
+## Privacy — never commit user-identifying data
+
+Nothing that identifies the maintainer, a user, a machine, or a network may
+enter the repo **or** GitHub — not code, comments, docs, commit messages,
+issue/PR bodies, comments, screenshots, or logs. Agents are held to this the
+most strictly: they are the ones pasting log excerpts and writing issue text.
+
+- Never write a real local path (`C:\Users\<name>\…`, `/home/<name>/…`,
+  `/Users/<name>/…` — the username is the leak), hostname, tailscale name or
+  `*.ts.net` address, LAN IP, machine serial, token/API key, or private-key
+  content. Use placeholders instead: `C:/llama/llama-server.exe`,
+  `C:/models`, `%APPDATA%\llama-monitor`, `<your-host>`.
+- **Log excerpts**: trim to the failing lines and scrub paths, hosts and any
+  prompt text — the `[panel] starting: …` line contains the whole launch
+  command including model paths.
+- **Screenshots** (`docs/`, issues, README): check every visible path, model
+  folder, host and address before publishing — the Settings page shows the
+  data dir and the exe path, the model browser shows real folder names, the
+  log pane shows full commands.
+- **Editing a GitHub body or comment is not deleting it** — GitHub keeps
+  revisions. A genuine secret (key, token) means the item is deleted, not
+  redacted; a personal path is redacted for consistency.
+- Re-scan what was written (issue text + commit message) before closing an
+  item.
+
 ## Git workflow
 
 - Branch `main`. Commit style: `Fix: <short imperative subject>` /
@@ -89,7 +117,8 @@ manual/ad-hoc (see Verification below).
 - One commit per fix; **push after every fix**. Docs updates are separate
   commits, never mixed with code changes.
 - Never commit: `TODO.md`, `config.json`, `data/`, `*.log`, `build/`, `dist/`,
-  `*.spec`, `.venv/`.
+  `*.spec`, `.venv/` — and never commit user-identifying data (real paths,
+  hosts, keys), see **Privacy** above.
 - **Keep `README.md` current**: it describes the product (feature bullets,
   config keys, project layout, commands, tray exe). Re-check it and fix stale
   spots — in a separate `Docs:` commit — whenever a change alters what it

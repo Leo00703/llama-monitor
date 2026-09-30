@@ -304,7 +304,7 @@ A triage-ready report has all of these:
 | llama-server build | Topbar version label, or `llama-server --version` (e.g. `b10621`) |
 | OS | Windows 11 / Ubuntu 24.04 / … |
 | Steps to reproduce | Exact clicks and settings; naming the preset (or listing its fields) is ideal |
-| Log excerpt | Copy from the panel log pane — the `[panel] starting: …` line already contains the full launch command; trim to the failure, no secrets |
+| Log excerpt | Copy from the panel log pane — the `[panel] starting: …` line already contains the full launch command; trim to the failure and scrub secrets, personal paths and hostnames (see `AGENTS.md` → Privacy) |
 | Expected vs actual | One sentence each |
 
 ### Feature requests

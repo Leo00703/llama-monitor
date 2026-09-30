@@ -18,6 +18,9 @@ and what you saw:
 - [ ] **Live E2E**: panel started, API exercised, a real generation run
       (when the request path is touched)
 - [ ] `python tray.py --smoke` (when the frozen build / tray is touched)
+- [ ] **Privacy**: no user-identifying data added anywhere — real local paths
+      (`C:\Users\<name>\…`), hostnames/IPs/tailscale names, keys or tokens, in
+      code, docs, commit message or screenshots (AGENTS.md → Privacy)
 
 Please read [AGENTS.md](../main/AGENTS.md) before contributing — it is the
 source of truth for layout, commands, conventions, and hard-won gotchas.

@@ -229,9 +229,12 @@ Costruisci per fasi incrementali, ognuna testabile prima di passare alla success
 
 ## Appendice: comando llama-server attualmente in uso (riferimento)
 
+> I percorsi sono anonimizzati: `C:\models\…` sta per la cartella modelli reale
+> (vedi AGENTS.md → Privacy).
+
 ```
 llama-server ^
-  -m "C:\Users\leoga\.lmstudio\models\unsloth\Qwen3.8-27B-GGUF\Qwen3.8-27B-Q4_K_S.gguf" ^
+  -m "C:\models\unsloth\Qwen3.8-27B-GGUF\Qwen3.8-27B-Q4_K_S.gguf" ^
   -a "Qwen3.8 27B Q4_K_S" ^
   -c 100000 ^
   -ngl 99 ^
