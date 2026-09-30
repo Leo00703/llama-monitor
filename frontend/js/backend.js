@@ -108,11 +108,36 @@ const Backend = {
       : (remote.pinned_nightly || null);
   },
 
+  /* -------------------------------------------- variant picker (#85) */
+
+  // The variant list is whatever the target release actually ships for this
+  // machine (platform + CPU arch), not a hard-coded table: llama.cpp renames
+  // variants (cuda-13.3 → 13.4) and adds lines (macOS, arm64, Linux CUDA).
+  renderVariants() {
+    const sel = document.getElementById("be-variant");
+    if (!sel) return;
+    const d = this.data || {};
+    const list = (d.variants || []).map((v) => ({ variant: v.variant, label: v.label || v.variant }));
+    const stored = (d.settings || {}).variant || "";
+    if (!list.length) return;   // no release data (offline) — keep the fallback options
+    if (stored && !list.some((v) => v.variant === stored)) {
+      list.push({ variant: stored, label: `${stored} — not in the latest build` });
+    }
+    // the stored config is authoritative: the select must show what the
+    // backend actually has (a user change goes through setLlamaField, which
+    // updates the stored value before the next render)
+    const want = list.some((v) => v.variant === stored) ? stored : list[0].variant;
+    sel.innerHTML = list.map((v) =>
+      `<option value="${UI.esc(v.variant)}"${v.variant === want ? " selected" : ""}>${UI.esc(v.label)}</option>`).join("");
+    sel.value = want;   // explicit: re-rendering must not depend on the browser
+  },
+
   /* ----------------------------------------------------------- render */
 
   render() {
     const d = this.data;
     if (!d) return;
+    this.renderVariants();
     const cur = d.current || {};
     const curEl = document.getElementById("be-current");
     let curHtml;
@@ -358,10 +383,10 @@ const Backend = {
   confirmDownload(tag, fromButton = false) {
     const d = this.data || {};
     const variant = (d.settings || {}).variant || "cpu";
-    // Windows CUDA builds carry the proprietary NVIDIA DLLs in a separate
-    // asset — fetched only when the build can't see the GPU (#81)
+    // CUDA builds carry the NVIDIA runtime libraries in a separate asset
+    // (Windows and Linux) — fetched only when the build can't see the GPU (#81)
     const cudaNote = variant.startsWith("cuda")
-      ? " If the build can't see the GPU, the separate CUDA runtime DLLs (~370 MB) are fetched too."
+      ? " If the build can't see the GPU, the separate CUDA runtime libraries (~370 MB) are fetched too."
       : "";
     this.openModal({
       kind: "confirm",
@@ -503,13 +528,18 @@ const Backend = {
   async detect() {
     try {
       const res = await API.get("/api/backend/suggest");
-      if (res.ok) {
-        const sel = document.getElementById("be-variant");
-        if ([...sel.options].some((o) => o.value === res.variant)) {
-          sel.value = res.variant;
-          UI.toast(`suggested: ${res.variant} — ${res.reason}`, "ok");
-        }
+      if (!res.ok) { UI.toast(res.error || "detect failed", "err"); return; }
+      const sel = document.getElementById("be-variant");
+      if (!res.variant) { UI.toast(`detect: ${res.reason}`, "warn"); return; }
+      if (![...sel.options].some((o) => o.value === res.variant)) {
+        // the suggestion is valid but not listed yet — add it, don't drop it
+        const o = document.createElement("option");
+        o.value = res.variant; o.textContent = res.variant;
+        sel.appendChild(o);
       }
+      sel.value = res.variant;
+      this.setLlamaField("variant", res.variant);
+      UI.toast(`suggested: ${res.variant} — ${res.reason}`, "ok");
     } catch (e) {
       UI.toast(`detect failed: ${e}`, "err");
     }
@@ -517,9 +547,9 @@ const Backend = {
 
   /* ----------------------------------------------- GPU check (issue #81) */
 
-  // Windows CUDA builds may be missing the proprietary CUDA runtime DLLs —
-  // the server then silently runs on the CPU. Cross-reference the build's
-  // own --list-devices probe with nvidia-smi and offer a repair.
+  // CUDA builds may be missing the NVIDIA runtime libraries — the server then
+  // silently runs on the CPU. Cross-reference the build's own --list-devices
+  // probe with nvidia-smi and offer a repair.
   async checkGpu(force = false) {
     const el = document.getElementById("be-gpu-hint");
     if (!el) return;
@@ -541,7 +571,7 @@ const Backend = {
     } else if (variant && !variant.startsWith("cuda")) {
       lines = [`This build sees no GPU — it is a ${variant} build, so it cannot offload even though nvidia-smi detects ${nv.count} GPU(s) (${(nv.names || []).join(", ")}). For GPU acceleration download a CUDA build (the "Detect" button suggests the variant that matches the driver).`];
     } else {
-      lines = [`This build sees no GPU — nvidia-smi detects ${nv.count} GPU(s) (${(nv.names || []).join(", ")}) but llama-server --list-devices finds none. On Windows the CUDA runtime DLLs (cublas, cublasLt, cudart) are usually missing from the build folder.`];
+      lines = [`This build sees no GPU — nvidia-smi detects ${nv.count} GPU(s) (${(nv.names || []).join(", ")}) but llama-server --list-devices finds none. The CUDA runtime libraries (cublas, cublasLt, cudart) are usually missing from the build folder.`];
     }
     UI.banner(el, "warn", lines);
     const row = document.createElement("div");

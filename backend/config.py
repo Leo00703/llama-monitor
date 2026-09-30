@@ -195,7 +195,8 @@ class LlamaBackendSettings(BaseModel):
 
     channel: str = "stable"     # stable (pinned nightly) | nightly
     auto_download: bool = False
-    variant: str = "cpu"        # cpu | vulkan | cuda-12.4 | cuda-13.3
+    variant: str = "cpu"        # open set, discovered from the release:
+                                # cpu | vulkan | cuda-<ver> | rocm-… | sycl-…
     storage_dir: str = ""       # "" = sibling of the current build folder
     last_check: str = ""        # local ISO timestamp of the last check
     pending: Optional[LlamaBackendPending] = None

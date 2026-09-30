@@ -528,6 +528,18 @@ def create_app() -> FastAPI:
         if not target:
             res["error"] = "could not determine the latest build — try again later"
             return res
+        # Seed the target release's asset list so the Settings variant picker
+        # can show what this build actually ships for this machine (#85). One
+        # extra GitHub call per check (≤ 2/day + manual): /api/backend/versions
+        # then answers from the cache with no network at all.
+        try:
+            headers = {"User-Agent": backend_update.USER_AGENT}
+            async with httpx.AsyncClient(timeout=30, headers=headers,
+                                         follow_redirects=True) as client:
+                await backend_update.release_assets(client, target)
+        except httpx.HTTPError:
+            pass
+        res["variants"] = backend_update.cached_variants(target)
         if not current["official"]:
             return res
         if target == current["tag"]:
@@ -602,13 +614,18 @@ def create_app() -> FastAPI:
             async with httpx.AsyncClient(timeout=30, headers=headers,
                                          follow_redirects=True) as client:
                 asset = await backend_update.find_asset(client, tag, variant)
-                # Windows CUDA builds ship the proprietary NVIDIA runtime
-                # DLLs (cublas/cublasLt/cudart) in a SEPARATE asset — see
-                # the CUDA section below; None for other variants/platforms.
+                # CUDA builds ship the NVIDIA runtime libraries (cublas/
+                # cublasLt/cudart) in a SEPARATE asset on Windows AND Linux —
+                # see the CUDA section below; None for other variants/platforms.
                 companion = await backend_update.find_companion_asset(
                     client, tag, variant)
             if asset is None:
-                return fail(f"no {variant} build for {tag} on this platform")
+                # actionable, not a dead end: name the variants this release
+                # really ships for this machine (#85)
+                avail = ", ".join(v["variant"]
+                                  for v in backend_update.cached_variants(tag))
+                return fail(f"no {variant} build for {tag} on this machine"
+                            + (f" — this release ships: {avail}" if avail else ""))
             # A6: free space for the zip(s) + the extracted copy/copies.
             # The CUDA companion (zip + ~480 MB of extracted DLLs) is
             # accounted for up front so the install can't fail halfway (#81).
@@ -645,16 +662,16 @@ def create_app() -> FastAPI:
             # manifest is the managed artifact; keeping the ~100-200 MB zip
             # would accumulate one per version in the storage folder (#51)
             zip_path.unlink(missing_ok=True)
-            # --- Windows CUDA runtime DLLs (#81) -------------------------
-            # The official Windows CUDA zip does NOT contain the
-            # proprietary NVIDIA DLLs — without them ggml-cuda.dll fails
+            # --- CUDA runtime libraries (#81, #85) -------------------------
+            # The official CUDA archive does NOT contain the proprietary
+            # NVIDIA runtime libraries — without them the CUDA backend fails
             # to load SILENTLY (release builds) and every inference runs
             # on the CPU. The --list-devices probe decides whether they
             # are needed on THIS machine: a CUDA Toolkit on the PATH (or
-            # DLLs already in the folder) satisfies the loader, so the
-            # ~370 MB companion zip is fetched only when the GPU is
+            # the libs already in the folder) satisfies the loader, so the
+            # ~370 MB companion asset is fetched only when the GPU is
             # genuinely invisible.
-            if variant.startswith("cuda") and os.name == "nt":
+            if backend_update.companion_supported(variant):
                 exe_path = build_dir / backend_update.server_exe_name()
                 # 60 s: a freshly extracted exe is often scanned by AV on
                 # first launch — a tight timeout would misread that as "no
@@ -820,7 +837,13 @@ def create_app() -> FastAPI:
 
     @app.get("/api/backend/suggest")
     async def backend_suggest() -> dict:
-        return {"ok": True, **backend_update.suggest_variant()}
+        # the suggestion is release-aware (#85): which CUDA line does the
+        # target build actually ship, and can this driver run it?
+        try:
+            tag = be_target_tag(await backend_update.fetch_releases(stale_ok=True))
+        except (httpx.HTTPError, OSError, ValueError):
+            tag = None
+        return {"ok": True, **(await backend_update.suggest_variant(tag))}
 
     @app.get("/api/backend/versions")
     async def backend_versions() -> dict:
@@ -843,6 +866,10 @@ def create_app() -> FastAPI:
             "local": backend_update.local_builds(storage),
             "settings": config.llama_backend.model_dump(),
             "downloading": be_downloading,
+            # what the target build ships for THIS machine (cache only, no
+            # network) — feeds the Settings variant picker (#85)
+            "variants": backend_update.cached_variants(
+                be_target_tag(remote) if remote else ""),
         }
 
     @app.post("/api/backend/check")
@@ -937,9 +964,10 @@ def create_app() -> FastAPI:
         if not tag or not variant.startswith("cuda"):
             return {"ok": False,
                     "error": f"build {tag or '?'} is a '{variant or '?'}' build — the CUDA runtime DLLs don't apply"}
-        if os.name != "nt":
-            return {"ok": False,
-                    "error": "the split CUDA runtime asset only exists for Windows builds"}
+        if not backend_update.companion_supported(variant):
+            return {"ok": False, "error": (
+                f"build {tag or '?'} is a '{variant or '?'}' build on this "
+                "platform — there is no separate CUDA runtime asset to fetch")}
         exe = build_dir / backend_update.server_exe_name()
         if not exe.exists():
             return {"ok": False, "error": f"no {exe.name} in that build folder"}
@@ -1025,7 +1053,7 @@ def create_app() -> FastAPI:
             return {"ok": False, "error": str(exc)}
         if new.channel not in ("stable", "nightly"):
             return {"ok": False, "error": "channel must be 'stable' or 'nightly'"}
-        if new.variant not in backend_update.VARIANTS:
+        if not backend_update.is_valid_variant(new.variant):
             return {"ok": False, "error": f"unknown variant '{new.variant}'"}
         config.llama_backend = new
         save_config(config)

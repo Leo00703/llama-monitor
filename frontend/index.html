@@ -596,10 +596,10 @@ setTimeout(function () {
             <div class="field"><label class="field-label" for="be-variant">Build variant</label>
               <div class="be-variant-row">
                 <select id="be-variant">
+                  <!-- fallback only: the list is replaced with what the target
+                       llama.cpp build actually ships for this machine (#85) -->
                   <option value="cpu">CPU</option>
                   <option value="vulkan">Vulkan</option>
-                  <option value="cuda-12.4">CUDA 12.4 (Windows)</option>
-                  <option value="cuda-13.3">CUDA 13.3 (Windows)</option>
                 </select>
                 <button type="button" id="be-detect" class="btn" title="Suggest a variant from the installed GPU driver — you make the final call">Detect</button>
               </div>

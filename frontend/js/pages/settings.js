@@ -72,7 +72,17 @@ const Settings = {
         pending: lb.pending || null,
       };
       document.getElementById("be-channel").value = this.llamaBackend.channel;
-      document.getElementById("be-variant").value = this.llamaBackend.variant;
+      // the variant select is filled by Backend.renderVariants() from the
+      // target release's assets; make sure the stored value is selectable
+      // even when that release no longer ships it (#85)
+      const vSel = document.getElementById("be-variant");
+      if (![...vSel.options].some((o) => o.value === this.llamaBackend.variant)) {
+        const o = document.createElement("option");
+        o.value = this.llamaBackend.variant;
+        o.textContent = `${this.llamaBackend.variant} — not in the latest build`;
+        vSel.appendChild(o);
+      }
+      vSel.value = this.llamaBackend.variant;
       document.getElementById("be-storage").value = this.llamaBackend.storage_dir;
       document.getElementById("be-autodl").checked = this.llamaBackend.auto_download;
     } catch (e) {
