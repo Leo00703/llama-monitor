@@ -28,9 +28,9 @@ llama-monitor: a lightweight web control panel for a local `llama-server`
   - `proxy.py` `/v1/chat/completions` & `/completion` proxy with settings injection
   - `analytics.py` print_timing parser + SQLite request/energy history
   - `update.py` git self-update (fetch/ff-only pull of origin, version info)
-  - `backend_update.py` llama.cpp build updater (release check, download,
-    verify, install/rollback, retention; Windows CUDA runtime-DLL probe
-    + companion asset — see Gotchas #81)
+  - `backend_update.py` llama.cpp build updater (release check, release-asset
+    discovery, download, verify, install/rollback, retention; CUDA
+    runtime companion-asset probe — see Gotchas #81, #85)
 - `frontend/` — single-page vanilla app: `index.html`, `css/style.css`,
   `js/` (app shell + `pages/`), `fonts/` (bundled Geist Mono woff2),
   `manifest.webmanifest` + `sw.js` + `icons/icon-*.png` (PWA — network-first
@@ -334,29 +334,57 @@ To stay focused on the current work:
   `llama_server_exe`). Retention keeps current + previous MANAGED builds
   (identified by the `llama-monitor.json` manifest); folders without a
   manifest are never deleted. `be_apply` captures `manager.preset_id`
-  BEFORE `manager.stop()` (stop clears it). Asset naming is deterministic
-  (`llama-b{N}-bin-win-cpu-x64.zip`, `…-vulkan-x64.zip`,
-  `…-cuda{ver}-x64.zip`; Linux: `ubuntu-x64.tar.gz` without a "cpu" segment)
-  with a prefix-match fallback; `suggest_variant()` reads the nvidia-smi
-  driver major (≥580 → cuda-13.3, else cuda-12.4; no nvidia-smi → cpu) and
-  only ever SUGGESTS — the user confirms.
-- **Windows CUDA builds need a SECOND asset (#81, verified against b10566)**:
-  the official Windows CUDA zip does NOT contain the proprietary NVIDIA
-  runtime DLLs (`cublas64_13.dll`, `cublasLt64_13.dll`, `cudart64_13.dll`
-  — separately licensed); they ship in a companion asset whose name
-  carries **NO build tag** (`cudart-llama-bin-win-cuda-13.3-x64.zip`,
-  `…-cuda-12.4-…` — the DLLs depend only on the CUDA major, so every
-  release attaches the same companion assets; ~370 MB zip, 488 MB
-  unpacked, flat layout). Without them `ggml-cuda.dll` fails to load
-  SILENTLY (release builds) and every inference runs on the CPU with no
-  error. The install flow (be_download, cuda variant + Windows only)
+  BEFORE `manager.stop()` (stop clears it).
+- **Release assets are DISCOVERED, never declared (#85, verified against
+  b11304)**: there is NO variant table. `parse_build_asset()` parses
+  `llama-<tag>-bin-<platform>[-<backend>[-<version>]][-<arch>].<zip|tar.gz>`
+  (the arch token position is NOT fixed: `win-cpu-x64` vs
+  `linux-arm64-snapdragon`; non-`-bin-` assets like `llama-ui.tar.gz` and
+  `…-xcframework.zip` never match), `local_platform()` (win|linux|macos) +
+  `local_arch()` pick this machine's line, and `variants_available()` /
+  `cached_variants()` put the list into `/api/backend/versions` and
+  `/api/backend/check` as `variants` — the Settings variant `<select>` is
+  built from that (index.html keeps only a cpu/vulkan fallback). Reason:
+  llama.cpp renames variants (win-cuda-13.3 → 13.4, 2026-09) and adds whole
+  lines (macos-arm64, win-arm64, ubuntu-cuda-*) — the old hard-coded table
+  broke the updater on someone else's release day and made macOS download a
+  Linux x86_64 tarball. Asset lists cache per tag (`_assets_cache`, 15 min)
+  and are seeded free by the releases-LIST call; the stable channel's pinned
+  nightly (v0.5.0 → b11146) is OLDER than that list, so it is fetched once
+  per release-cache refresh — without that the picker is empty for the
+  DEFAULT channel. `variant` is an OPEN set (`is_valid_variant()` is a shape
+  check only): `cpu | vulkan | cuda-<ver> | rocm-<ver> | openvino-<ver> |
+  sycl[-fp16|fp32] | …`. A stored variant the target release no longer
+  ships stays selectable (labelled "not in the latest build") — never
+  silently rewritten. `suggest_variant(tag)`: nvidia-smi driver major → CUDA
+  major ceiling (≥580 → 13, ≥525 → 12; NVIDIA minor-version compatibility
+  means only the MAJOR is compared) → the highest CUDA line the TARGET
+  RELEASE actually ships; no nvidia-smi → cpu; macOS → cpu (the macos
+  archive IS the Metal build, there is no separate Metal prebuilt).
+  `pick_suggested_variant()` is pure so it can be tested against a synthetic
+  asset list. Detect applies AND persists the suggestion (still user-editable).
+- **CUDA builds need a SECOND asset (#81 verified against b10566, #85
+  against b11304)**: the official CUDA archive does NOT contain the
+  proprietary NVIDIA runtime libraries (`cublas64_13.dll`,
+  `cublasLt64_13.dll`, `cudart64_13.dll`; Linux `libcublas.so*`,
+  `libcublasLt.so*`, `libcudart.so*` — separately licensed); they ship in a
+  companion asset. The Windows name carries **NO build tag**
+  (`cudart-llama-bin-win-cuda-13.4-x64.zip`, `…-cuda-12.4-…` — the libs
+  depend only on the CUDA major, so every release attaches the same
+  companions), the Linux one **carries the build tag**
+  (`cudart-llama-b11304-bin-ubuntu-cuda-13.4-x64.tar.gz`) and must match the
+  build exactly. `companion_supported()` = cuda variant on win|linux (macOS
+  has no CUDA line). ~370 MB, flat layout. Without them the CUDA backend
+  fails to load SILENTLY (release builds) and every inference runs on the
+  CPU with no error. The install flow (be_download, any cuda variant on
+  win/linux)
   probes the freshly extracted build with `--list-devices` (60 s timeout
   — AV scans the first launch of a fresh exe; a tight timeout would
   misread that as "no GPU" and fetch 370 MB for nothing); only when no
   non-CPU device appears it downloads + extracts the companion into the
   build dir, records it in the manifest (`cuda_runtime`), and re-probes;
-  still no GPU → install fails with the missing-DLL list. The probe (not
-  DLL file existence) is the gate — a CUDA Toolkit on the PATH
+  still no GPU → install fails with the missing-library list. The probe (not
+  library file existence) is the gate — a CUDA Toolkit on the PATH
   legitimately satisfies the loader. `probe_gpu()` caches per (exe
   realpath, mtime) for 60 s (`force` bypasses — the "Recheck" button).
   Runtime detection: `LiveLogStats.gpu_offload` ("offloaded N/M layers to

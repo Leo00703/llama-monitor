@@ -105,8 +105,8 @@ line:
   server first if it is running, swaps `llama_server_exe` to the new build,
   and offers to restart the current preset. Every downloaded build stays on
   disk (retention: current + previous), so the same picker is also the
-  rollback path; the latest nightly is always listed in the picker (even in stable mode), and the channel / variant selects apply live (no Save round-trip). Custom / PR-branch builds are detected from the
-  `--version` output and never touched — updates stay fully manual for them. Windows **CUDA** builds additionally fetch the proprietary NVIDIA runtime DLLs (cublas, cublasLt, cudart) from a separate release asset — but only if the freshly extracted build can't see the GPU (`llama-server --list-devices`; a CUDA Toolkit already on the PATH makes the ~370 MB extra unnecessary) — and installs made before that can fetch them afterwards with **Repair CUDA DLLs**. If a running server loads a model but never reports a GPU offload, the dashboard warns that inference is silently running on the CPU.
+  rollback path; the latest nightly is always listed in the picker (even in stable mode), and the channel / variant selects apply live (no Save round-trip). The **Build variant** picker is built from the release itself — whatever llama.cpp actually ships for *your* OS and CPU arch (Windows / Linux / macOS, x64 / arm64, CPU / Vulkan / CUDA / ROCm / OpenVINO / SYCL), so a toolkit rename on llama.cpp's side (CUDA 13.3 → 13.4) never breaks the updater. Custom / PR-branch builds are detected from the
+  `--version` output and never touched — updates stay fully manual for them. Windows and Linux **CUDA** builds additionally fetch the NVIDIA runtime libraries (cublas, cublasLt, cudart) from a separate release asset — but only if the freshly extracted build can't see the GPU (`llama-server --list-devices`; a CUDA Toolkit already on the PATH makes the ~370 MB extra unnecessary) — and installs made before that can fetch them afterwards with **Repair CUDA DLLs**. If a running server loads a model but never reports a GPU offload, the dashboard warns that inference is silently running on the CPU.
 
 ## Screenshots
 
@@ -165,7 +165,7 @@ in-app **Settings** page (which shows the data directory in use):
 | `update_check_minutes` | Self-update background poll interval (0 disables the check) |
 | `dashboard.usage_style` | Dashboard usage-card style: `graph` (sparklines) or `bar` (big traffic-light bars) |
 | `llama_backend.channel` | Build channel: `stable` (pinned nightly of the latest stable release) or `nightly` |
-| `llama_backend.variant` | Build flavor: `cpu`, `vulkan`, `cuda-12.4`, `cuda-13.3` (the **Detect** button suggests one from `nvidia-smi`) |
+| `llama_backend.variant` | Build flavor — the picker lists what the target build actually ships for your OS + CPU arch (`cpu`, `vulkan`, `cuda-<ver>`, `rocm-<ver>`, `openvino-<ver>`, `sycl`, …); the **Detect** button suggests one from `nvidia-smi` |
 | `llama_backend.auto_download` | Download new builds automatically when a check finds them (installing always stays manual) |
 | `llama_backend.storage_dir` | Folder for downloaded builds (default: a `llama-builds`-style sibling of the current build) |
 
