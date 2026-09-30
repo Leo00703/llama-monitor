@@ -4,6 +4,12 @@
    apply. The version picker is a card list in the same pattern as the
    dashboard preset picker; installing a build is always a manual choice. */
 
+/* Bounds for the download-reconciliation poll (#86): a 370 MB CUDA companion
+   download can legitimately run for minutes, but the poll must always end in
+   a state the user can act on — never an endless spinner. */
+const BE_POLL_MAX_MS = 15 * 60 * 1000;
+const BE_POLL_MAX_ERRORS = 5;
+
 const Backend = {
   data: null,       // last GET /api/backend/versions
   pickOpen: false,
@@ -13,6 +19,8 @@ const Backend = {
   modalKind: "",    // confirm | progress
   modalOnDone: null,
   pollTimer: null,   // download-reconciliation poll (#59)
+  pollT0: 0,         // when the current poll started — the poll is bounded (#86)
+  pollErrors: 0,
   downloadTag: "",
 
   init() {
@@ -38,7 +46,9 @@ const Backend = {
       this.closePick();
     });
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && this.pickOpen) this.closePick();
+      if (e.key !== "Escape") return;
+      if (this.pickOpen) this.closePick();
+      else if (this.modalOpen) this.modalCancel();   // #86: the modal is dismissible
     });
     document.getElementById("be-check").addEventListener("click", () => this.check());
     document.getElementById("be-download").addEventListener("click", () => this.download());
@@ -388,6 +398,8 @@ const Backend = {
 
   startPoll(tag) {
     this.stopPoll();
+    this.pollT0 = Date.now();
+    this.pollErrors = 0;
     this.pollTimer = setInterval(() => this.pollDownload(tag), 5000);
   },
 
@@ -397,8 +409,28 @@ const Backend = {
 
   async pollDownload(tag) {
     if (this.modalKind !== "progress" || !this.modalOpen) { this.stopPoll(); return; }
+    // The poll is the fallback for a lost WS message; when even it cannot
+    // resolve, hand the user a closable state instead of spinning (#86).
+    if (Date.now() - this.pollT0 > BE_POLL_MAX_MS) {
+      this.openModal({
+        kind: "progress",
+        title: `${tag} — still downloading`,
+        status: "Still running. You can close this dialog — the card keeps reporting the download and the build shows up in 'Update llama.cpp' when it is ready.",
+        spinner: false,
+        okLabel: "Close",
+        onDone: () => { this.closeModal(); this.refresh(); },
+      });
+      return;
+    }
     let d;
-    try { d = await API.get("/api/backend/versions"); } catch (_) { return; }
+    try { d = await API.get("/api/backend/versions"); }
+    catch (e) {
+      if (++this.pollErrors >= BE_POLL_MAX_ERRORS) {
+        this.modalFail(`the panel stopped answering (${e}) — the download may still be running; reload the page to see its state`);
+      }
+      return;
+    }
+    this.pollErrors = 0;
     if (d.downloading) return;  // task still running — keep polling
     this.stopPoll();
     const pend = (d.settings || {}).pending || {};
@@ -579,6 +611,10 @@ const Backend = {
       if (this.modalKind === "progress"
           && (!this.downloadTag || f.tag === this.downloadTag)) {
         this.modalFail(f.error ? `${f.tag ? f.tag + " — " : ""}${f.error}` : "download failed", "Download failed");
+      } else {
+        // modal already dismissed (or a panel-side auto-download): the toast
+        // is the only signal the user gets (#86)
+        UI.toast(`llama.cpp ${f.tag || ""} download failed: ${f.error || "see the panel log"}`, "err");
       }
     } else if (msg.type === "llama.update.downloaded") {
       const tag = (msg.data || {}).tag || "";
@@ -591,6 +627,8 @@ const Backend = {
           okLabel: "Close",
           onDone: () => { this.closeModal(); this.refresh(); },
         });
+      } else {
+        UI.toast(`llama.cpp ${tag} downloaded — pick it in "Update llama.cpp" to install`, "ok");
       }
       this.refresh();
     }
@@ -615,11 +653,19 @@ const Backend = {
     const ok = document.getElementById("be-modal-ok");
     ok.textContent = okLabel;
     ok.hidden = !okLabel;
+    // Every modal is dismissible (#86): a confirm gets Cancel, an in-flight
+    // progress modal gets Close — Close hides the dialog, it does NOT abort
+    // the backend task.
     const cancel = document.getElementById("be-modal-cancel");
-    cancel.hidden = kind !== "confirm";
+    const dismissible = kind === "confirm" || (kind === "progress" && !okLabel);
+    cancel.hidden = !dismissible;
+    cancel.textContent = kind === "confirm" ? "Cancel" : "Close";
+    cancel.title = kind === "confirm"
+      ? "Abort this action"
+      : "Hide this dialog — the download keeps running and the card keeps its status";
     ov.classList.add("neutral");
     ov.hidden = false;
-    if (okLabel) ok.focus();
+    (okLabel ? ok : cancel).focus();
   },
 
   modalFail(msg, title = "Backend update failed") {
@@ -633,8 +679,12 @@ const Backend = {
   },
 
   modalCancel() {
+    const wasDownloading = this.downloading;
     this.modalOnDone = null;
     this.closeModal();
+    // Closing mid-download is a UI dismissal only — the backend task keeps
+    // running, so re-read the card to show its real state (#86)
+    if (wasDownloading) this.refresh();
   },
 
   closeModal() {

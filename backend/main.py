@@ -552,8 +552,29 @@ def create_app() -> FastAPI:
                 },
             })
         if lb.auto_download and not be_downloading:
-            asyncio.create_task(be_download(target, lb.variant))
+            _start_be_download(target, lb.variant)
         return res
+
+    def _start_be_download(tag: str, variant: str) -> None:
+        """Start a download task and guarantee it never dies silently: an
+        unhandled task exception leaves the client's progress modal spinning
+        with no terminal message (#86)."""
+        task = asyncio.create_task(be_download(tag, variant))
+
+        def _done(t: asyncio.Task) -> None:
+            if t.cancelled():
+                manager.broadcast({"type": "llama.update.failed",
+                                   "data": {"tag": tag,
+                                            "error": "download cancelled"}})
+                return
+            exc = t.exception()
+            if exc is not None:
+                log.exception("backend download task crashed", exc_info=exc)
+                manager.broadcast({"type": "llama.update.failed",
+                                   "data": {"tag": tag,
+                                            "error": f"{type(exc).__name__}: {exc}"}})
+
+        task.add_done_callback(_done)
 
     async def be_download(tag: str, variant: str) -> dict:
         """Download + extract + verify a build into the storage folder.
@@ -691,8 +712,7 @@ def create_app() -> FastAPI:
                                "data": {"tag": tag, "dir": str(build_dir)}})
             return {"ok": True, "dir": str(build_dir),
                     "seconds": round(time.time() - t0, 1)}
-        except (httpx.HTTPError, OSError, ValueError,
-                backend_update.UpdateError) as exc:
+        except Exception as exc:
             log.exception("backend download failed")
             # drop the archive too: the release is always re-downloadable,
             # and keeping it reproduces the per-version accumulation (#51)
@@ -844,7 +864,7 @@ def create_app() -> FastAPI:
                 return {"ok": False, "error": "no target build found"}
         if be_downloading:
             return {"ok": False, "error": "a download is already in progress"}
-        asyncio.create_task(be_download(tag, variant))
+        _start_be_download(tag, variant)
         return {"ok": True, "started": True, "tag": tag, "variant": variant}
 
     @app.post("/api/backend/apply")
@@ -971,8 +991,7 @@ def create_app() -> FastAPI:
                 build_dir, companion["browser_download_url"],
                 companion.get("size") or 0)
             gpu = await backend_update.probe_gpu(str(exe), force=True)
-        except (httpx.HTTPError, OSError, ValueError,
-                backend_update.UpdateError) as exc:
+        except Exception as exc:
             log.exception("CUDA runtime repair failed")
             if czip is not None:
                 czip.unlink(missing_ok=True)
