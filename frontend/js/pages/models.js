@@ -114,6 +114,7 @@ const Models = {
       [/lmstudio/, "lmstudio.webp", "lmstudio"],
       [/ollama/, "ollama.webp", "ollama"],
       [/bonsai/, "bonsai.webp", "bonsai"],
+      [/spark-?x|xhtoken/, "xhtoken.png", "xhtoken"],
     ];
     for (const [re, file, label] of byName) {
       if (re.test(name)) return { icon: `/icons/${file}`, label };
@@ -148,6 +149,8 @@ const Models = {
       lmstudio: "lmstudio.webp", "lmstudio-community": "lmstudio.webp",
       ollama: "ollama.webp",
       bonsai: "bonsai.webp", perplexity: "bonsai.webp", perplexityai: "bonsai.webp",
+      xhtoken: "xhtoken.png", "xhtoken-ai": "xhtoken.png", xhtokenai: "xhtoken.png",
+      "spark-x": "xhtoken.png",
       command: "command.png", cohere: "command.png", cohereai: "command.png",
       ornith: "ornith.jpg",
       stablelm: "stablelm.webp",
@@ -169,6 +172,8 @@ const Models = {
       "bartowski": ["#22c55e", "#fff"], "z-lab": ["#ec4899", "#fff"],
       "the-drummer": ["#eab308", "#1a1a1a"], "nomic": ["#0ea5e9", "#fff"],
       "turboderp": ["#a855f7", "#fff"], "lmstudio-community": ["#8b5cf6", "#fff"],
+      xhtoken: ["#7c5cf5", "#fff"], "xhtoken-ai": ["#7c5cf5", "#fff"],
+      xhtokenai: ["#7c5cf5", "#fff"],
     };
     let label, bg, fg;
     if (known[p]) {
