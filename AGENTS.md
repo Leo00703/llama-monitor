@@ -194,8 +194,9 @@ To stay focused on the current work:
 - Frontend: vanilla HTML/CSS/JS, no framework, no build step; follow the
   existing patterns in `frontend/js/pages/`.
 - Python: `pathlib` everywhere, no hardcoded absolute paths; stay
-  cross-platform (Windows primary, Linux must keep working; `nvidia-smi` is
-  optional — GPU cards are hidden when absent).
+  cross-platform (Windows primary; Linux **and macOS** must keep working;
+  `nvidia-smi` is optional — with no NVIDIA GPU the GPU cards are replaced by
+  an explicit "No GPU detected" note, never a silent empty grid).
 - Theme: **official llama.cpp dark design language** — solid `--bg: #0d0d0d`,
   brand-orange accent `#f65e00` (not #ff6467 — that's the official *error*
   color), semantics ok `#00bc7d` / warn `#fe9a00` / err `#ff6467` / info

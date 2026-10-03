@@ -43,11 +43,13 @@ line:
   parallel slots (`-np`, **auto** by default), continuous batching
   and the unified KV buffer, each auto / on / off.
 - **Resource monitoring** — CPU (per-core), RAM, and one card per detected GPU
-  (utilization, VRAM, temperature, power draw) via `nvidia-smi`.
+  (utilization, VRAM, temperature, power draw) via `nvidia-smi`; with no
+  NVIDIA GPU in sight (Apple Silicon, AMD, CPU-only) the GPU cards are
+  replaced by an explicit “No GPU detected” note.
   On Linux the CPU card also shows package temperature (sysfs thermal zones)
   and power draw (Intel RAPL / AMD hwmon), and CPU power joins the per-request
-  energy estimate; Windows exposes neither without admin, so the fields are
-  hidden there.
+  energy estimate; Windows and macOS expose neither without admin/root, so
+  the fields are hidden there.
   It also shows inference metrics (prompt/generation tok/s, per-slot context
   usage, draft acceptance for spec decode) sourced from the server's own log
   lines, with `/slots` and `/metrics` as fallbacks. The card also shows the running server's live slot count and turns orange when the active preset's parallel-slots setting differs (the server needs a restart to pick it up). The usage cards render as
@@ -121,12 +123,13 @@ Mobile view:
 ## Requirements
 
 - Python 3.10+ (tested on 3.11/3.14)
-- Windows or Linux
+- Windows, Linux, or macOS (Apple Silicon)
 - A `llama-server` binary (llama.cpp) on the same machine — **only needed to
   launch the server**; the panel, monitoring, model browser, and presets all
   work without it (Start/Restart just fail until the exe path is set)
-- NVIDIA GPU driver providing `nvidia-smi` (optional — GPU cards are hidden
-  when no GPU is detected; works on CPU-only machines too)
+- NVIDIA GPU driver providing `nvidia-smi` (optional — machines without an
+  NVIDIA GPU, e.g. Apple Silicon, show a “No GPU detected” note in place of
+  GPU cards; works on CPU-only machines too)
 
 ## Install
 
@@ -213,6 +216,10 @@ the same process (uvicorn in a daemon thread) on the configured
   `dist\llama-monitor.exe`.
 - **Run from source** — `python tray.py` (Windows only; `--smoke` runs the
   headless self-test used by CI).
+
+On macOS and Linux the panel is run from source with
+`python -m uvicorn backend.main:app` (see **Run** above) — there is no tray
+launcher for those platforms.
 
 A single-instance mutex prevents duplicate panels: re-launching the exe
 while it is already running opens the running instance's dashboard in the
@@ -302,7 +309,7 @@ A triage-ready report has all of these:
 | --- | --- |
 | Panel version | Settings → **Current version** (commit sha + date), or `GET /api/update/check` |
 | llama-server build | Topbar version label, or `llama-server --version` (e.g. `b10621`) |
-| OS | Windows 11 / Ubuntu 24.04 / … |
+| OS | Windows 11 / Ubuntu 24.04 / macOS (Apple Silicon) / … |
 | Steps to reproduce | Exact clicks and settings; naming the preset (or listing its fields) is ideal |
 | Log excerpt | Copy from the panel log pane — the `[panel] starting: …` line already contains the full launch command; trim to the failure and scrub secrets, personal paths and hostnames (see `AGENTS.md` → Privacy) |
 | Expected vs actual | One sentence each |
@@ -345,8 +352,8 @@ Keep the same shape as the project's own locked specs:
 - **The theme is the official llama.cpp dark design language** — solid
   `#0d0d0d` background, brand orange `#f65e00`, no gradients, bundled Geist
   Mono for code/metrics. No Google Fonts or any other CDN, no restyling.
-- **Windows is primary; Linux must keep working** — `nvidia-smi` is optional
-  (GPU cards are hidden when absent).
+- **Windows is primary; Linux and macOS must keep working** — `nvidia-smi` is
+  optional (GPU cards are replaced by a “No GPU detected” note when absent).
 - **Never pin or downgrade PyInstaller** — the onefile relaunch env handling
   is a fix for a real bug (see `AGENTS.md` → Gotchas).
 - **Never commit** `config.json`, `data/`, `TODO.md`, `*.log`, `build/`,
