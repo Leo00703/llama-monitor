@@ -30,6 +30,27 @@ def list_models(root: Path) -> list[dict[str, Any]]:
     return models
 
 
+def _iter_files(root: Path):
+    """Depth-first walk of `root`, skipping hidden entries (dot-prefixed
+    files and directories: .DS_Store on macOS, .git, .cache, …).
+    Deterministic: directories are recursed in sorted order, files yielded
+    in place — the same order as `sorted(root.rglob("*"))` minus the
+    hidden entries."""
+    def walk(d: Path):
+        try:
+            entries = sorted(d.iterdir())
+        except OSError:
+            return
+        for entry in entries:
+            if entry.name.startswith("."):
+                continue
+            if entry.is_dir():
+                yield from walk(entry)
+            else:
+                yield entry
+    yield from walk(root)
+
+
 def _scan(root: Path) -> list[dict[str, Any]]:
     """Single pass over the tree: one walk, one stat per file, and mmproj
     files grouped by directory as they are found (the old implementation
@@ -38,10 +59,10 @@ def _scan(root: Path) -> list[dict[str, Any]]:
         return []
     models: list[dict[str, Any]] = []
     mmproj_by_parent: dict[str, list[str]] = {}
-    for path in sorted(root.rglob("*")):
+    for path in _iter_files(root):
         # fnmatch patterns are case-sensitive on Linux — match the .gguf
         # suffix in Python so MODEL.GGUF isn't missed there (#71)
-        if not path.is_file() or path.suffix.lower() != ".gguf":
+        if path.suffix.lower() != ".gguf":
             continue
         rel = path.relative_to(root).as_posix()
         if path.name.lower().startswith("mmproj"):
