@@ -457,6 +457,16 @@ middle, fact foot (cores/GHz, GB, temp/power). */
 
 .gpu-cards { display: contents; }
 
+/* no-nvidia-smi empty state: card-shaped muted note in the metrics grid */
+.metric-empty {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
 /* base card (also used by the analytics summary cards — the dashboard
    sizing below is scoped to the metrics grid, not the generic class) */
 .metric-card { padding: 14px 16px; display: flex; flex-direction: column; }

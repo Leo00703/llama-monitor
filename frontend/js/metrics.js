@@ -179,6 +179,15 @@ const Metrics = (() => {
     for (const key of Object.keys(gpuHist)) delete gpuHist[key];
     for (const key of Object.keys(gpuEls)) delete gpuEls[key];
 
+    if (!gpus.length) {
+      // Honest empty state (#83): GPU stats come from nvidia-smi, so machines
+      // without an NVIDIA GPU (e.g. Apple Silicon) show no GPU card.
+      wrap.innerHTML =
+        '<div class="metric-empty">No GPU detected — GPU stats use nvidia-smi '
+        + "(NVIDIA only), so no GPU card is shown.</div>";
+      return;
+    }
+
     for (const g of gpus) {
       const i = Math.round(g.index);
       const card = document.createElement("div");
