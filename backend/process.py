@@ -12,6 +12,7 @@ import re
 import signal
 import socket
 import subprocess
+import sys
 from enum import Enum
 from typing import Any, Callable, Optional
 
@@ -176,6 +177,16 @@ class LlamaServerManager:
                     msg += (" — Windows refused to run this file: check that "
                             "llama_server_exe points to a real .exe (or .bat) "
                             "and that antivirus is not blocking it")
+                elif sys.platform == "darwin" and getattr(exc, "errno", None) == 13:
+                    # macOS refuses execution of files without the execute bit
+                    # and of files quarantined by Gatekeeper (browser downloads
+                    # carry com.apple.quarantine) — both surface as EACCES.
+                    msg += (
+                        f" — macOS refused to run this file: check it has the "
+                        f"execute bit (chmod +x {exe}) and, if it came from a "
+                        "browser download, remove the quarantine attribute "
+                        f"(xattr -d com.apple.quarantine {exe})"
+                    )
                 self._publish_log(f"[panel] {msg}")
                 self._set_error_state(msg)
                 return {"ok": False, "error": msg}
