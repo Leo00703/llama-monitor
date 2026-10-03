@@ -610,6 +610,14 @@ def extract_archive(archive: Path, dest: Path) -> None:
                 t.extractall(dest)
     else:
         raise UpdateError(f"unsupported archive: {archive.name}")
+    if os.name != "nt":
+        # Release archives are not guaranteed to keep the executable bit
+        # (zip extraction and tar's `data` filter both can drop it) — a
+        # panel-installed macOS/Linux build without +x fails with EACCES.
+        exe = dest / server_exe_name()
+        if exe.is_file():
+            with contextlib.suppress(OSError):
+                os.chmod(exe, 0o755)
 
 
 async def verify_build(build_dir: Path, expected_tag: str) -> dict[str, Any]:
