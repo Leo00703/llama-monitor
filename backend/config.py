@@ -306,6 +306,15 @@ def onefile_relaunch_env() -> dict[str, str]:
     return env
 
 
+# Windows-shaped placeholders from older config.example.json revisions: on a
+# non-Windows install they can never be a real path, so they are swapped for
+# the neutral seed values (bare exe name resolved via PATH, ~-expanded root).
+_LEGACY_PLACEHOLDERS = {
+    "llama_server_exe": ("c:/path/to/llama-server.exe", "llama-server"),
+    "models_root": ("c:/path/to/models", "~/models"),
+}
+
+
 def load_config() -> AppConfig:
     """Load config.json, seeding it from the example file on first run."""
     if not CONFIG_PATH.exists():
@@ -314,9 +323,18 @@ def load_config() -> AppConfig:
         else:
             return AppConfig()
     try:
-        return AppConfig.model_validate(json.loads(CONFIG_PATH.read_text(encoding="utf-8-sig")))
+        cfg = AppConfig.model_validate(json.loads(CONFIG_PATH.read_text(encoding="utf-8-sig")))
     except (json.JSONDecodeError, ValidationError) as exc:
         raise RuntimeError(f"config.json is invalid: {exc}") from exc
+    if os.name != "nt":
+        changed = False
+        for key, (old, new) in _LEGACY_PLACEHOLDERS.items():
+            if str(getattr(cfg, key)).strip().lower() == old:
+                setattr(cfg, key, new)
+                changed = True
+        if changed:
+            save_config(cfg)
+    return cfg
 
 
 def save_config(cfg: AppConfig) -> None:

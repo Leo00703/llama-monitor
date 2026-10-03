@@ -1,6 +1,6 @@
 {
-  "llama_server_exe": "C:/path/to/llama-server.exe",
-  "models_root": "C:/path/to/models",
+  "llama_server_exe": "llama-server",
+  "models_root": "~/models",
   "default_server_port": 8080,
   "panel": {
     "host": "0.0.0.0",
