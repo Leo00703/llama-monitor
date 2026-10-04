@@ -177,10 +177,11 @@ class LlamaServerManager:
                     msg += (" — Windows refused to run this file: check that "
                             "llama_server_exe points to a real .exe (or .bat) "
                             "and that antivirus is not blocking it")
-                elif sys.platform == "darwin" and getattr(exc, "errno", None) == 13:
+                elif sys.platform == "darwin" and getattr(exc, "errno", None) in (1, 13):
                     # macOS refuses execution of files without the execute bit
-                    # and of files quarantined by Gatekeeper (browser downloads
-                    # carry com.apple.quarantine) — both surface as EACCES.
+                    # (EACCES) and of files quarantined by Gatekeeper (browser
+                    # downloads carry com.apple.quarantine; exec fails with
+                    # EPERM — the "developer cannot be verified" case).
                     msg += (
                         f" — macOS refused to run this file: check it has the "
                         f"execute bit (chmod +x {exe}) and, if it came from a "
