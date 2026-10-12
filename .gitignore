@@ -23,6 +23,13 @@ backend/_buildinfo.json
 # Local scratchpad / to-do (never committed)
 TODO.md
 
+# graphify knowledge graph (graphify-out/ IS committed — graph.json + report
+# are the agent query target; only local artifacts are ignored)
+graphify-out/cache/
+graphify-out/.graphify_root
+graphify-out/cost.json
+graphify-out/memory/
+
 # Editor / OS
 .vscode/
 .idea/
