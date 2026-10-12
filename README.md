@@ -266,6 +266,11 @@ frontend/
   fonts/         bundled Geist Mono (woff2)
 tray.py          Windows system-tray launcher (embeds the panel, --smoke self-test,
                  --restarting handoff for the update relaunch)
+graphify-out/    graphify knowledge graph of the codebase (graph.json +
+                 GRAPH_REPORT.md + graph.html) — committed so AI agents can
+                 query it; refresh with `graphify update .` after code changes
+.pi/agent/skills/ graphify agent skill (project-scoped) — tells agents to
+                 query the graph for codebase questions instead of re-reading
 build_exe.bat    local PyInstaller build of dist\llama-monitor.exe
 requirements-tray.txt   extra deps for the tray launcher (pystray, Pillow, pyinstaller)
 assets/tray/     tray mark (PNG) + exe icon (ICO)

@@ -38,6 +38,14 @@ llama-monitor: a lightweight web control panel for a local `llama-server`
   tailscale installs possible, see README)
 - `tray.py` — Windows tray launcher (embeds the panel; `--smoke` headless
   self-test; `--restarting` internal flag for the update relaunch handoff)
+- `graphify-out/` — graphify knowledge graph of the codebase (committed):
+  `graph.json` (query target), `GRAPH_REPORT.md`, `graph.html` (interactive),
+  `manifest.json` + `.graphify_labels.json` (incremental updates + curated
+  community names). Local artifacts (`cache/`, `.graphify_root`, `cost.json`,
+  `memory/`) are gitignored — `.graphify_root` holds a machine path.
+- `.pi/agent/skills/graphify/` — graphify agent skill (project-scoped), so
+  pi/opencode agents query the graph for codebase questions instead of
+  re-reading files.
 - `build_exe.bat` — local PyInstaller build → `dist\llama-monitor.exe`
 - `llama-monitor.exe` — latest CI-built tray exe, **tracked at the repo root**
   so `git pull` always ships it (refreshed by CI, see Gotchas)
@@ -188,6 +196,34 @@ To stay focused on the current work:
 - **Backend logic**: ad-hoc inline Python scripts with synthetic data
   (no framework).
 - **Frozen builds**: `python tray.py --smoke` (headless self-test used by CI).
+
+## Code graph (graphify)
+
+`graphify-out/` holds a [graphify](https://github.com/Graphify-Labs/graphify)
+knowledge graph of the codebase (tree-sitter AST, fully local, no API key —
+code-only extraction). It is **committed** so every agent clone can query it
+without rebuilding.
+
+- **Query before grepping**: for questions about codebase structure
+  ("what calls X?", "how do settings become CLI flags?"), prefer
+  `graphify query "<question>"`, `graphify explain "<node>"`,
+  `graphify path "A" "B"`, `graphify god-nodes` over reading files one by
+  one. The installed skill (`.pi/agent/skills/graphify/`) carries the full
+  query workflow.
+- **Refresh after code changes**: `graphify update .` (no LLM, cheap) then
+  `graphify cluster-only . --no-label` (reuses the curated community names
+  from `.graphify_labels.json`; no LLM). Check staleness via
+  `graph.json`'s `built_at_commit` vs `git rev-parse HEAD`.
+- **Community labels are curated by hand** (`.graphify_labels.json`) — this
+  machine has no LLM API key, so never re-label with a backend; keep
+  `--no-label`.
+- **Install** (dev machine): `uv tool install graphifyy` (isolated uv-tool env,
+  NOT in `.venv` — it is a dev tool, not a panel dependency). Re-register the
+  skill after a major graphify upgrade with
+  `graphify install --project --platform pi`.
+- `graphify-out/cache/`, `.graphify_root`, `cost.json`, `memory/` are
+  gitignored (local artifacts; `.graphify_root` contains an absolute machine
+  path — never commit it).
 
 ## Code conventions
 
