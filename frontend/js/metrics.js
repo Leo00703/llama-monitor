@@ -181,10 +181,17 @@ const Metrics = (() => {
 
     if (!gpus.length) {
       // Honest empty state (#83): GPU stats come from nvidia-smi, so machines
-      // without an NVIDIA GPU (e.g. Apple Silicon) show no GPU card.
-      wrap.innerHTML =
-        '<div class="metric-empty">No GPU detected — GPU stats use nvidia-smi '
-        + "(NVIDIA only), so no GPU card is shown.</div>";
+      // without an NVIDIA GPU (e.g. Apple Silicon) show no GPU card. On a Mac
+      // the GPU shares the CPU's physical memory (unified memory), so model
+      // memory shows up in the RAM card — say so, otherwise "No GPU detected"
+      // reads as "model memory is unmeasured".
+      let note = "No GPU detected — GPU stats use nvidia-smi (NVIDIA only), "
+        + "so no GPU card is shown";
+      if (/Mac/i.test(navigator.userAgent)) {
+        note += " — on Apple Silicon the GPU shares the same physical memory "
+          + "as the CPU, so model memory counts in the RAM card";
+      }
+      wrap.innerHTML = '<div class="metric-empty">' + note + ".</div>";
       return;
     }
 

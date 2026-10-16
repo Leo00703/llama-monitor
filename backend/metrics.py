@@ -263,7 +263,12 @@ class MetricsCollector:
             "ram": {
                 "used_gb": round(ram.used / 1073741824, 2),
                 "total_gb": round(ram.total / 1073741824, 2),
-                "percent": round(ram.percent, 1),
+                # Percent derived from the same used/total the card prints:
+                # psutil's own percent is (total - available)/total, and on
+                # macOS `available` counts reclaimable inactive pages, so it
+                # disagrees with used/total (e.g. 88% vs 10.9/16 GB) and made
+                # the headline and the detail look contradictory.
+                "percent": round(ram.used / ram.total * 100, 1) if ram.total else 0.0,
             },
             "gpus": gpus or [],
             "inference": inference,
