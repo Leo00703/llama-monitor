@@ -461,8 +461,14 @@ const Metrics = (() => {
     if (gpuBanner) {
       if (data.gpu_offload_missing) {
         if (!gpuBanner.childElementCount) {
+          // Platform-aware remedy: on Windows the usual cause is the missing
+          // CUDA runtime DLLs; on Apple Silicon offload runs through Metal on
+          // the shared physical memory, so "doesn't fit" is the usual cause.
+          const msg = "GPU offload not active — the model loaded but the server never reported “offloaded … layers to GPU”, so inference is running on the CPU. ";
           UI.banner(gpuBanner, "warn", [
-            "GPU offload not active — the model loaded but the server never reported “offloaded … layers to GPU”, so inference is running on the CPU. On Windows the CUDA runtime DLLs (cublas, cublasLt, cudart) are usually missing from the build folder: see Settings → llama.cpp backend (Repair CUDA DLLs).",
+            /Mac/i.test(navigator.userAgent)
+              ? msg + "On Apple Silicon offload runs through Metal on the same physical memory as the CPU — if the model doesn't fit, lower the preset's GPU layer count."
+              : msg + "Usually the CUDA runtime libraries (cublas, cublasLt, cudart) are missing from the build folder: see Settings → llama.cpp backend (Repair CUDA DLLs).",
           ]);
         }
       } else if (gpuBanner.childElementCount) {
