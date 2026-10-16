@@ -245,6 +245,7 @@ without rebuilding.
 
 ## Gotchas
 
+- **macOS memory/launch semantics**: psutil on macOS computes `virtual_memory().percent` as `(total − available)/total` with `available = free + inactive`, while `used` = active + inactive + wired + wired_down + compressed + external — the two disagree badly on an Apple Silicon Mac (e.g. 88% vs 10.9/16 GB), so `MetricsCollector.snapshot()` derives `ram.percent` from `used/total` itself; do not switch it back to `ram.percent`. On Apple Silicon there is no separate VRAM — the GPU shares the CPU's physical memory (unified memory; Metal allocations show up in RAM's "external" bucket), so the dashboard's no-GPU note says so on Macs. llama-server launched from a quarantined binary (browser-downloaded zip) can spawn fine, show the Gatekeeper dialog, then be SIGKILLed before serving (asyncio returncode −9 with no output) — `LlamaServerManager` diagnoses that pre-ready darwin case and the spawn-time EACCES/EPERM cases with the `xattr -d com.apple.quarantine` remedy (the zip sets the attribute on *every* file, so `xattr -dr` on the folder is the practical form).
 - **Python 3.14 + PyInstaller**: `import pyinstaller` (lowercase) fails without
   `PYTHONCASEOK=1` (case-insensitive-import quirk). It is set in `build_exe.bat`
   and the CI workflow — keep it there.
