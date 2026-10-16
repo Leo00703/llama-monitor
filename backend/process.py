@@ -406,11 +406,31 @@ class LlamaServerManager:
                 self._publish_state()
         else:
             if self._state != ServerState.ERROR:
+                gatekeeper = self._gatekeeper_kill_message(code, ready)
+                if gatekeeper:
+                    self._set_error_state(gatekeeper)
+                    return
                 hint = self._fatal_hint()
                 self._error = f"process exited with code {code}" + (f" — {hint}" if hint else "")
                 self._publish_log(f"[panel] server exited unexpectedly (code {code})" + (f": {hint}" if hint else ""))
                 self._state = ServerState.ERROR
                 self._publish_state()
+
+    def _gatekeeper_kill_message(self, code: int, ready: bool) -> str:
+        """Message when macOS SIGKILLed the child before it could serve — the
+        classic Gatekeeper outcome for a quarantined binary (browser downloads
+        carry com.apple.quarantine): the dialog is dismissed and the kernel
+        kills the process before llama-server can start, so there is no server
+        output to hint at the cause (returncode -9 = killed by SIGKILL)."""
+        if ready or sys.platform != "darwin" or code != -9:
+            return ""
+        exe = self._get_config().resolved_exe()
+        return (
+            "macOS killed llama-server right after launch (SIGKILL) — usually "
+            "Gatekeeper blocking a quarantined binary. If this file came from a "
+            "browser download, remove the quarantine attribute and start again: "
+            f"xattr -d com.apple.quarantine {exe}"
+        )
 
     def _fatal_hint(self, tail: int = 60) -> str:
         """Best-effort: the most specific fatal line in the recent log tail,
