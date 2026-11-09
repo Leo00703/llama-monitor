@@ -372,9 +372,11 @@ def poll_loop(config: AppConfig, icon: pystray.Icon) -> None:
     last = object()
     while not _stop.is_set():
         try:
+            # one call per poll (#106 O6): /api/state carries
+            # active_preset_id — the old second GET /api/config every 2 s
+            # forever was pure idle traffic.
             state = _panel_get(base, "/api/state", 3.0).json()
-            cfg = _panel_get(base, "/api/config", 3.0).json()
-            preset_id = cfg.get("active_preset_id") or ""
+            preset_id = state.get("active_preset_id") or ""
             # the error text is part of the key: a changed error while the
             # state stays "error" must refresh the tooltip
             key = (state.get("state"), preset_id, state.get("error") or "")

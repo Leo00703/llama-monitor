@@ -1311,7 +1311,13 @@ def create_app() -> FastAPI:
 
     @app.get("/api/state")
     async def state() -> dict:
-        return manager.snapshot()
+        # active_preset_id folded in for the tray poller (#106 O6): polling
+        # /api/config every 2 s on top of /api/state doubled the idle HTTP
+        # traffic. snapshot()'s preset_id is the preset of the CURRENT
+        # server — empty while stopped, exactly when the tray menu needs
+        # the configured active one.
+        return {**manager.snapshot(),
+                "active_preset_id": config.active_preset_id}
 
     @app.post("/api/server/start")
     async def server_start(body: StartRequest) -> dict:
