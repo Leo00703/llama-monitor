@@ -31,6 +31,9 @@ LOG_BUFFER_SIZE = 4000
 WS_INIT_LOG_LIMIT = 1000
 STOP_TIMEOUT = 10.0
 KILL_TIMEOUT = 5.0
+# Per-line cap for the log capture: the reader splits on read() chunks, a
+# pathological line is truncated at this size before reaching UI/WS (#98).
+LOG_LINE_LIMIT = 8 * 1024 * 1024
 
 # Most-specific-first: when the server dies, the first matching pattern in the
 # recent log tail explains WHY (e.g. the OOM line behind a model-load failure).
@@ -174,6 +177,9 @@ class LlamaServerManager:
                     *spawn_argv(exe, *args),
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.STDOUT,
+                    limit=LOG_LINE_LIMIT,  # defensive: _read_output avoids
+                    # readline() (its limit trap killed capture permanently —
+                    # #98), but keep the buffer bounded anyway
                     **self._spawn_kwargs(),
                 )
             except OSError as exc:
@@ -410,14 +416,30 @@ class LlamaServerManager:
             self._publish_log(f"[panel] detected external server on port {port} (pid {pid})")
 
     async def _read_output(self, proc: asyncio.subprocess.Process) -> None:
+        # Line splitting on raw read() chunks instead of readline(): a line
+        # longer than the StreamReader limit makes readline() raise
+        # LimitOverrunError forever (the over-long line stays at the head of
+        # the buffer), which used to kill this task and silence the panel log
+        # for the rest of the server's lifetime (#98). read() has no limit.
         assert proc.stdout is not None
+        carry = b""
         while True:
-            line = await proc.stdout.readline()
-            if not line:
+            chunk = await proc.stdout.read(64 * 1024)
+            if not chunk:
                 break
-            text = line.decode(errors="replace").rstrip("\n")
-            if text:
-                self._publish_log(text)
+            carry += chunk
+            while (idx := carry.find(b"\n")) >= 0:
+                line, carry = carry[:idx], carry[idx + 1:]
+                self._publish_log_line(line)
+        if carry:
+            self._publish_log_line(carry)
+
+    def _publish_log_line(self, line: bytes) -> None:
+        if len(line) > LOG_LINE_LIMIT:
+            self._publish_log(line[:LOG_LINE_LIMIT].decode(errors="replace")
+                              + " [panel: over-long log line truncated]")
+        elif line:
+            self._publish_log(line.decode(errors="replace"))
 
     async def _run_monitor(self, proc: asyncio.subprocess.Process, port: int) -> None:
         """Wait until the server accepts connections, then watch for exit."""
