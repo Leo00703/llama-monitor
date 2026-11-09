@@ -190,8 +190,13 @@ class ServerProxy:
         headers: Optional[dict[str, str]] = None,
         query: str = "",
         inject_key: bool = True,
-    ) -> AsyncIterator[bytes]:
-        """Streaming forward (SSE). Yields raw body chunks."""
+    ) -> tuple[int, dict[str, str], AsyncIterator[bytes]]:
+        """Streaming forward (SSE): sends the upstream request first and
+        returns (status, headers, body-iterator) so the caller can mirror
+        the real status before committing to 200 + event-stream — a bare
+        generator locked the route into a fixed 200 and lost failures
+        (#100). The caller must consume (or abandon) the returned iterator
+        to release the upstream connection."""
         base = self.base_url()
         if base is None:
             raise ProxyOffline("llama-server is not running")
@@ -206,12 +211,20 @@ class ServerProxy:
             req = client.build_request(method, url, content=content,
                                        headers=self._forward_headers(headers or {}, inject_key))
             resp = await client.send(req, stream=True)
+        except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+            await client.aclose()
+            raise ProxyOffline(str(exc)) from exc
+        out_headers = {
+            k: v for k, v in resp.headers.items()
+            if k.lower() not in PROXY_SKIP_RESPONSE_HEADERS
+        }
+
+        async def body_iter() -> AsyncIterator[bytes]:
             try:
                 async for chunk in resp.aiter_bytes():
                     yield chunk
             finally:
                 await resp.aclose()
-        except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
-            raise ProxyOffline(str(exc)) from exc
-        finally:
-            await client.aclose()
+                await client.aclose()
+
+        return resp.status_code, out_headers, body_iter()

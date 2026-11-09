@@ -15,7 +15,7 @@ import time
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Any, AsyncIterator, Callable, Optional
+from typing import Any, Callable, Optional
 from urllib.parse import parse_qs, urlparse
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
@@ -1538,15 +1538,24 @@ def create_app() -> FastAPI:
 
         try:
             if isinstance(body, dict) and body.get("stream") is True:
-                async def gen() -> AsyncIterator[bytes]:
-                    async for chunk in proxy.stream(
-                            request.method, path, body, headers, query, inject_key):
-                        yield chunk
-
+                # (#100) the upstream request is sent BEFORE the response is
+                # built: status + headers are mirrored, and a non-2xx takes
+                # the same path (and analytics failure count) as the
+                # non-streaming branch instead of hiding inside a 200 SSE.
+                status, out_headers, body_iter = await proxy.stream(
+                    request.method, path, body, headers, query, inject_key)
+                if status >= 400:
+                    content = b"".join([c async for c in body_iter])
+                    if is_generation:
+                        _record_failure(status, path)
+                    return Response(content=content, status_code=status,
+                                    headers=out_headers)
                 return StreamingResponse(
-                    gen(),
+                    body_iter,
                     media_type="text/event-stream",
-                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+                    headers={**out_headers,
+                             "Cache-Control": "no-cache",
+                             "X-Accel-Buffering": "no"},
                 )
             status, out_headers, content = await proxy.request(
                 request.method, path, body, headers, query, inject_key)
