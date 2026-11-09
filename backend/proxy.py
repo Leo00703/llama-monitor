@@ -119,15 +119,23 @@ class ServerProxy:
             out[key] = value
         return out
 
-    def _forward_headers(self, headers: dict[str, str]) -> dict[str, str]:
+    def _forward_headers(self, headers: dict[str, str], inject_key: bool = True,
+                         ) -> dict[str, str]:
+        # (#94) The caller's own Authorization is always stripped; when the
+        # key injection is refused (open remote caller) it is forwarded
+        # verbatim instead, so clients that hold the key keep working.
+        caller_auth = next((v for k, v in headers.items()
+                            if k.lower() == "authorization"), "")
         fwd = {
             k: v for k, v in headers.items()
             if k.lower() not in PROXY_SKIP_REQUEST_HEADERS
         }
         launch = self._get_launch() or {}
         api_key = (launch.get("api_key") or "").strip()
-        if api_key:
+        if api_key and inject_key:
             fwd["authorization"] = f"Bearer {api_key}"
+        elif caller_auth:
+            fwd["authorization"] = caller_auth
         return fwd
 
     async def request(
@@ -137,6 +145,7 @@ class ServerProxy:
         body: Optional[dict[str, Any]] = None,
         headers: Optional[dict[str, str]] = None,
         query: str = "",
+        inject_key: bool = True,
     ) -> tuple[int, dict[str, str], bytes]:
         """Non-streaming forward. Returns (status, headers, content)."""
         base = self.base_url()
@@ -152,7 +161,7 @@ class ServerProxy:
             async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
                 resp = await client.request(
                     method, url, content=content,
-                    headers=self._forward_headers(headers or {}),
+                    headers=self._forward_headers(headers or {}, inject_key),
                 )
         except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
             raise ProxyOffline(str(exc)) from exc
@@ -169,6 +178,7 @@ class ServerProxy:
         body: Optional[dict[str, Any]] = None,
         headers: Optional[dict[str, str]] = None,
         query: str = "",
+        inject_key: bool = True,
     ) -> AsyncIterator[bytes]:
         """Streaming forward (SSE). Yields raw body chunks."""
         base = self.base_url()
@@ -183,7 +193,7 @@ class ServerProxy:
         client = httpx.AsyncClient(timeout=STREAM_TIMEOUT)
         try:
             req = client.build_request(method, url, content=content,
-                                       headers=self._forward_headers(headers or {}))
+                                       headers=self._forward_headers(headers or {}, inject_key))
             resp = await client.send(req, stream=True)
             try:
                 async for chunk in resp.aiter_bytes():

@@ -403,6 +403,7 @@ setTimeout(function () {
                 <div class="field"><label class="field-label" for="pf-port">Port (--port)</label><input type="number" id="pf-port" min="1" step="1"></div>
                 <div class="field"><label class="field-label" for="pf-apikey">API key (--api-key, optional)</label><input type="text" id="pf-apikey" spellcheck="false"></div>
               </div>
+              <div class="field-hint">The panel proxy injects this key only for trusted callers — local requests, or remote ones when a panel token is set (Settings → Panel token). An open remote /proxy caller never sees the key; it must pass its own Authorization header.</div>
               <div class="checkrow">
                 <label class="check"><input type="checkbox" id="pf-jinja"><span>Jinja templates (--jinja)</span></label>
                 <label class="check"><input type="checkbox" id="pf-reasoning"><span>Preserve reasoning (--reasoning-preserve)</span></label>

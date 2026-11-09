@@ -516,6 +516,21 @@ def create_app() -> FastAPI:
         get_launch=lambda: _launch_for(manager.preset_id or config.active_preset_id),
     )
 
+    _key_warn_at = [0.0]
+
+    async def _warn_key_withheld() -> None:
+        # once per 10 min: the panel log is where the owner sees this
+        now = time.monotonic()
+        if now - _key_warn_at[0] < 600:
+            return
+        _key_warn_at[0] = now
+        manager.note(
+            "[panel] NOTE: the llama-server API key was NOT forwarded to a "
+            "remote /proxy caller — with a non-loopback bind it is only "
+            "injected when a panel token protects the proxy. Set a token in "
+            "Settings, or have callers pass their own Authorization header."
+        )
+
     @asynccontextmanager
     async def lifespan(_: FastAPI):
         log.info("llama-monitor panel starting")
@@ -1481,6 +1496,16 @@ def create_app() -> FastAPI:
 
     @app.api_route("/proxy/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
     async def llama_proxy(path: str, request: Request) -> Response:
+        # (#94) The preset's llama-server API key is a machine-owner secret.
+        # It is injected only when the caller already proved panel access:
+        # a panel token is configured (so this /proxy call is gated by it),
+        # or the caller is on this machine (loopback). An open remote caller
+        # (no token) never sees the key — the server's 401 tells them so.
+        token_on = bool(config.panel.token.strip())
+        caller = request.client.host if request.client else ""
+        inject_key = token_on or (caller != "" and _is_loopback_host(caller))
+        if not inject_key:
+            await _warn_key_withheld()
         body: Optional[dict[str, Any]] = None
         if request.method in ("POST", "PUT", "PATCH", "DELETE"):
             raw = await request.body()
@@ -1503,7 +1528,8 @@ def create_app() -> FastAPI:
         try:
             if isinstance(body, dict) and body.get("stream") is True:
                 async def gen() -> AsyncIterator[bytes]:
-                    async for chunk in proxy.stream(request.method, path, body, headers, query):
+                    async for chunk in proxy.stream(
+                            request.method, path, body, headers, query, inject_key):
                         yield chunk
 
                 return StreamingResponse(
@@ -1512,7 +1538,7 @@ def create_app() -> FastAPI:
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
                 )
             status, out_headers, content = await proxy.request(
-                request.method, path, body, headers, query)
+                request.method, path, body, headers, query, inject_key)
             if is_generation and status >= 400:
                 _record_failure(status, path)
             return Response(content=content, status_code=status, headers=out_headers)
