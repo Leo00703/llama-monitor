@@ -3,18 +3,20 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 import logging
 import os
 import secrets
 import shutil
+import socket
 import threading
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any, AsyncIterator, Callable, Optional
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, urlparse
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, Response, StreamingResponse
@@ -310,15 +312,10 @@ class PanelTokenGate:
         self.app = app
         self.get_config = get_config
 
-    @staticmethod
-    def _protected(path: str) -> bool:
-        return ((path.startswith("/api/") and path != "/api/health")
-                or path.startswith("/proxy/") or path.startswith("/ws/"))
-
     async def __call__(self, scope, receive, send) -> None:
         token = (self.get_config().panel.token or "").strip()
         if token and scope["type"] in ("http", "websocket") \
-                and self._protected(scope.get("path", "")):
+                and _protected_path(scope.get("path", "")):
             if scope["type"] == "websocket":
                 given = (parse_qs(scope.get("query_string", b"").decode("latin-1"))
                          .get("token") or [""])[0]
@@ -344,6 +341,97 @@ def _is_loopback_host(host: str) -> bool:
     host = (host or "").strip().lower()
     return host in ("", "localhost", "::1") or host == "127.0.0.1" \
         or host.startswith("127.")
+
+
+def _protected_path(path: str) -> bool:
+    """The endpoints both panel guards (token #92, host/origin #93) cover."""
+    return ((path.startswith("/api/") and path != "/api/health")
+            or path.startswith("/proxy/") or path.startswith("/ws/"))
+
+
+def _host_without_port(value: str) -> str:
+    v = (value or "").strip().lower()
+    if v.startswith("["):  # [::1]:8000
+        return v[1:].split("]", 1)[0]
+    if v.count(":") == 1:  # host:port (hostname or IPv4)
+        v = v.split(":", 1)[0]
+    return v
+
+
+class PanelRequestGuard:
+    """Host + Origin request guard (#93).
+
+    Blocks DNS rebinding (an attacker domain resolved to this machine's
+    address) and cross-site abuse — CSRF on the bodyless state-changing
+    POSTs and foreign-origin WebSocket subscriptions, which stream logs
+    with full launch commands. The Host header must name this machine
+    (loopback, an IP literal, the machine name, .local/.ts.net, or the
+    configured panel host — never lock a LAN install out), and a browser
+    Origin, when present, must be same-origin. Non-browser clients
+    (curl, the tray, OpenAI SDKs) send neither header and pass through.
+    """
+
+    def __init__(self, app, get_config) -> None:
+        self.app = app
+        self.get_config = get_config
+        self.machine = {socket.gethostname().lower()}
+        try:
+            self.machine.add(socket.getfqdn().lower())
+        except OSError:
+            pass
+
+    def _host_ok(self, host: str) -> bool:
+        if not host or host in self.machine or "." not in host:
+            # dotless names are LAN short names: an attacker cannot delegate
+            # a single-label domain to rebind it to this machine
+            return True
+        if host == "localhost" or host.endswith((".localhost", ".ts.net", ".local")):
+            return True
+        try:  # IP literal: the route to it is already the network boundary
+            ipaddress.ip_address(host)
+            return True
+        except ValueError:
+            pass
+        cfg = (self.get_config().panel.host or "").strip().lower()
+        return cfg not in ("", "0.0.0.0", "::") and host == cfg
+
+    @staticmethod
+    def _origin_ok(origin_host: str, host: str) -> bool:
+        if _is_loopback_host(origin_host) and _is_loopback_host(host):
+            return True  # localhost vs 127.0.0.1 — both already local-only
+        return origin_host == host
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope["type"] in ("http", "websocket") \
+                and _protected_path(scope.get("path", "")):
+            headers = {k.lower(): v for k, v in scope.get("headers", [])}
+            host = _host_without_port(headers.get(b"host", b"").decode("latin-1"))
+            reason = ""
+            if not self._host_ok(host):
+                reason = "invalid host"
+            else:
+                origin = headers.get(b"origin", b"").decode("latin-1").strip()
+                if origin:
+                    try:
+                        oh = urlparse(origin).hostname or ""
+                    except ValueError:
+                        oh = ""
+                    # Origin present but unparseable/"null" (opaque origin):
+                    # never a same-origin browser request -> block
+                    if not oh or not self._origin_ok(oh.lower(), host):
+                        reason = "cross-origin request blocked"
+            if reason:
+                if scope["type"] == "websocket":
+                    await send({"type": "websocket.close", "code": 1008})
+                else:
+                    body = json.dumps({"ok": False, "error": reason}).encode()
+                    await send({"type": "http.response.start", "status": 403,
+                                "headers": [(b"content-type", b"application/json"),
+                                            (b"content-length",
+                                             str(len(body)).encode())]})
+                    await send({"type": "http.response.body", "body": body})
+                return
+        await self.app(scope, receive, send)
 
 
 def create_app() -> FastAPI:
@@ -482,9 +570,12 @@ def create_app() -> FastAPI:
     # next "panel hangs during inference" report should name the endpoint.
     app.add_middleware(SlowRequestLogger, manager=manager)
 
-    # (#92) Registered last = outermost: the token check runs before any
+    # (#92) Registered last-but-one: the token check runs before any
     # route or the static mount sees the request.
     app.add_middleware(PanelTokenGate, get_config=lambda: config)
+    # (#93) Outermost: reject rebinding/foreign-origin requests before the
+    # token gate even spends a compare_digest on them.
+    app.add_middleware(PanelRequestGuard, get_config=lambda: config)
     if config.panel.token.strip():
         manager.note("[panel] panel token enforced on /api, /proxy and /ws")
     elif not _is_loopback_host(config.panel.host):
