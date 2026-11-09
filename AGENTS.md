@@ -411,7 +411,15 @@ without rebuilding.
   per release-cache refresh — without that the picker is empty for the
   DEFAULT channel. `variant` is an OPEN set (`is_valid_variant()` is a shape
   check only): `cpu | vulkan | cuda-<ver> | rocm-<ver> | openvino-<ver> |
-  sycl[-fp16|fp32] | …`. A stored variant the target release no longer
+  sycl[-fp16|fp32] | …`. Tags got the same treatment (#97): `is_valid_tag()`
+  = nightly `b<digits>` OR stable `v<d>.<d>.<d>`, and `POST
+  /api/backend/download` shape-checks BOTH tag and variant before anything is
+  built from them — the download flow builds `storage/llama-<tag>-<variant>`
+  and rmtree's it on failure, so an unvalidated tag is a path-injection
+  hazard waiting for a future find_asset relaxation. `extract_archive()`
+  capability-gates `filter="data"` with `hasattr(tarfile, "data_filter")`,
+  never a `sys.version_info` check (backports would silently extract
+  unfiltered, #97). A stored variant the target release no longer
   ships stays selectable (labelled "not in the latest build") — never
   silently rewritten. `suggest_variant(tag)`: nvidia-smi driver major → CUDA
   major ceiling (≥580 → 13, ≥525 → 12; NVIDIA minor-version compatibility
