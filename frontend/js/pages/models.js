@@ -286,7 +286,7 @@ const Models = {
       const data = await API.get("/api/presets");
       const keep = sel.value;
       sel.innerHTML = (data.presets || [])
-        .map((p) => `<option value="${p.id}">${UI.esc(p.name)}</option>`).join("");
+        .map((p) => `<option value="${UI.esc(p.id)}">${UI.esc(p.name)}</option>`).join("");
       if (keep && data.presets.some((p) => p.id === keep)) sel.value = keep;
       else if (data.active_id) sel.value = data.active_id;
     } catch (_) { /* keep current options */ }

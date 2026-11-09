@@ -289,11 +289,11 @@ const Presets = {
   cardHtml(p, { trailing = null } = {}) {
     const t = trailing === null ? `
         <div class="preset-actions">
-          <button type="button" class="btn" data-act="edit" data-id="${p.id}">Edit</button>
-          <button type="button" class="btn" data-act="dup" data-id="${p.id}">Duplicate</button>
-          <button type="button" class="btn btn-danger" data-act="del" data-id="${p.id}">Delete</button>
+          <button type="button" class="btn" data-act="edit" data-id="${UI.esc(p.id)}">Edit</button>
+          <button type="button" class="btn" data-act="dup" data-id="${UI.esc(p.id)}">Duplicate</button>
+          <button type="button" class="btn btn-danger" data-act="del" data-id="${UI.esc(p.id)}">Delete</button>
         </div>` : trailing;
-    return `<div class="preset-card" data-id="${p.id}">` + this.cardInner(p, t) + `</div>`;
+    return `<div class="preset-card" data-id="${UI.esc(p.id)}">` + this.cardInner(p, t) + `</div>`;
   },
 
   async load() {
