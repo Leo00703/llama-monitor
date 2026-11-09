@@ -189,6 +189,17 @@ def parse_cudart_asset(name: str) -> Optional[dict[str, Any]]:
     return {"name": name, "tag": m.group("tag") or "", "kind": "cudart", **parts}
 
 
+_STABLE_TAG_RE = re.compile(r"^v\d+\.\d+\.\d+$")
+
+
+def is_valid_tag(tag: str) -> bool:
+    """Shape check for a llama.cpp release tag: nightly (`b10566`) or stable
+    (`v0.5.0`). Caller-supplied tags must pass this before being used in
+    paths that later get rmtree'd (#97)."""
+    t = (tag or "").strip()
+    return bool(_BTAG_RE.match(t) or _STABLE_TAG_RE.match(t))
+
+
 def is_valid_variant(variant: str) -> bool:
     """Shape check for a stored variant id (cpu / vulkan / cuda-13.4 /
     openvino-2026.4 / sycl-fp16 / ...). The set is open on purpose — it is
@@ -628,9 +639,9 @@ def extract_archive(archive: Path, dest: Path) -> None:
             z.extractall(dest)
     elif archive.name.endswith(".tar.gz"):
         with tarfile.open(archive, "r:gz") as t:
-            # `filter` exists only on 3.12+; on older interpreters fall back
-            # to the plain extract (trusted GitHub-release archives only, #73)
-            if sys.version_info >= (3, 12):
+            # capability, not version: patched 3.10/3.11 backport the filter
+            # and would otherwise silently extract unfiltered (#97)
+            if hasattr(tarfile, "data_filter"):
                 t.extractall(dest, filter="data")
             else:
                 t.extractall(dest)

@@ -1064,6 +1064,13 @@ def create_app() -> FastAPI:
             tag = res.get("target") or ""
             if not tag:
                 return {"ok": False, "error": "no target build found"}
+        # (#97) tag/variant flow into `storage / f"llama-{tag}-{variant}"`
+        # which install failures rmtree — shape-check them before anything
+        # is built from them, whatever find_asset matches later.
+        if not backend_update.is_valid_tag(tag):
+            return {"ok": False, "error": f"invalid build tag: {tag!r}"}
+        if not backend_update.is_valid_variant(variant):
+            return {"ok": False, "error": f"invalid variant: {variant!r}"}
         if be_downloading:
             return {"ok": False, "error": "a download is already in progress"}
         _start_be_download(tag, variant)
