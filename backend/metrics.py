@@ -247,6 +247,8 @@ class MetricsCollector:
         psutil.cpu_percent(percpu=True)
         self._cpu_sensors = CpuSensors()
         self._baseline: Optional[dict[str, Any]] = None
+        # long-lived inference client — see _inference (#106 O3)
+        self._client: Optional[httpx.AsyncClient] = None
 
     async def snapshot(self, port: Optional[int]) -> dict:
         """Collect one full sample. `port` = active llama-server port (or None)."""
@@ -287,12 +289,26 @@ class MetricsCollector:
 
     async def _inference(self, port: int) -> Optional[dict]:
         base = f"http://127.0.0.1:{port}"
-        try:
-            headers = self._get_auth() or {}
-            async with httpx.AsyncClient(timeout=2.0, headers=headers) as client:
-                mres = await client.get(f"{base}/metrics")
-                sres = await client.get(f"{base}/slots")
-        except httpx.HTTPError:
+        headers = self._get_auth() or {}
+        # One long-lived client, two concurrent GETs (#106 O3): the old code
+        # rebuilt the AsyncClient every 1.5 s tick (fresh TCP handshake,
+        # zero keep-alive) and fetched /slots only after /metrics returned.
+        # Auth headers go per-request, so a preset API-key change (#99)
+        # needs no client rebuild.
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(timeout=2.0)
+        mres, sres = await asyncio.gather(
+            self._client.get(f"{base}/metrics", headers=headers),
+            self._client.get(f"{base}/slots", headers=headers),
+            return_exceptions=True,
+        )
+        if isinstance(mres, asyncio.CancelledError):
+            raise mres
+        if isinstance(sres, asyncio.CancelledError):
+            raise sres
+        if isinstance(mres, Exception) or isinstance(sres, Exception):
+            # either endpoint unreachable (server down / slow) => no sample,
+            # same outcome as the old serial httpx.HTTPError path
             return None
         if mres.status_code == 401 and sres.status_code == 401:
             # The server demands an API key the panel did not send (or sent
