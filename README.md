@@ -99,7 +99,10 @@ line:
   toast). Host and Origin headers are checked on every API, proxy and
   WebSocket request, so DNS rebinding, CSRF and cross-site log streaming are
   blocked even without a token (non-browser clients — curl, OpenAI SDKs — are
-  unaffected). `llama-server` itself now also binds to `127.0.0.1` by default —
+  unaffected). The preset's `--api-key` follows the same rule: the proxy
+  injects it only for local callers or token-authenticated remote ones — an
+  open (no-token) LAN caller never sees your key and must send its own
+  `Authorization` header. `llama-server` itself now also binds to `127.0.0.1` by default —
   clients reach it through the panel proxy; expose it per-preset only if you
   want direct LAN access to inference.
 - **Loading screen** — every open/reload first shows a branded loading
