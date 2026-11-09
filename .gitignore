@@ -29,6 +29,8 @@ graphify-out/cache/
 graphify-out/.graphify_root
 graphify-out/cost.json
 graphify-out/memory/
+# graphify's dated pre-run graph backups (local artifacts)
+graphify-out/20*/
 
 # Editor / OS
 .vscode/
