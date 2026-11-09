@@ -79,6 +79,8 @@ line:
 - **Analytics** — per-request history (tokens, latency, energy estimate) in
   SQLite: summary cards, token/speed charts, model breakdown, a request
   table, and CSV export, all with a day/week/month/year/all range picker.
+  Completed requests are kept indefinitely; failed-request counts older
+  than ~13 months are pruned automatically.
 - **PWA / installable app** — the panel is a progressive web app: install
   it from the browser (phone, tablet, desktop) to get a native app icon, a
   standalone window, and an offline shell (live data always comes from the

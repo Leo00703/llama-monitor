@@ -221,6 +221,11 @@ without rebuilding.
   `graphify cluster-only . --no-label` (reuses the curated community names
   from `.graphify_labels.json`; no LLM). Check staleness via
   `graph.json`'s `built_at_commit` vs `git rev-parse HEAD`.
+- **Re-curate labels after a reshuffle**: when the repo shape changes enough
+  to add/merge communities, fingerprint-based label inheritance falls back
+  to auto-names (top node names). After a refresh, diff
+  `.graphify_labels.json` — any auto-named community needs a hand-written
+  name back before committing (`cluster-only --no-label` then preserves it).
 - **Community labels are curated by hand** (`.graphify_labels.json`) — this
   machine has no LLM API key, so never re-label with a backend; keep
   `--no-label`.
@@ -251,6 +256,8 @@ without rebuilding.
 - Comments: minimal; add a comment only for a non-obvious "why".
 
 ## Gotchas
+
+- **#106 perf invariants**: the analytics HTTP handlers (`summary/timeseries/models/records/export`, main.py) stay plain `def` — FastAPI dispatches sync handlers to the threadpool; as `async def` their sqlite scans froze the loop inline. Per-request analytics writes go through `_submit_db_write` (default executor + done-callback logging) — `PrintTimingTracker`'s on-complete hook and `_record_failure` run in loop-thread context. `failed_requests` has a 400-day retention pruned daily by `_metrics_loop` (seeded to also run on the first tick, BEFORE the `has_listeners` skip — the table grows precisely while the panel is unattended and proxied calls fail); `generation_records` is the user's usage history and is NEVER pruned. `MetricsCollector._inference` reuses ONE long-lived `httpx.AsyncClient` — auth headers pass per-request (#99 key rotation keeps working; re-raise `CancelledError` from the gather pair or shutdown hangs). `snapshot()`'s nvidia-smi path goes through `nvidia_smi_cached()` (negative result cached 60 s; a working GPU machine still spawns per tick for live utilisation) — launch validation and the Settings GPU card keep calling `run_nvidia_smi` fresh. psutil full scans (`_find_external_server`, `_pid_on_port`) run via `asyncio.to_thread` while state application/publishing stays on the loop — `_broadcast` is `asyncio.Queue.put_nowait`, NOT thread-safe. `/api/state` carries `active_preset_id` folded in (the tray contract: one poll every 2 s; the tray must never GET `/api/config`). Frontend log autoscroll uses `queueAutoscroll()` (rAF-coalesced) — reading `scrollHeight` per appended line forced a reflow per line on the WS-reconnect replay.
 
 - **#105 hardening invariants**: (a) `update.py` has TWO locks — `_lock` guards `_cache` only, never held across the git fetch (up to 300 s; holding it pinned a threadpool worker per blocked `/api/update/check`), `_exec_lock` serializes actual checks and waiters re-read the cache under `_lock` once it lands; (b) fire-and-forget asyncio tasks in `process.py`/`backend_update.py`/`main.py` go through each module's `_spawn()` (`_bg_tasks` strong-ref set + `add_done_callback(discard)`) — bare `asyncio.create_task` can be GC'd mid-flight ("Task was destroyed but it is pending", silently killing log capture); (c) `frontend/js/api.js` `parseBody()` resolves JSON for **any** HTTP status (the token gate 401 / request guard 403 return `{ok:false,error}` JSON that callers read) and throws `HTTP <code> … on <path>: <snippet>` only on non-JSON or empty-non-ok bodies — never simplify back to `res.json()` or throw on every non-2xx; (d) `/api/analytics/timeseries` validates `bucket` against `analytics.BUCKETS` (an unknown bucket silently degrades to a blank chart); (e) `_ps_str()` (update.py) escapes the **backtick first**, then `"` and `$` — backtick is PowerShell's escape char, and the escape order keeps the doubling from re-escaping the new `"`/`$` escapes; a repo/exe path containing one would break the update bootstrap script.
 
