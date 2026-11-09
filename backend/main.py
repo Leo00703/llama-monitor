@@ -72,8 +72,11 @@ class _CacheAwareStaticFiles(StaticFiles):
         response = await super().get_response(path, scope)
         ctype = response.headers.get("content-type", "")
         # key on content-type: the "/" navigation resolves to index.html
-        # with no extension in the request path
-        if ctype.startswith("text/html") or path.lower().endswith((".js", ".css")):
+        # with no extension in the request path. .webmanifest must revalidate
+        # too — a year-immutable manifest means manifest edits never reach
+        # installed PWAs (#105). sw.js is .js, already no-cache.
+        if (ctype.startswith("text/html")
+                or path.lower().endswith((".js", ".css", ".webmanifest"))):
             response.headers["cache-control"] = "no-cache"
         else:
             response.headers["cache-control"] = "public, max-age=31536000, immutable"

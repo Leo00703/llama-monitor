@@ -26,8 +26,11 @@
    wipes any stale v1 cache that is already out there.
    v3 (#77): the v2 precache was all-or-nothing and unbounded — one failed
    `cache.addAll` fetch (busy host, flaky link) rejected the whole install
-   and the device was left WITHOUT any of the timeout bounds above. */
-const CACHE = "llama-monitor-v3";
+   and the device was left WITHOUT any of the timeout bounds above.
+    v4 (#105): manifest.webmanifest was served immutable for a year, so a
+    PWA's cached manifest never revalidated; the backend now sends it
+    no-cache — this bump wipes caches still holding the old entry. */
+const CACHE = "llama-monitor-v4";
 const SHELL = [
   "/",
   "/css/style.css",
