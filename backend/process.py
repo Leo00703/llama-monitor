@@ -90,6 +90,10 @@ class LlamaServerManager:
         self._stop_requested = False
         self._port: Optional[int] = None
         self._preset_id: Optional[str] = None
+        # pid of an adopted external llama-server (#95): stop() targets it
+        # directly — the socket probe can miss it (and must not be the only
+        # clue, so a foreign process can never be substituted for it).
+        self._external_pid: Optional[int] = None
 
     # ------------------------------------------------------------------
     # lifecycle
@@ -146,6 +150,7 @@ class LlamaServerManager:
                 if self._llama_server_port(pid) is not None:
                     self._state = ServerState.EXTERNAL
                     self._port = port
+                    self._external_pid = pid
                     self._error = f"port {port} is occupied by pid {pid} (not started by this panel)"
                     self._publish_log(
                         f"[panel] external server on port {port} (pid {pid}) — marked "
@@ -194,6 +199,7 @@ class LlamaServerManager:
 
             self._launch_args = args
             self._port = port
+            self._external_pid = None
             pid = self._proc.pid
             asyncio.create_task(self._read_output(self._proc))
             asyncio.create_task(self._run_monitor(self._proc, port))
@@ -215,6 +221,7 @@ class LlamaServerManager:
                         await asyncio.wait_for(proc.wait(), timeout=KILL_TIMEOUT)
                 self._proc = None
                 self._port = None
+                self._external_pid = None
                 self._preset_id = None
                 self._state = ServerState.STOPPED
                 self._error = ""
@@ -225,8 +232,25 @@ class LlamaServerManager:
             # No child process: maybe an external server occupies the port
             # (current_port() — the port it was detected/adopted on, #68).
             port = self.current_port() or self._get_config().default_server_port
-            pid = self._pid_on_port(port)
+            # (#95) Prefer the pid adopted at detect/start time: the socket
+            # probe can miss the owner (psutil sometimes reports its status
+            # neither LISTEN nor a known state). Re-validate it first — the
+            # pid may meanwhile have died or been reused by another process.
+            pid = self._external_pid
+            if pid is not None and not (psutil.pid_exists(pid)
+                                        and self._llama_server_port(pid) is not None):
+                pid = None
+            if pid is None:
+                pid = self._pid_on_port(port)
             if pid is not None:
+                if self._llama_server_port(pid) is None:
+                    # (#95) The panel may only kill llama-server — never
+                    # whatever else happens to own the port.
+                    msg = self._not_llama_server_msg(port, pid)
+                    self._publish_log(f"[panel] {msg}")
+                    self._error = msg
+                    self._publish_state()
+                    return {"ok": False, "error": msg}
                 self._publish_log(f"[panel] stopping external server (pid {pid})")
                 self._terminate_pid(pid)
                 try:
@@ -241,6 +265,7 @@ class LlamaServerManager:
                 except psutil.Error:
                     pass
                 self._port = None
+                self._external_pid = None
                 self._preset_id = None
                 self._state = ServerState.STOPPED
                 self._error = ""
@@ -249,6 +274,7 @@ class LlamaServerManager:
                 return {"ok": True, "state": self._state.value}
 
             self._port = None
+            self._external_pid = None
             self._preset_id = None
             self._state = ServerState.STOPPED
             self._error = ""
@@ -363,14 +389,23 @@ class LlamaServerManager:
             pid, port = found
             self._state = ServerState.EXTERNAL
             self._port = port
+            self._external_pid = pid
             self._error = f"port {port} is occupied by pid {pid} (not started by this panel)"
             self._publish_log(f"[panel] detected external server on port {port} (pid {pid})")
             return
         port = self._get_config().default_server_port
         pid = self._pid_on_port(port)
         if pid is not None and (self._proc is None or self._proc.returncode is not None):
+            if self._llama_server_port(pid) is None:
+                # (#95) The any-process fallback must not adopt (and thereby
+                # make Stop target) some unrelated service on the port.
+                self._publish_log(
+                    f"[panel] port {port} is held by {self._process_name(pid)} "
+                    f"(pid {pid}) — not a llama-server, not adopting it")
+                return
             self._state = ServerState.EXTERNAL
             self._port = port
+            self._external_pid = pid
             self._error = f"port {port} is occupied by pid {pid} (not started by this panel)"
             self._publish_log(f"[panel] detected external server on port {port} (pid {pid})")
 
@@ -398,6 +433,7 @@ class LlamaServerManager:
             self._publish_state()
         code = await proc.wait()
         self._port = None
+        self._external_pid = None
         self._preset_id = None
         if self._stop_requested or code in (0, None):
             if self._state not in (ServerState.STOPPED,):
@@ -493,6 +529,17 @@ class LlamaServerManager:
                 with contextlib.suppress(ValueError):
                     return int(args[i + 1])
         return None
+
+    @staticmethod
+    def _process_name(pid: int) -> str:
+        try:
+            return psutil.Process(pid).name()
+        except (psutil.Error, OSError):
+            return "unknown process"
+
+    def _not_llama_server_msg(self, port: int, pid: int) -> str:
+        return (f"port {port} is held by {self._process_name(pid)} (pid {pid}) "
+                "— not a llama-server, refusing to stop it")
 
     @staticmethod
     def _llama_server_port(pid: int) -> Optional[int]:
