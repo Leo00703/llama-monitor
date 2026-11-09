@@ -24,6 +24,10 @@ from typing import Any, Callable, Optional
 log = logging.getLogger("llama-monitor.analytics")
 
 RANGES = ("day", "week", "month", "year", "all")
+# known timeseries bucket names (_bucket_bounds/_bucket_next dispatch on
+# these; anything else silently degrades to day — a typoed bucket is a
+# blank chart, so the API rejects them instead, #105)
+BUCKETS = ("hour", "day", "week", "month")
 
 # llama-server prints one block of 3 lines per completed request.
 # Newer builds right-align the numbers (padded with spaces), e.g.:

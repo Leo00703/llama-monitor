@@ -29,6 +29,7 @@ import httpx
 
 from .analytics import (
     AnalyticsStore,
+    BUCKETS,
     LiveLogStats,
     PowerSampler,
     PrintTimingTracker,
@@ -1481,6 +1482,8 @@ def create_app() -> FastAPI:
     async def analytics_timeseries(range: str = "week", bucket: str = "") -> dict:
         if range not in RANGES:
             return {"ok": False, "error": f"range must be one of {', '.join(RANGES)}"}
+        if bucket and bucket not in BUCKETS:
+            return {"ok": False, "error": f"bucket must be one of {', '.join(BUCKETS)}"}
         return {"ok": True, **analytics.timeseries(range, _price(), bucket or None)}
 
     @app.get("/api/analytics/models")
