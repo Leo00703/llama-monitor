@@ -96,7 +96,10 @@ line:
   it (the browser asks for it once), so the control panel — which can launch
   programs — is not an open door on your network. Binding a non-loopback
   address without a token is allowed but loudly warned (panel log + Settings
-  toast). `llama-server` itself now also binds to `127.0.0.1` by default —
+  toast). Host and Origin headers are checked on every API, proxy and
+  WebSocket request, so DNS rebinding, CSRF and cross-site log streaming are
+  blocked even without a token (non-browser clients — curl, OpenAI SDKs — are
+  unaffected). `llama-server` itself now also binds to `127.0.0.1` by default —
   clients reach it through the panel proxy; expose it per-preset only if you
   want direct LAN access to inference.
 - **Loading screen** — every open/reload first shows a branded loading
