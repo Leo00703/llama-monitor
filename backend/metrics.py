@@ -128,6 +128,29 @@ def run_nvidia_smi() -> Optional[list[dict]]:
     return gpus
 
 
+# Negative-result cache for the 1.5 s metrics loop (#106 O4): when
+# nvidia-smi is absent or fails, re-probing every tick is pure waste —
+# a PATH walk every tick, and a REAL process spawn per tick when a broken
+# nvidia-smi sits on PATH (rc != 0). A machine WITH a working GPU needs a
+# fresh spawn every tick (live utilisation), so only the negative result is
+# cached. Callers that must see the truth now (launch validation, the
+# Settings GPU card) keep calling run_nvidia_smi directly.
+GPU_NEGATIVE_TTL = 60.0
+_gpu_negative_until = 0.0
+
+
+def nvidia_smi_cached() -> Optional[list[dict]]:
+    """run_nvidia_smi with the negative result held for GPU_NEGATIVE_TTL."""
+    global _gpu_negative_until
+    now = time.monotonic()
+    if now < _gpu_negative_until:
+        return None
+    gpus = run_nvidia_smi()
+    if not gpus:  # None or [] -> negative: retry only after the TTL
+        _gpu_negative_until = now + GPU_NEGATIVE_TTL
+    return gpus
+
+
 class CpuSensors:
     """CPU package temperature + power from sysfs (Linux only).
 
@@ -255,7 +278,12 @@ class MetricsCollector:
         per_core = psutil.cpu_percent(percpu=True)
         total = psutil.cpu_percent()
         ram = psutil.virtual_memory()
-        gpus = await asyncio.to_thread(run_nvidia_smi)
+        # skip even the thread hop while the negative nvidia-smi result
+        # (#106 O4) is fresh — no-GPU machines get zero per-tick cost
+        if time.monotonic() >= _gpu_negative_until:
+            gpus = await asyncio.to_thread(nvidia_smi_cached)
+        else:
+            gpus = None
         cpu_sensors = await asyncio.to_thread(self._cpu_sensors_sample)
         inference = await self._inference(port) if port else None
         freq = psutil.cpu_freq()  # None on platforms without a freq source
