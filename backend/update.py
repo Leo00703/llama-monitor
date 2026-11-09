@@ -255,7 +255,9 @@ def _result_path() -> Path:
 
 def _ps_str(value: str) -> str:
     """Quote a value for a double-quoted PowerShell string literal."""
-    return value.replace('"', '`"').replace("$", "`$")
+    # backtick first — it is PS's escape char, and the doubles it introduces
+    # must not be re-escaped by the `"` / `$` steps (#105)
+    return value.replace("`", "``").replace('"', '`"').replace("$", "`$")
 
 
 def _write_bootstrap_ps1(
