@@ -373,8 +373,11 @@ class AnalyticsStore:
     def range_start(range_name: str, now: Optional[float] = None) -> float:
         now = now if now is not None else time.time()
         if range_name == "day":
+            # tm_isdst=-1 everywhere in this module's mktime calls: 0 pins
+            # the components to standard time -> "midnight" lands at 01:00
+            # through the DST period (#102)
             d = time.localtime(now)
-            return time.mktime((d.tm_year, d.tm_mon, d.tm_mday, 0, 0, 0, 0, 0, 0))
+            return time.mktime((d.tm_year, d.tm_mon, d.tm_mday, 0, 0, 0, 0, 0, -1))
         if range_name == "week":
             return now - 7 * 86400
         if range_name == "month":
@@ -552,12 +555,12 @@ def _bucket_bounds(bucket: str, ts: float) -> float:
     if bucket == "hour":
         return ts - (ts % 3600)
     if bucket == "day":
-        return time.mktime((d.tm_year, d.tm_mon, d.tm_mday, 0, 0, 0, 0, 0, 0))
+        return time.mktime((d.tm_year, d.tm_mon, d.tm_mday, 0, 0, 0, 0, 0, -1))
     if bucket == "week":
-        day = time.mktime((d.tm_year, d.tm_mon, d.tm_mday, 0, 0, 0, 0, 0, 0))
+        day = time.mktime((d.tm_year, d.tm_mon, d.tm_mday, 0, 0, 0, 0, 0, -1))
         return day - time.localtime(day).tm_wday * 86400
     if bucket == "month":
-        return time.mktime((d.tm_year, d.tm_mon, 1, 0, 0, 0, 0, 0, 0))
+        return time.mktime((d.tm_year, d.tm_mon, 1, 0, 0, 0, 0, 0, -1))
     return ts - (ts % 86400)
 
 
@@ -566,14 +569,14 @@ def _bucket_next(bucket: str, ts: float) -> float:
     if bucket == "hour":
         return ts + 3600
     if bucket == "day":
-        return time.mktime((d.tm_year, d.tm_mon, d.tm_mday + 1, 0, 0, 0, 0, 0, 0))
+        return time.mktime((d.tm_year, d.tm_mon, d.tm_mday + 1, 0, 0, 0, 0, 0, -1))
     if bucket == "week":
         return ts + 7 * 86400
     if bucket == "month":
         y, m = d.tm_year, d.tm_mon + 1
         if m > 12:
             y, m = y + 1, 1
-        return time.mktime((y, m, 1, 0, 0, 0, 0, 0, 0))
+        return time.mktime((y, m, 1, 0, 0, 0, 0, 0, -1))
     return ts + 86400
 
 
