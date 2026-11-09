@@ -116,13 +116,27 @@ try { if (localStorage.getItem("lm.sidebar.collapsed") === "1") setSidebarCollap
 /* log rendering                                                     */
 /* ---------------------------------------------------------------- */
 
+/* rAF-coalesced autoscroll (#106 O7): reading scrollHeight after every
+   append forces a synchronous layout — the WS-reconnect replay of the log
+   buffer was one reflow PER line inside a single frame. One queued scroll
+   per frame reads the final scrollHeight instead. */
+let autoscrollQueued = false;
+function queueAutoscroll() {
+  if (autoscrollQueued || !autoscrollEl.checked) return;
+  autoscrollQueued = true;
+  requestAnimationFrame(() => {
+    autoscrollQueued = false;
+    if (autoscrollEl.checked) logEl.scrollTop = logEl.scrollHeight;
+  });
+}
+
 function appendLogLine(line) {
   const div = document.createElement("div");
   if (line.startsWith("[panel]")) div.className = "panel-line";
   div.textContent = line;
   logEl.appendChild(div);
   while (logEl.children.length > MAX_DOM_LINES) logEl.removeChild(logEl.firstChild);
-  if (autoscrollEl.checked) logEl.scrollTop = logEl.scrollHeight;
+  if (autoscrollEl.checked) queueAutoscroll();
 }
 
 function renderLog(lines) {
