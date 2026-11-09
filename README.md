@@ -199,6 +199,7 @@ in-app **Settings** page (which shows the data directory in use):
 | `llama_backend.variant` | Build flavor — the picker lists what the target build actually ships for your OS + CPU arch (`cpu`, `vulkan`, `cuda-<ver>`, `rocm-<ver>`, `openvino-<ver>`, `sycl`, …); the **Detect** button suggests one from `nvidia-smi` |
 | `llama_backend.auto_download` | Download new builds automatically when a check finds them (installing always stays manual) |
 | `llama_backend.storage_dir` | Folder for downloaded builds (default: a `llama-builds`-style sibling of the current build) |
+| `llama_backend.expected_sha256` | Optional sha256 of the build archive to download: when set, a download whose digest differs is refused (advanced pin — the panel otherwise size-verifies downloads and records every digest in the build manifest) |
 
 ## Run
 
@@ -307,10 +308,14 @@ graphify-out/    graphify knowledge graph of the codebase (graph.json +
                  query the graph for codebase questions instead of re-reading
 build_exe.bat    local PyInstaller build of dist\llama-monitor.exe
 requirements-tray.txt   extra deps for the tray launcher (pystray, Pillow, pyinstaller)
+requirements.lock.txt   hash-pinned lock (uv, windows/cp312) — the CI build env
+                        installs it with --require-hashes
 assets/tray/     tray mark (PNG) + exe icon (ICO)
 docs/            README screenshots
 .github/workflows/build-exe.yml   CI: smoke test + PyInstaller + artifact upload +
                      commit the refreshed exe back to the repo root
+                      (actions SHA-pinned, hash-locked deps, write perms
+                      scoped to the exe-refresh job)
 ```
 
 Persistent data lives outside the repo (see Configure): config.json,
