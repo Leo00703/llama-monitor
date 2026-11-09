@@ -89,6 +89,16 @@ line:
   `tailscale cert` (or `tailscale serve`) gives a fully trusted certificate.
   `localhost` (the desktop/tray case) is installable without TLS, and iOS
   can add the home-screen app even over plain http.
+- **Panel access control** — the panel binds to `127.0.0.1` by default (new
+  installs are local-only). To expose it over the LAN / Tailscale set
+  `panel.host` to `0.0.0.0`, and in that case set a **Panel token** in
+  Settings: with a token, every API, proxy and WebSocket request must carry
+  it (the browser asks for it once), so the control panel — which can launch
+  programs — is not an open door on your network. Binding a non-loopback
+  address without a token is allowed but loudly warned (panel log + Settings
+  toast). `llama-server` itself now also binds to `127.0.0.1` by default —
+  clients reach it through the panel proxy; expose it per-preset only if you
+  want direct LAN access to inference.
 - **Loading screen** — every open/reload first shows a branded loading
   screen (logo + progress bar) that fades out the moment the first state
   round-trip arrives; while each dataset is still pending (metrics,
@@ -171,7 +181,8 @@ in-app **Settings** page (which shows the data directory in use):
 | `llama_server_exe` | Path to the `llama-server` executable (or a bare name found in `PATH`) |
 | `models_root` | Root folder scanned for `.gguf` models; preset model paths are relative to it |
 | `default_server_port` | Port assumed for external/ready checks when nothing else is known |
-| `panel.host` / `panel.port` | Bind address/port of the panel itself (default `0.0.0.0:8000`, so it is reachable over Tailscale) |
+| `panel.host` / `panel.port` | Bind address/port of the panel itself (default `127.0.0.1:8000` — local only; set `0.0.0.0` to reach it over the LAN / Tailscale) |
+| `panel.token` | Optional panel access token: when set, every API, proxy and WebSocket request must carry it (the browser asks once). Keep one set before binding a non-loopback address |
 | `panel.tls_cert` / `panel.tls_key` | Optional PEM cert + key paths — serve the panel over HTTPS (needed for PWA installs over LAN/tailscale; empty = plain http) |
 | `active_preset_id` | Preset currently selected for launches |
 | `energy_price_eur_kwh` | € per kWh, used for the cost estimates on the Analytics page |
@@ -186,10 +197,12 @@ in-app **Settings** page (which shows the data directory in use):
 ## Run
 
 ```bash
-python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000
+python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
+# (or --host 0.0.0.0 to listen on all interfaces — set a panel token first)
 ```
 
-Then open `http://<server-ip>:8000` in a browser. Point your OpenAI-compatible
+Then open `http://127.0.0.1:8000` (`http://<server-ip>:8000` when you bound a
+public interface) in a browser. Point your OpenAI-compatible
 clients at `http://<server-ip>:8000/proxy/v1/...` to have generation parameters
 applied to every request through the panel.
 
