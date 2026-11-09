@@ -65,6 +65,17 @@ line:
   size/sort, plus automatic mmproj (vision) projectors detection per model.
   The scan is cached for 60 s, so very large model folders stay fast and a
   just-downloaded model appears within a minute.
+- **Path pickers** — every path field in **Settings** (llama-server exe,
+  models root, TLS cert/key, llama.cpp download folder) has a **Browse**
+  button: an in-app picker listing the panel host's filesystem (read-only —
+  names only, never file contents; works from any device, unlike a native OS
+  dialog). Typed/pasted paths are stored normalized (quotes from Explorer
+  "Copy as path" / Finder "Copy Path", stray spaces and trailing separators
+  are stripped — quoted pastes used to fail every existence check) and
+  validated live on the field: the exe is probed with `--version` (works —
+  llama.cpp bNNNNN), folder values count their `.gguf` files, the TLS pair
+  is actually loaded — so mistakes surface as ok/warn/err hints instead of a
+  Start failure.
 - **Analytics** — per-request history (tokens, latency, energy estimate) in
   SQLite: summary cards, token/speed charts, model breakdown, a request
   table, and CSV export, all with a day/week/month/year/all range picker.
@@ -250,6 +261,8 @@ backend/
   presets.py     preset CRUD (JSON files under <data-dir>/presets)
   metrics.py     CPU/RAM (psutil), GPU (nvidia-smi), inference metrics
   models.py      recursive .gguf browser + mmproj detection
+  browse.py      single-level folder listing + path-field validation for the
+                 Settings path pickers
   proxy.py       /v1/chat/completions & /completion proxy with settings injection
   analytics.py   print_timing parser + SQLite request/energy history
   update.py      git self-update (fetch/ff-only pull of origin, version info)

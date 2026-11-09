@@ -25,6 +25,8 @@ llama-monitor: a lightweight web control panel for a local `llama-server`
   - `presets.py` preset CRUD (JSON files under `<data-dir>/presets`)
   - `metrics.py` CPU/RAM (psutil), GPU (nvidia-smi), inference metrics
   - `models.py` recursive `.gguf` browser + mmproj detection
+  - `browse.py` single-level folder listing (`/api/browse`) + path-field
+    validation (`/api/validate-paths`) for the Settings path pickers (#84)
   - `proxy.py` `/v1/chat/completions` & `/completion` proxy with settings injection
   - `analytics.py` print_timing parser + SQLite request/energy history
   - `update.py` git self-update (fetch/ff-only pull of origin, version info)
@@ -244,6 +246,8 @@ without rebuilding.
 - Comments: minimal; add a comment only for a non-obvious "why".
 
 ## Gotchas
+
+- **Settings path fields (#84)**: the five path values (exe, models root, TLS cert/key, build storage dir) are canonicalized once on the backend — the `normalize_path_str()` Pydantic `mode="before"` validators in `config.py` fire on **every** `model_validate` (config load AND `POST /api/config`), and `frontend/js/pages/settings.js` `PathHints.norm()` mirrors the same rule (strip quotes/whitespace/trailing separators, keep `~` and drive roots like `C:\`). If you change the rule, change both. `GET /api/browse` (backend/browse.py) is deliberately **unrestricted** read-only folder listing of the panel host's filesystem (issue decision: the panel is an unauthenticated LAN tool and the model browser already walks any subtree a root points at) — names only, never file contents, one level per request, `#drives` sentinel on Windows. `POST /api/validate-paths` validates a field set without saving (levels ok/warn/err/muted); the exe probe reuses the cached `backend_update.run_version()`, so keep that cache — typing must not spawn a process per keystroke.
 
 - **macOS memory/launch semantics**: psutil on macOS computes `virtual_memory().percent` as `(total − available)/total` with `available = free + inactive`, while `used` = active + inactive + wired + wired_down + compressed + external — the two disagree badly on an Apple Silicon Mac (e.g. 88% vs 10.9/16 GB), so `MetricsCollector.snapshot()` derives `ram.percent` from `used/total` itself; do not switch it back to `ram.percent`. On Apple Silicon there is no separate VRAM — the GPU shares the CPU's physical memory (unified memory; Metal allocations show up in RAM's "external" bucket), so the dashboard's no-GPU note says so on Macs. llama-server launched from a quarantined binary (browser-downloaded zip) can spawn fine, show the Gatekeeper dialog, then be SIGKILLed before serving (asyncio returncode −9 with no output) — `LlamaServerManager` diagnoses that pre-ready darwin case and the spawn-time EACCES/EPERM cases with the `xattr -d com.apple.quarantine` remedy (the zip sets the attribute on *every* file, so `xattr -dr` on the folder is the practical form).
 - **Python 3.14 + PyInstaller**: `import pyinstaller` (lowercase) fails without
