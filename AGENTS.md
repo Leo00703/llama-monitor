@@ -1,6 +1,9 @@
 # AGENTS.md
 
-Guidance for AI agents (and humans) working in this repo.
+Guidance for AI agents (and humans) working in this repo. This repo is
+developed *with* AI agents — agent-filed issues and agent-written PRs are
+normal here; the bar is the same as for human contributions: cite what you
+verified and how.
 
 ## Project
 
@@ -8,6 +11,17 @@ llama-monitor: a lightweight web control panel for a local `llama-server`
 (llama.cpp) instance. Stack: FastAPI backend + vanilla HTML/CSS/JS frontend
 (**no build step, no frontend dependencies**) + a Windows system-tray launcher
 (`tray.py`). `Implementation Plan.md` is the requirements source of truth.
+
+## Development phases
+
+The panel was built in incremental phases (see `Implementation Plan.md`):
+
+1. Process start/stop/restart + live log streaming — done
+2. Preset system (CRUD, JSON storage, flag translation layer) — done
+3. Resource monitoring (CPU/RAM/GPU, inference metrics) with history charts — done
+4. Model browser, mmproj, speculative decoding, generation parameters + proxy — done
+5. Analytics: usage history (SQLite), energy cost, historical charts — done
+6. Header (status/version/host), collapsible sidebar, design polish — done
 
 ## Repo layout
 
@@ -236,6 +250,24 @@ without rebuilding.
 - `graphify-out/cache/`, `.graphify_root`, `cost.json`, `memory/` are
   gitignored (local artifacts; `.graphify_root` contains an absolute machine
   path — never commit it).
+
+## Deliberate choices — don't "improve" them
+
+- **No test framework, linter, or formatter** — verification is manual/ad-hoc
+  (see Verification); don't add pytest/black/ruff/CI lint jobs.
+- **No frontend framework, build step, or dependencies** — vanilla
+  HTML/CSS/JS, no bundler, no `package.json`.
+- **No new Python dependencies** without an issue discussion first.
+- **The theme is the official llama.cpp dark design language** — solid
+  `#0d0d0d` background, brand orange `#f65e00`, no gradients, bundled Geist
+  Mono for code/metrics. No Google Fonts or any other CDN, no restyling.
+- **Windows is primary; Linux and macOS must keep working** — `nvidia-smi` is
+  optional (GPU cards are replaced by a “No GPU detected” note when absent).
+- **Never pin or downgrade PyInstaller** — the onefile relaunch env handling
+  is a fix for a real bug (see Gotchas).
+- **Never commit** `config.json`, `data/`, `TODO.md`, `*.log`, `build/`,
+  `dist/`, `*.spec` — they are gitignored on purpose.
+- **New config keys must also go into `config.example.json`.**
 
 ## Code conventions
 

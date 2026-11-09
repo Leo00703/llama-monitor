@@ -1,9 +1,99 @@
 # llama-monitor
 
-A lightweight web control panel for a local `llama-server` (llama.cpp) instance.
-Run it on the same machine as the server, open it in a browser (from the same
-machine or over Tailscale), and manage everything without touching the command
-line:
+A web control panel for a local [`llama-server`](https://github.com/ggml-org/llama.cpp) (llama.cpp)
+instance — start it, tune it, watch it and keep it updated, all from a browser.
+Run it on the same machine as the server and open it from that machine, over
+the LAN, or over Tailscale: everything happens without touching the command
+line.
+
+[![License](https://img.shields.io/github/license/Leo00703/llama-monitor)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](#requirements)
+[![Windows / Linux / macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)](#requirements)
+[![Build tray exe](https://img.shields.io/github/actions/workflow/status/Leo00703/llama-monitor/build-exe.yml?branch=main&label=tray%20exe)](https://github.com/Leo00703/llama-monitor/actions/workflows/build-exe.yml)
+<!-- a latest-release badge can be added once the repo ships GitHub Releases (#90) -->
+
+![Dashboard](docs/llama-monitor-desktop.png)
+
+*The dashboard — server controls, the active preset, live resource cards
+(CPU / RAM / per-GPU) and an inference card with live tok/s, over the
+streaming server log.*
+
+<img src="docs/llama-monitor-mobile.png" width="320" alt="Mobile view">
+
+*The same panel on a phone — fully responsive, installable as a PWA (here:
+bar-style usage cards and a live generation with draft acceptance).*
+
+## Features at a glance
+
+- **Server control from the browser** — start / stop / restart `llama-server`
+  with live log streaming and a copy button that makes the launch command
+  paste-ready for your shell
+- **Semantic presets** — launch settings translated to real `llama-server`
+  flags and validated against the installed build
+- **Speculative decoding** — MTP, DFlash, DSpark, draft-simple, EAG-3, each
+  combinable with any of five ngram fallbacks (no VRAM cost)
+- **Live monitoring** — per-core CPU / RAM / per-GPU cards plus per-slot tok/s
+  and context usage, taken from the server's own log lines
+- **Analytics** — per-request tokens / speed / energy history in SQLite:
+  charts, model breakdown, CSV export
+- **OpenAI-compatible proxy** — point your clients at `/proxy/v1/...`; the
+  panel injects your per-preset generation parameters into every request
+- **Model browser** — recursive `.gguf` scan of your models folder with
+  automatic mmproj (vision) detection
+- **Built-in updaters** — the panel self-updates in one click, and llama.cpp
+  builds update from the official releases (variant picker, CUDA runtime DLLs
+  included)
+- **Runs your way** — a single-file Windows tray `.exe`, or plain
+  `uvicorn` on Windows / Linux / macOS; installable PWA for phone and tablet
+
+## Quick start
+
+### Windows — the tray exe
+
+```bash
+git clone https://github.com/Leo00703/llama-monitor
+cd llama-monitor
+```
+
+Then double-click `llama-monitor.exe` (or run `.\llama-monitor.exe` from
+PowerShell in that folder).
+
+The exe is self-contained (no Python install needed): a tray icon appears —
+open `http://127.0.0.1:8000` in a browser, or use the tray menu's **Open
+panel**. First run: SmartScreen may warn about the unsigned build
+(*More info → Run anyway*). Re-running the exe while it is open just focuses
+the running panel.
+
+### Any OS — from source
+
+```bash
+git clone https://github.com/Leo00703/llama-monitor
+cd llama-monitor
+python -m venv .venv
+# Windows: .venv\Scripts\activate   |   Linux/macOS: source .venv/bin/activate
+pip install -r requirements.txt
+python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
+```
+
+Then open `http://127.0.0.1:8000` and, under **Settings**, point
+`llama_server_exe` at your `llama-server` binary.
+
+## Contents
+
+- [Features](#features)
+- [Requirements](#requirements)
+- [Configure](#configure)
+- [Run](#run)
+  - [Diagnostics](#diagnostics)
+- [Tray launcher (Windows .exe)](#tray-launcher-windows-exe)
+- [Project layout](#project-layout)
+- [Contributing](#contributing)
+  - [Bug reports](#bug-reports)
+  - [Feature requests](#feature-requests)
+  - [Pull requests](#pull-requests)
+  - [Repository ground rules](#repository-ground-rules)
+
+## Features
 
 - **Process control** — start / stop / restart `llama-server` as a child process,
   with live stdout/stderr streaming in a terminal panel. The dashboard also
@@ -105,9 +195,9 @@ line:
   injects it only for local callers or token-authenticated remote ones — an
   open (no-token) LAN caller never sees your key and must send its own
   `Authorization` header. The panel's own health polls (`/metrics`, `/slots`,
-   `/props`) carry the same key, so the dashboard stays live against a
-   key-protected server — if the server rejects it, a banner says so instead
-   of the cards just looking dead. `llama-server` itself now also binds to `127.0.0.1` by default —
+  `/props`) carry the same key, so the dashboard stays live against a
+  key-protected server — if the server rejects it, a banner says so instead
+  of the cards just looking dead. `llama-server` itself now also binds to `127.0.0.1` by default —
   clients reach it through the panel proxy; expose it per-preset only if you
   want direct LAN access to inference.
 - **Loading screen** — every open/reload first shows a branded loading
@@ -142,16 +232,6 @@ line:
   rollback path; the latest nightly is always listed in the picker (even in stable mode), and the channel / variant selects apply live (no Save round-trip). The **Build variant** picker is built from the release itself — whatever llama.cpp actually ships for *your* OS and CPU arch (Windows / Linux / macOS, x64 / arm64, CPU / Vulkan / CUDA / ROCm / OpenVINO / SYCL), so a toolkit rename on llama.cpp's side (CUDA 13.3 → 13.4) never breaks the updater. Custom / PR-branch builds are detected from the
   `--version` output and never touched — updates stay fully manual for them. Windows and Linux **CUDA** builds additionally fetch the NVIDIA runtime libraries (cublas, cublasLt, cudart) from a separate release asset — but only if the freshly extracted build can't see the GPU (`llama-server --list-devices`; a CUDA Toolkit already on the PATH makes the ~370 MB extra unnecessary) — and installs made before that can fetch them afterwards with **Repair CUDA DLLs**. If a running server loads a model but never reports a GPU offload, the dashboard warns that inference is silently running on the CPU.
 
-## Screenshots
-
-Desktop view:
-
-![llama-monitor — desktop view](docs/llama-monitor-desktop.png)
-
-Mobile view:
-
-![llama-monitor — mobile view](docs/llama-monitor-mobile.png)
-
 ## Requirements
 
 - Python 3.10+ (tested on 3.11/3.14)
@@ -162,16 +242,6 @@ Mobile view:
 - NVIDIA GPU driver providing `nvidia-smi` (optional — machines without an
   NVIDIA GPU, e.g. Apple Silicon, show a “No GPU detected” note in place of
   GPU cards; works on CPU-only machines too)
-
-## Install
-
-```bash
-git clone https://github.com/Leo00703/llama-monitor
-cd llama-monitor
-python -m venv .venv
-# Windows: .venv\Scripts\activate   |   Linux: source .venv/bin/activate
-pip install -r requirements.txt
-```
 
 ## Configure
 
@@ -330,17 +400,6 @@ Persistent data lives outside the repo (see Configure): config.json,
 presets/, analytics.db under `%APPDATA%\llama-monitor` (Windows) or
 `~/.config/llama-monitor` (Linux/macOS).
 
-## Development phases
-
-The panel is built in incremental phases (see `Implementation Plan.md`):
-
-1. Process start/stop/restart + live log streaming — done
-2. Preset system (CRUD, JSON storage, flag translation layer) — done
-3. Resource monitoring (CPU/RAM/GPU, inference metrics) with history charts — done
-4. Model browser, mmproj, speculative decoding, generation parameters + proxy — done
-5. Analytics: usage history (SQLite), energy cost, historical charts — done
-6. Header (status/version/host), collapsible sidebar, design polish — done
-
 ## Contributing
 
 The project has a single maintainer; work is triaged from the GitHub Issues
@@ -394,27 +453,11 @@ Keep the same shape as the project's own locked specs:
 - **By submitting a PR you agree that your contribution is licensed under the
   [MIT](LICENSE) license.**
 
-### Deliberate choices — don't "improve" them
+### Repository ground rules
 
-- **No test framework, linter, or formatter** — verification is manual/ad-hoc
-  (checklist above); don't add pytest/black/ruff/CI lint jobs.
-- **No frontend framework, build step, or dependencies** — vanilla
-  HTML/CSS/JS, no bundler, no `package.json`.
-- **No new Python dependencies** without an issue discussion first.
-- **The theme is the official llama.cpp dark design language** — solid
-  `#0d0d0d` background, brand orange `#f65e00`, no gradients, bundled Geist
-  Mono for code/metrics. No Google Fonts or any other CDN, no restyling.
-- **Windows is primary; Linux and macOS must keep working** — `nvidia-smi` is
-  optional (GPU cards are replaced by a “No GPU detected” note when absent).
-- **Never pin or downgrade PyInstaller** — the onefile relaunch env handling
-  is a fix for a real bug (see `AGENTS.md` → Gotchas).
-- **Never commit** `config.json`, `data/`, `TODO.md`, `*.log`, `build/`,
-  `dist/`, `*.spec` — they are gitignored on purpose.
-- **New config keys must also go into `config.example.json`.**
-
-### A note for AI agents
-
-This repo is developed *with* AI agents, so agent-filed issues and
-agent-written PRs are normal here — the bar is the same: cite what you
-verified and how. Start by reading [`AGENTS.md`](AGENTS.md); it is the
-maintainer's durable memory and what the maintainer's own agents follow.
+Some things in this repo are deliberate and should not be "improved" — the
+no-test-framework / vanilla-frontend / fixed-theme / no-new-deps list lives in
+[`AGENTS.md`](AGENTS.md), together with everything else the maintainer (and the
+AI agents this project is developed with) follows. Read it before a PR; the
+bar for agent-written contributions is the same as for human ones: cite what
+you verified, and how.
