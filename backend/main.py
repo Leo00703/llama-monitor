@@ -812,7 +812,7 @@ def create_app() -> FastAPI:
                 return fail(
                     f"not enough free space in {storage}: need ~"
                     f"{needed / 1048576:.0f} MB, have {free / 1048576:.0f} MB")
-            zip_path = storage / asset["name"]
+            zip_path = backend_update.panel_download_path(storage, asset["name"])
 
             def progress(done: int, total: int) -> None:
                 manager.broadcast({"type": "llama.update.progress", "data": {
@@ -856,7 +856,7 @@ def create_app() -> FastAPI:
                 gpu = await backend_update.probe_gpu(
                     str(exe_path), timeout=60.0)
                 if not gpu["gpu"] and companion is not None:
-                    czip = storage / companion["name"]
+                    czip = backend_update.panel_download_path(storage, companion["name"])
                     cfree = backend_update.free_bytes(storage)
                     cneed = (companion.get("size") or 0) * 2
                     if cfree is not None and cfree < cneed:
@@ -1182,7 +1182,7 @@ def create_app() -> FastAPI:
                         f"not enough free space for the CUDA runtime DLLs: "
                         f"need ~{need / 1048576:.0f} MB, have "
                         f"{free / 1048576:.0f} MB")}
-                czip = storage / companion["name"]
+                czip = backend_update.panel_download_path(storage, companion["name"])
 
                 def progress(done: int, total: int) -> None:
                     manager.broadcast({"type": "llama.update.progress",

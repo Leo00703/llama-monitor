@@ -828,23 +828,37 @@ def free_bytes(path: Path) -> Optional[int]:
         return None
 
 
-# Release asset names are parsed (parse_build_asset): llama-<tag>-bin-<...>
-# where <tag> is a nightly b#### or a stable vX.Y(.Z). Match only that shape so
-# user files that happen to be zips are never touched.
-_ORPHAN_ARCHIVE_RE = re.compile(
-    r"^llama-(?:b\d+|v[\d.]+(?:\.[A-Za-z0-9]+)*)-bin-.+\.(?:zip|tar\.gz)$")
+# Every file the panel's downloader creates in the storage folder carries
+# this prefix, so cleanup can tell its own downloads apart from the user's
+# (#101). The old sweep deleted any *.part and any release-shaped zip —
+# which ate browser partials and hand-downloaded archives when the storage
+# folder overlapped a download folder (data loss).
+PANEL_DL_PREFIX = "llama-monitor-"
+
+
+def panel_download_path(storage: Path, asset_name: str) -> Path:
+    """Where a release asset (build or CUDA-runtime companion) is
+    downloaded inside the storage folder — panel-prefixed (#101)."""
+    return storage / (PANEL_DL_PREFIX + asset_name)
+
+
+def _is_panel_download(name: str) -> bool:
+    if not name.startswith(PANEL_DL_PREFIX):
+        return False
+    return name.endswith((".part", ".zip", ".tar.gz"))
 
 
 def cleanup_partials(storage: Path) -> None:
-    """Drop interrupted-download partials and orphan release archives
-    (called at startup). Archives are only removed when they match the
-    deterministic release-asset naming, so user files are never touched."""
+    """Drop interrupted-download partials and orphan panel-downloaded
+    release archives at startup — only files carrying PANEL_DL_PREFIX,
+    i.e. ones the panel itself created (#101). User/browser files in the
+    same folder are never touched."""
     if not storage.is_dir():
         return
     for f in storage.iterdir():
         if not f.is_file():
             continue
-        if f.name.endswith(".part") or _ORPHAN_ARCHIVE_RE.match(f.name):
+        if _is_panel_download(f.name):
             try:
                 f.unlink()
             except OSError:
