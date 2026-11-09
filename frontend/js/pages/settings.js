@@ -7,6 +7,7 @@ const Settings = {
   dashboard: null,
 
   init() {
+    Browse.init();
     document.getElementById("btn-save-settings").addEventListener("click", () => this.save());
     // usage-style toggle: applies live (the dashboard reads it from the
     // metrics WS payload), and persists straight away
@@ -85,6 +86,7 @@ const Settings = {
       vSel.value = this.llamaBackend.variant;
       document.getElementById("be-storage").value = this.llamaBackend.storage_dir;
       document.getElementById("be-autodl").checked = this.llamaBackend.auto_download;
+      PathHints.validateAll(); // show field validation for the stored values
     } catch (e) {
       UI.toast(`failed to load settings: ${e}`, "err");
     }
@@ -161,16 +163,18 @@ const Settings = {
   },
 
   async save() {
+    const P = PathHints.norm;
+    const val = (id) => document.getElementById(id).value;
     const body = {
       update_check_minutes: parseInt(document.getElementById("set-update-interval").value, 10) || 0,
-      llama_server_exe: document.getElementById("set-exe").value.trim(),
-      models_root: document.getElementById("set-root").value.trim(),
+      llama_server_exe: P(val("set-exe")),
+      models_root: P(val("set-root")),
       default_server_port: parseInt(document.getElementById("set-port").value, 10) || 8080,
       panel: {
         host: document.getElementById("set-phost").value.trim() || "0.0.0.0",
         port: parseInt(document.getElementById("set-pport").value, 10) || 8000,
-        tls_cert: document.getElementById("set-tlscert").value.trim(),
-        tls_key: document.getElementById("set-tlskey").value.trim(),
+        tls_cert: P(val("set-tlscert")),
+        tls_key: P(val("set-tlskey")),
       },
       energy_price_eur_kwh: parseFloat(document.getElementById("set-energy-price").value) || 0,
       energy_overhead_w: parseFloat(document.getElementById("set-energy-overhead").value) || 0,
@@ -183,7 +187,7 @@ const Settings = {
         channel: document.getElementById("be-channel").value,
         auto_download: document.getElementById("be-autodl").checked,
         variant: document.getElementById("be-variant").value,
-        storage_dir: document.getElementById("be-storage").value.trim(),
+        storage_dir: P(val("be-storage")),
       };
     }
     if (this.dashboard) {
@@ -196,8 +200,242 @@ const Settings = {
       if (body.llama_backend) this.llamaBackend = { ...this.llamaBackend, ...body.llama_backend };
       Backend.refresh();
       UI.toast("settings saved");
+      // echo the normalized values into the fields (quotes/trailing seps gone)
+      for (const key of Object.keys(PATH_FIELDS)) {
+        const inp = document.getElementById(PATH_FIELDS[key].input);
+        inp.value = PathHints.norm(inp.value);
+      }
     } catch (e) {
       UI.toast(`save failed: ${e}`, "err");
     }
+  },
+};
+
+/* ---------- path fields (#84): normalization, live validation, picker ---------- */
+
+/* The five path settings fields. Key = the validation key POSTed to
+   /api/validate-paths; picker: dir = folders only, exe = server binary,
+   cert = certificate/key file types. */
+const PATH_FIELDS = {
+  exe:         { input: "set-exe",     hint: "hint-exe",     picker: "exe",  title: "Choose llama-server executable" },
+  models_root: { input: "set-root",    hint: "hint-root",    picker: "dir",  title: "Choose models root folder" },
+  tls_cert:    { input: "set-tlscert", hint: "hint-tlscert", picker: "cert", title: "Choose TLS certificate file" },
+  tls_key:     { input: "set-tlskey",  hint: "hint-tlskey",  picker: "cert", title: "Choose TLS key file" },
+  storage_dir: { input: "be-storage",  hint: "hint-storage", picker: "dir",  title: "Choose download folder" },
+};
+
+const PathHints = {
+  _timers: {},
+
+  /* Mirrors normalize_path_str in backend/config.py — both sides normalize,
+     so what is displayed is what gets stored (quotes from Explorer/Finder
+     "copy as path", trailing spaces/separators). */
+  norm(v) {
+    let s = (v || "").trim();
+    while (s.length >= 2 && s[0] === s[s.length - 1] && (s[0] === '"' || s[0] === "'")) {
+      s = s.slice(1, -1).trim();
+    }
+    while (s.length > 1 && (s.endsWith("/") || s.endsWith("\\")) && !/^[A-Za-z]:[/\\]$/.test(s)) {
+      s = s.slice(0, -1);
+    }
+    return s;
+  },
+
+  schedule(key) {
+    clearTimeout(this._timers[key]);
+    this._timers[key] = setTimeout(() => this.validate([key]), 400);
+  },
+
+  validateAll() {
+    const keys = Object.keys(PATH_FIELDS)
+      .filter((k) => document.getElementById(PATH_FIELDS[k].input).value.trim());
+    if (keys.length) this.validate(keys);
+  },
+
+  validate(keys) {
+    // TLS cert + key always validate as a pair: the backend load-tests them
+    if (keys.includes("tls_cert") && !keys.includes("tls_key")) keys.push("tls_key");
+    if (keys.includes("tls_key") && !keys.includes("tls_cert")) keys.push("tls_cert");
+    const body = {};
+    for (const k of keys) body[k] = document.getElementById(PATH_FIELDS[k].input).value;
+    API.post("/api/validate-paths", body)
+      .then((res) => {
+        if (!res.ok || !res.results) return;
+        for (const [k, r] of Object.entries(res.results)) {
+          if (PATH_FIELDS[k]) this.render(k, r);
+        }
+      })
+      .catch(() => { /* hints are best-effort: keep the last state */ });
+  },
+
+  render(key, r) {
+    const f = PATH_FIELDS[key];
+    const el = document.getElementById(f.hint);
+    const inp = document.getElementById(f.input);
+    const level = r.level === "muted" ? "" : r.level;
+    el.textContent = r.message;
+    el.hidden = !r.message;
+    el.className = "field-hint" + (level ? ` ${level}` : "");
+    inp.classList.remove("in-ok", "in-warn", "in-err");
+    if (level) inp.classList.add(`in-${level}`);
+  },
+};
+
+/* Settings-page file/folder picker backed by GET /api/browse: the panel may
+   be opened from another device, so a native OS dialog would be wrong —
+   the list always shows the PANEL HOST's filesystem (issue decision, #84). */
+const Browse = {
+  _field: "",
+  _kind: "dir",
+  _at: "",
+  _parent: null,
+  _showAll: false,
+
+  init() {
+    for (const [key, f] of Object.entries(PATH_FIELDS)) {
+      const btn = document.querySelector(`.btn-browse[data-path="${key}"]`);
+      if (btn) btn.addEventListener("click", () => this.open(key));
+      const inp = document.getElementById(f.input);
+      inp.addEventListener("change", () => {
+        inp.value = PathHints.norm(inp.value);
+        PathHints.schedule(key);
+      });
+    }
+    document.getElementById("browse-up").addEventListener("click", () => this._load(this._parent || ""));
+    document.getElementById("browse-select").addEventListener("click", () => { if (this._at) this._select(this._at); });
+    document.getElementById("browse-cancel").addEventListener("click", () => this.close());
+    document.getElementById("browse-all").addEventListener("change", (e) => {
+      this._showAll = e.target.checked;
+      this._load(this._at);
+    });
+    const ov = document.getElementById("browse-overlay");
+    ov.addEventListener("pointerdown", (e) => { if (e.target === ov) this.close(); });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && !ov.hidden) this.close();
+    });
+  },
+
+  open(key) {
+    this._field = key;
+    this._kind = PATH_FIELDS[key].picker;
+    this._showAll = false;
+    document.getElementById("browse-title").textContent = PATH_FIELDS[key].title;
+    document.getElementById("browse-all-row").hidden = this._kind !== "cert";
+    document.getElementById("browse-all").checked = false;
+    document.getElementById("browse-overlay").hidden = false;
+    // open where the current value lives (the backend walks files up to
+    // their parent folder, so a typed exe path opens its folder)
+    this._load(document.getElementById(PATH_FIELDS[key].input).value.trim());
+  },
+
+  close() {
+    document.getElementById("browse-overlay").hidden = true;
+  },
+
+  async _load(startPath) {
+    const list = document.getElementById("browse-list");
+    const status = document.getElementById("browse-status");
+    status.hidden = true;
+    list.replaceChildren(this._note("loading…"));
+    let d = null;
+    try {
+      d = await API.get(
+        `/api/browse?path=${encodeURIComponent(startPath || "")}&kind=${this._kind}&show_all=${this._showAll ? 1 : 0}`,
+      );
+    } catch (_) { /* reported as unreachable below */ }
+    if (!d || !d.ok) {
+      this._at = "";
+      this._parent = null;
+      this._pathLabel("");
+      list.replaceChildren(this._note((d && d.error) || "could not reach the panel"));
+      status.className = "browse-status err";
+      status.textContent = "you can still type the path manually";
+      status.hidden = false;
+      this._footer();
+      return;
+    }
+    this._at = d.at || "";
+    this._parent = d.parent || null;
+    this._pathLabel(d.at);
+    list.replaceChildren(...d.entries.map((e) => this._row(e)));
+    if (!d.entries.length) {
+      list.appendChild(this._note(this._kind === "dir"
+        ? "no subfolders here — select this folder"
+        : "no matching files — try “Show all files” or type the name"));
+    } else if (d.truncated) {
+      list.appendChild(this._note("list truncated — select a folder to narrow down"));
+    }
+    this._footer();
+  },
+
+  _note(text) {
+    const el = document.createElement("div");
+    el.className = "browse-empty";
+    el.textContent = text;
+    return el;
+  },
+
+  _row(e) {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = `browse-row ${e.dir ? "dir" : "file"}`;
+    const mark = document.createElement("span");
+    mark.className = "br-mark";
+    mark.textContent = e.dir ? "›" : "";
+    const name = document.createElement("span");
+    name.className = "br-name";
+    name.textContent = e.name;
+    row.append(mark, name);
+    if (!e.dir && typeof e.size === "number") {
+      const size = document.createElement("span");
+      size.className = "br-size";
+      size.textContent = this._fmtSize(e.size);
+      row.appendChild(size);
+    }
+    row.addEventListener("click", () => (e.dir ? this._load(e.path) : this._select(e.path)));
+    return row;
+  },
+
+  _pathLabel(at) {
+    const el = document.getElementById("browse-path");
+    el.textContent = "";
+    if (!at) { // Windows drive list ("This PC") — there is nothing to select
+      const p = document.createElement("span");
+      p.className = "bp-parent";
+      p.textContent = "This PC";
+      el.appendChild(p);
+      return;
+    }
+    const disp = at.length > 1 ? at.replace(/[/\\]$/, "") : at;
+    const i = Math.max(disp.lastIndexOf("/"), disp.lastIndexOf("\\"));
+    if (i < 0) {
+      el.textContent = disp;
+      return;
+    }
+    const parent = document.createElement("span");
+    parent.className = "bp-parent";
+    parent.textContent = disp.slice(0, i + 1);
+    el.append(parent, document.createTextNode(disp.slice(i + 1)));
+  },
+
+  _footer() {
+    document.getElementById("browse-up").disabled = !this._parent;
+    document.getElementById("browse-select").disabled = !this._at;
+  },
+
+  _select(path) {
+    const f = PATH_FIELDS[this._field];
+    document.getElementById(f.input).value = PathHints.norm(path);
+    this.close();
+    PathHints.validate([this._field]);
+  },
+
+  _fmtSize(b) {
+    if (b < 1024) return `${b} B`;
+    const kb = b / 1024;
+    if (kb < 1024) return `${kb < 10 ? kb.toFixed(1) : Math.round(kb)} KB`;
+    const mb = kb / 1024;
+    if (mb < 1024) return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB`;
+    return `${(mb / 1024).toFixed(2)} GB`;
   },
 };

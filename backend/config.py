@@ -17,13 +17,14 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 log = logging.getLogger("llama-monitor.config")
 
@@ -62,6 +63,24 @@ _override = os.environ.get("LLAMA_MONITOR_DATA", "").strip()
 DATA_DIR = Path(_override).expanduser() if _override else default_data_dir()
 CONFIG_PATH = DATA_DIR / "config.json"
 PRESETS_DIR = DATA_DIR / "presets"
+
+
+def normalize_path_str(value: str) -> str:
+    """Canonicalize a user-entered path string (issue #84).
+
+    Strips surrounding whitespace, matched pairs of surrounding quotes
+    (Explorer "Copy as path" and Finder "Copy Path" quote the clipboard),
+    and trailing path separators — so a pasted ``"C:\\llama\\"`` is stored
+    as ``C:\\llama`` instead of silently failing every existence check.
+    ``~`` is left as written (the consumers expanduser()); drive roots
+    (``C:\\``) keep their separator.
+    """
+    s = (value or "").strip()
+    while len(s) >= 2 and s[0] == s[-1] and s[0] in "\"'":
+        s = s[1:-1].strip()
+    while len(s) > 1 and s[-1] in "/\\" and not re.fullmatch(r"[A-Za-z]:[/\\]", s):
+        s = s[:-1]
+    return s
 
 
 def _same_file(a: Path, b: Path) -> bool:
@@ -181,6 +200,11 @@ class PanelSettings(BaseModel):
     tls_cert: str = ""
     tls_key: str = ""
 
+    @field_validator("tls_cert", "tls_key", mode="before")
+    @classmethod
+    def _normalize_paths(cls, v):  # canonical stored value (#84)
+        return normalize_path_str(v) if isinstance(v, str) else v
+
 
 class LlamaBackendPending(BaseModel):
     """A build that is available/downloaded but not yet applied."""
@@ -200,6 +224,11 @@ class LlamaBackendSettings(BaseModel):
     storage_dir: str = ""       # "" = sibling of the current build folder
     last_check: str = ""        # local ISO timestamp of the last check
     pending: Optional[LlamaBackendPending] = None
+
+    @field_validator("storage_dir", mode="before")
+    @classmethod
+    def _normalize_paths(cls, v):  # canonical stored value (#84)
+        return normalize_path_str(v) if isinstance(v, str) else v
 
 
 class DashboardSettings(BaseModel):
@@ -221,6 +250,11 @@ class AppConfig(BaseModel):
     update_check_minutes: int = Field(default=5, ge=0, le=1440)  # 0 = off
     dashboard: DashboardSettings = Field(default_factory=DashboardSettings)
     llama_backend: LlamaBackendSettings = Field(default_factory=LlamaBackendSettings)
+
+    @field_validator("llama_server_exe", "models_root", mode="before")
+    @classmethod
+    def _normalize_paths(cls, v):  # canonical stored value (#84)
+        return normalize_path_str(v) if isinstance(v, str) else v
 
     def model_root(self) -> Optional[Path]:
         """Resolved models root directory, or None if unset."""
@@ -245,7 +279,12 @@ def resolve_exe_path(exe: str) -> Optional[str]:
     5, "access denied"), so we resolve to the exe within it — both the
     Windows (``llama-server.exe``) and the Linux/macOS (``llama-server``)
     names.
+
+    Values reaching here are already normalized by the AppConfig validator;
+    the extra normalize covers callers feeding a raw string (defense in
+    depth, #84).
     """
+    exe = normalize_path_str(exe)
     path = Path(exe).expanduser()
     if path.is_dir():
         for name in ("llama-server.exe", "llama-server"):

@@ -40,6 +40,7 @@ from .config import (
     save_config,
 )
 from . import backend_update
+from .browse import browse_directory, validate_paths
 from .flags import build_args, parse_help, validate_settings
 from .metrics import MetricsCollector, run_nvidia_smi
 from .models import list_models
@@ -1139,6 +1140,22 @@ def create_app() -> FastAPI:
             setattr(config, name, getattr(new_config, name))
         save_config(config)
         return {"ok": True, "config": config.model_dump()}
+
+    # ------------------------------------------------------------------
+    # REST: path pickers — folder listing + field validation (#84)
+    # ------------------------------------------------------------------
+
+    @app.get("/api/browse")
+    async def api_browse(path: str = "", kind: str = "dir", show_all: bool = False) -> dict:
+        return await asyncio.to_thread(browse_directory, path, kind, show_all)
+
+    @app.post("/api/validate-paths")
+    async def api_validate_paths(body: dict[str, Any]) -> dict:
+        try:
+            return await validate_paths(body)
+        except Exception as exc:  # the hints must never break the settings page
+            log.exception("path validation failed")
+            return {"ok": False, "error": str(exc)}
 
     # ------------------------------------------------------------------
     # REST: presets
