@@ -519,7 +519,11 @@ without rebuilding.
   the fields present in the body — omitted keys keep their current value
   (a full-replace once wiped `active_preset_id` on every Settings save).
   Nested models are still **fully replaced** when their key is sent — a
-  client sending `panel` must send both `host` and `port`.
+  client sending `panel` must send both `host` and `port`. Same semantics
+  on `PUT /api/presets/{id}` (#103): `name`/`launch`/`generation` are all
+  optional on `PresetRequest` and a missing field leaves the stored value
+  untouched (an always-write `name` default silently renamed launch-only
+  API PUTs); create falls back to "New preset".
 - **Shell files must stay cache-coherent after a deploy**: the backend
   serves the frontend through `_CacheAwareStaticFiles` (main.py) —
   html/js/css get `Cache-Control: no-cache` (etag revalidation), everything
