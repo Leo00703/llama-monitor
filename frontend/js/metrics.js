@@ -448,7 +448,10 @@ const Metrics = (() => {
     } else {
       promptEl.textContent = "—";
       genEl.textContent = "—";
-      stateEl.textContent = "no server";
+      // (#99) 401 on /metrics+/slots looks identical to an idle server
+      // without the distinction — say so.
+      stateEl.textContent = data.inference && data.inference.auth_error
+        ? "API key rejected" : "no server";
       stateEl.classList.add("muted");
       stateEl.classList.remove("slots-mismatch");
       if (draftCell) draftCell.hidden = true;
@@ -473,6 +476,21 @@ const Metrics = (() => {
         }
       } else if (gpuBanner.childElementCount) {
         UI.clearBanner(gpuBanner);
+      }
+    }
+    // API-key rejection (#99): the server protects every endpoint except
+    // /health, so the panel's own /metrics + /slots + /props polls all 401
+    // unless the active preset carries the same --api-key value.
+    const authBanner = $("auth-banner");
+    if (authBanner) {
+      if (data.inference && data.inference.auth_error) {
+        if (!authBanner.childElementCount) {
+          UI.banner(authBanner, "err", [
+            "The server rejects the panel's API key (401) — live metrics, slots and server defaults are unavailable. If it was started with --api-key, set that exact key in the active preset's launch settings (Advanced → API key) and restart.",
+          ]);
+        }
+      } else if (authBanner.childElementCount) {
+        UI.clearBanner(authBanner);
       }
     }
     updateInference(inf);

@@ -20,7 +20,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import httpx
 import psutil
@@ -237,7 +237,12 @@ class CpuSensors:
 class MetricsCollector:
     """Polls system + inference metrics and computes live tok/s deltas."""
 
-    def __init__(self) -> None:
+    def __init__(self,
+                 get_auth: Optional[Callable[[], dict[str, str]]] = None) -> None:
+        """`get_auth` returns headers (Authorization) for the llama-server
+        polls — the panel's internal /metrics + /slots GETs must carry the
+        preset's API key or every poll 401s under --api-key (#99)."""
+        self._get_auth = get_auth or (lambda: {})
         psutil.cpu_percent()
         psutil.cpu_percent(percpu=True)
         self._cpu_sensors = CpuSensors()
@@ -283,11 +288,17 @@ class MetricsCollector:
     async def _inference(self, port: int) -> Optional[dict]:
         base = f"http://127.0.0.1:{port}"
         try:
-            async with httpx.AsyncClient(timeout=2.0) as client:
+            headers = self._get_auth() or {}
+            async with httpx.AsyncClient(timeout=2.0, headers=headers) as client:
                 mres = await client.get(f"{base}/metrics")
                 sres = await client.get(f"{base}/slots")
         except httpx.HTTPError:
             return None
+        if mres.status_code == 401 and sres.status_code == 401:
+            # The server demands an API key the panel did not send (or sent
+            # the wrong one) — surface it instead of silently rendering
+            # blank cards (#99).
+            return {"ok": False, "auth_error": True}
         if mres.status_code != 200 and sres.status_code != 200:
             return None
 

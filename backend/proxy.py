@@ -68,6 +68,18 @@ class ServerProxy:
             return None
         return f"http://127.0.0.1:{port}"
 
+    def auth_header(self) -> dict[str, str]:
+        """Authorization header for the panel's own polls of the live
+        server (/metrics, /slots, /props) — empty when no API key is set.
+        A llama-server started with --api-key protects every endpoint
+        except /health, so these polls must carry the preset's key (#99)."""
+        api_key = self._server_api_key()
+        return {"Authorization": f"Bearer {api_key}"} if api_key else {}
+
+    def _server_api_key(self) -> str:
+        launch = self._get_launch() or {}
+        return (launch.get("api_key") or "").strip()
+
     async def server_params(self) -> Optional[dict[str, Any]]:
         """default_generation_settings.params from the live server, cached."""
         base = self.base_url()
@@ -78,7 +90,7 @@ class ServerProxy:
             return self._params
         try:
             async with httpx.AsyncClient(timeout=PROPS_TIMEOUT) as client:
-                resp = await client.get(f"{base}/props")
+                resp = await client.get(f"{base}/props", headers=self.auth_header())
                 resp.raise_for_status()
                 data = resp.json()
             params = data.get("default_generation_settings", {}).get("params")
@@ -130,8 +142,7 @@ class ServerProxy:
             k: v for k, v in headers.items()
             if k.lower() not in PROXY_SKIP_REQUEST_HEADERS
         }
-        launch = self._get_launch() or {}
-        api_key = (launch.get("api_key") or "").strip()
+        api_key = self._server_api_key()
         if api_key and inject_key:
             fwd["authorization"] = f"Bearer {api_key}"
         elif caller_auth:

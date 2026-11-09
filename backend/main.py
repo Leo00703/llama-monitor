@@ -438,7 +438,6 @@ def create_app() -> FastAPI:
     config: AppConfig = load_config()
     manager = LlamaServerManager(lambda: config)
     store = PresetStore(PRESETS_DIR)
-    collector = MetricsCollector()
     analytics = AnalyticsStore(DATA_DIR / "analytics.db")
     # the per-request energy window is clamped to 1 day (see _complete_request)
     # — the ring must hold at least that many samples or long requests lose
@@ -515,6 +514,9 @@ def create_app() -> FastAPI:
         get_port=manager.current_port,
         get_launch=lambda: _launch_for(manager.preset_id or config.active_preset_id),
     )
+    # After the proxy: the /metrics + /slots polls must carry the preset's
+    # API key too, or every poll 401s under --api-key (#99).
+    collector = MetricsCollector(get_auth=proxy.auth_header)
 
     _key_warn_at = [0.0]
 
