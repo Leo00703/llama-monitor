@@ -90,10 +90,11 @@ manual/ad-hoc (see Verification below).
 - The panel only manages `llama-server` processes it started itself. A
   `llama-server` already running is treated as **external**: at startup
   `_find_external_server()` (process scan by name, port from its `--port`
-  flag) finds it on ANY port, falling back to probing `default_server_port`
-  for any process; `start()` adopts a llama-server on the requested port
-  instead of failing (ok:true, state external); `stop()` kills the owner of
-  `current_port()` (#68).
+  flag) finds it on ANY port; the `default_server_port` any-process fallback
+  adopts only llama-server owners (#95); `start()` adopts a llama-server on
+  the requested port instead of failing (ok:true, state external); `stop()`
+  stops only llama-server-named processes (#68, #95) — a non-llama-server
+  port owner is reported and refused, never killed.
 
 ## Privacy — never commit user-identifying data
 
@@ -246,6 +247,8 @@ without rebuilding.
 - Comments: minimal; add a comment only for a non-obvious "why".
 
 ## Gotchas
+
+- **Never kill a non-llama-server port owner (#95)**: `stop()`'s external branch and `_detect_external()`'s any-process fallback both name-check via `_llama_server_port(pid)` before acting — foreign owners are refused (`ok:false`, "port N is held by X (pid P) — not a llama-server, refusing to stop it") / never adopted. Stop targets the ADOPTED pid first (`_external_pid`, set at every adopt point, re-validated with `psutil.pid_exists` + `_llama_server_port` before use, cleared wherever `_port` is cleared): the socket probe `_pid_on_port` can miss the adopted process (psutil sometimes reports these listeners' status as neither LISTEN nor a known state), which made Stop a silent no-op. Windows-only artifact to know when testing: a fake llama-server spawned as a CHILD of the test gets Ctrl-Break-broadcast to the whole console group (the test itself dies 0xC000013A) unless launched with `CREATE_NEW_PROCESS_GROUP`.
 
 - **Proxy API key injection is caller-scoped (#94)**: `ServerProxy._forward_headers(headers, inject_key)` — `llama_proxy` in main.py computes `inject_key = token_on or loopback-caller` per request (caller IP from `request.client`). The preset `--api-key` is injected ONLY for loopback callers or when `panel.token` protects `/proxy`; an open remote caller never gets the key (panel log note throttled 10 min) and its own `Authorization` header is forwarded verbatim (previously always stripped + replaced). Changing the protected set must stay in sync with `_protected_path` / the token gate.
 

@@ -215,7 +215,9 @@ applied to every request through the panel.
 > Note: the panel only manages `llama-server` processes it started itself.
 > If a `llama-server` is already running on the port you try to use, the
 > panel marks it as **external** and you can stop it from the panel (at
-> startup it finds running `llama-server`s on any port).
+> startup it finds running `llama-server`s on any port). Processes that are
+> not `llama-server` are never touched: if the port is held by something
+> else, the panel says so and refuses to stop it.
 
 ### Diagnostics
 
