@@ -21,6 +21,26 @@ function authHeaders(base) {
   return headers;
 }
 
+/* A response is parsed as JSON when it is valid JSON (regardless of HTTP
+   status — the token gate, request guard and proxy all return
+   {"ok": false, "error": ...} on non-2xx and callers read that body); a
+   non-JSON body (plain-text 500, reverse-proxy HTML error page, captive
+   portal) becomes a clear "HTTP <code> <path>" error instead of the cryptic
+   "Unexpected token '<'" SyntaxError from res.json() (#105). */
+async function parseBody(res, path) {
+  const text = await res.text();
+  if (!text) {
+    if (res.ok) return {};
+    throw new Error(`HTTP ${res.status} ${res.statusText || ""} — empty response (${path})`.trim());
+  }
+  try {
+    return JSON.parse(text);
+  } catch (_) {
+    const snippet = text.trim().slice(0, 120).replace(/\s+/g, " ");
+    throw new Error(`HTTP ${res.status} ${res.statusText || ""} on ${path}: ${snippet}`.trim());
+  }
+}
+
 function request(path, init = {}, timeout = API_TIMEOUT, retried = false) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeout);
@@ -35,7 +55,7 @@ function request(path, init = {}, timeout = API_TIMEOUT, retried = false) {
           return request(path, init, timeout, true);
         }
       }
-      return res.json();
+      return parseBody(res, path);
     })
     .finally(() => clearTimeout(t));
 }
