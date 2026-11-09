@@ -143,10 +143,24 @@ def _update_loop(manager: LlamaServerManager, loop: asyncio.AbstractEventLoop,
 async def _metrics_loop(collector: MetricsCollector, manager: LlamaServerManager,
                         power: PowerSampler, tracker: PrintTimingTracker,
                         live_log: LiveLogStats, config: AppConfig,
-                        store) -> None:
+                        store, analytics: AnalyticsStore) -> None:
     """Poll system + inference metrics and push them to WebSocket listeners."""
+    # seeded so the first tick prunes: monotonic() is uptime-based, so a
+    # bare 0.0 seed would delay it on a freshly booted machine
+    last_prune = time.monotonic() - 86400.0
     while True:
         await asyncio.sleep(METRICS_INTERVAL)
+        # failed_requests retention (#106 O2) — deliberately BEFORE the
+        # listener skip: the failure backlog accumulates exactly while
+        # nobody is watching (server offline, panel unattended).
+        if time.monotonic() - last_prune >= 86400.0:
+            last_prune = time.monotonic()
+            try:
+                n = await asyncio.to_thread(analytics.prune_failed)
+                if n > 0:
+                    log.info("retention: pruned %d failed request rows", n)
+            except Exception:
+                log.exception("analytics retention failed")
         # Nobody is looking: skip the whole sample (nvidia-smi subprocess,
         # psutil, /metrics + /slots polling). The panel is often left
         # running unattended; energy sampling degrades to None for that
@@ -461,6 +475,25 @@ def create_app() -> FastAPI:
     # their head (the high-power prompt phase) and the estimate under-counts
     power = PowerSampler(max_samples=int(86400 / METRICS_INTERVAL) + 60)
 
+    def _submit_db_write(fn: Callable[[], None]) -> None:
+        """Run a sqlite write off the event loop (#106 O2): the connect +
+        commit used to run inline per completed request, freezing the loop
+        (WS frames + the SSE proxy) for its duration. Write order is
+        irrelevant — every row carries its own ts. Exceptions are logged in
+        the done callback, never raised back into the log-hook path."""
+        try:
+            fut = asyncio.get_running_loop().run_in_executor(None, fn)
+        except RuntimeError:  # caller not on a loop thread — write inline
+            fn()
+            return
+
+        def _done(f: "asyncio.Future") -> None:
+            exc = f.exception()
+            if exc is not None:
+                log.exception("analytics write failed", exc_info=exc)
+
+        fut.add_done_callback(_done)
+
     def _model_for_request() -> str:
         """Best-effort model name for the currently launched server."""
         pid = manager.preset_id
@@ -482,22 +515,30 @@ def create_app() -> FastAPI:
                 energy_wh = (gpu_wh or 0.0) + config.energy_overhead_w * (total_ms / 1000.0) / 3600.0
             pid = manager.preset_id
             preset = store.get(pid) if pid else None
-            analytics.record(
-                ts=now,
-                preset_id=pid or "",
-                preset_name=preset.name if preset else "",
-                model=_model_for_request(),
-                rec=rec,
-                energy_wh=energy_wh,
-            )
+            model = _model_for_request()
+            # the sqlite write runs off the event loop (#106 O2) — the
+            # power ring / store / manager reads stay on it (the ring is
+            # loop-thread-only state)
+            _submit_db_write(
+                lambda: analytics.record(
+                    ts=now,
+                    preset_id=pid or "",
+                    preset_name=preset.name if preset else "",
+                    model=model,
+                    rec=rec,
+                    energy_wh=energy_wh,
+                ))
         except Exception:
             log.exception("failed to record generation request")
 
     def _record_failure(status: int, path: str) -> None:
         """Count a failed generation attempt (offline server / upstream error)."""
         try:
-            analytics.record_failure(
-                ts=time.time(), model=_model_for_request(), status=status, path=path)
+            ts = time.time()
+            model = _model_for_request()
+            _submit_db_write(
+                lambda: analytics.record_failure(
+                    ts=ts, model=model, status=status, path=path))
         except Exception:
             log.exception("failed to record failed request")
 
@@ -558,7 +599,7 @@ def create_app() -> FastAPI:
         loop = asyncio.get_running_loop()
         task = _spawn(
             _metrics_loop(collector, manager, power, tracker, live_log, config,
-                          store))
+                          store, analytics))
 
         async def _warm_help() -> None:
             # Prime the `llama-server --help` cache off the request path —

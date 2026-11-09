@@ -28,6 +28,11 @@ RANGES = ("day", "week", "month", "year", "all")
 # these; anything else silently degrades to day — a typoed bucket is a
 # blank chart, so the API rejects them instead, #105)
 BUCKETS = ("hour", "day", "week", "month")
+# failed_requests retention (#106 O2): the table grows with every proxied
+# generation attempt made while the server is offline. 400 d > the longest
+# queryable range ("year", 365 d) so no range can observe the cutoff.
+# generation_records is the user's usage history — deliberately never pruned.
+FAILED_RETENTION_DAYS = 400.0
 
 # llama-server prints one block of 3 lines per completed request.
 # Newer builds right-align the numbers (padded with spaces), e.g.:
@@ -372,6 +377,16 @@ class AnalyticsStore:
                 "SELECT COUNT(*) AS n FROM failed_requests WHERE ts >= ?", (start,)
             ).fetchone()
         return int(row["n"]) if row else 0
+
+    def prune_failed(self, days: float = FAILED_RETENTION_DAYS) -> int:
+        """Delete failed_requests older than the retention window (#106 O2).
+        Returns the number of deleted rows."""
+        cutoff = time.time() - days * 86400.0
+        with self._conn() as conn:
+            cur = conn.execute(
+                "DELETE FROM failed_requests WHERE ts < ?", (cutoff,))
+            n = cur.rowcount
+        return max(n, 0)
 
     @staticmethod
     def range_start(range_name: str, now: Optional[float] = None) -> float:
