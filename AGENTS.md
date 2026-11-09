@@ -252,6 +252,8 @@ without rebuilding.
 
 ## Gotchas
 
+- **#105 hardening invariants**: (a) `update.py` has TWO locks — `_lock` guards `_cache` only, never held across the git fetch (up to 300 s; holding it pinned a threadpool worker per blocked `/api/update/check`), `_exec_lock` serializes actual checks and waiters re-read the cache under `_lock` once it lands; (b) fire-and-forget asyncio tasks in `process.py`/`backend_update.py`/`main.py` go through each module's `_spawn()` (`_bg_tasks` strong-ref set + `add_done_callback(discard)`) — bare `asyncio.create_task` can be GC'd mid-flight ("Task was destroyed but it is pending", silently killing log capture); (c) `frontend/js/api.js` `parseBody()` resolves JSON for **any** HTTP status (the token gate 401 / request guard 403 return `{ok:false,error}` JSON that callers read) and throws `HTTP <code> … on <path>: <snippet>` only on non-JSON or empty-non-ok bodies — never simplify back to `res.json()` or throw on every non-2xx; (d) `/api/analytics/timeseries` validates `bucket` against `analytics.BUCKETS` (an unknown bucket silently degrades to a blank chart); (e) `_ps_str()` (update.py) escapes the **backtick first**, then `"` and `$` — backtick is PowerShell's escape char, and the escape order keeps the doubling from re-escaping the new `"`/`$` escapes; a repo/exe path containing one would break the update bootstrap script.
+
 - **Stale `_MEI*` startup cleanup is scoped + probe-guarded (#104)**: `_cleanup_stale_mei_dirs()` (tray.py) runs **only after** `acquire_single_instance()` succeeds and removes only folders that are (a) older than 24 h, (b) llama-monitor extractions (`frontend/index.html` + `frontend/js/app.js` — other PyInstaller apps' `_MEI*` are never touched), and (c) provably dead: it probes by **unlinking the folder's `python*.dll`** — Windows refuses to delete a mapped image (renaming the containing folder does NOT fail, so a rename probe cannot work) — a failed unlink means a live process owns the folder: skip it, deleting nothing. The old sweep (any `_MEI*` older than 24h, `rmtree(ignore_errors=True)`, run before the mutex) could gut a >24h-running instance's extraction and any other PyInstaller app's folder. The #34 purpose stands: force-killed bootloader parents leave ~25 MB dirs, still swept — just correctly targeted.
 
 - **Analytics `mktime` calls pass `tm_isdst=-1` (#102)**: `time.mktime` with `tm_isdst=0` interprets the components as STANDARD time, so every "local midnight" boundary (range_start "day", `_bucket_bounds`/`_bucket_next`, week/month edges) landed at 01:00 through the whole DST period — "today" lost its first hour and day/month charts shifted by an hour. `-1` lets mktime decide from the date itself (and resolves DST-transition days correctly). Windows note kept: far-past (pre-epoch) starts are clamped in `_bucket_sequence` because Windows mktime overflows there.
@@ -537,7 +539,7 @@ without rebuilding.
   navigations with `cache: "reload"` and subresources with `cache:
   "no-cache"` so the HTTP disk cache can't shadow the network-first path.
   When you change shell files in a way that must invalidate already-cached
-  copies in the field, bump the `CACHE` name in sw.js (currently v2) —
+  copies in the field, bump the `CACHE` name in sw.js (currently v4) —
   activate() wipes older versions.
 - **Self-update = git pull, repo layout is load-bearing**: `update.py` runs
   git in the *repo root* (frozen: exe dir; dev: repo checkout), so updates
