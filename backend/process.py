@@ -117,7 +117,7 @@ class LlamaServerManager:
 
     async def on_startup(self) -> None:
         self._version = await self._detect_version()
-        self._detect_external()
+        await self._detect_external()
         self._publish_state()
 
     async def redetect_version(self) -> None:
@@ -158,7 +158,9 @@ class LlamaServerManager:
                 return {"ok": False, "error": msg}
 
             port = self._port_from_args(args) or self._get_config().default_server_port
-            pid = self._pid_on_port(port)
+            # off the event loop: net_connections is a full-system scan
+            # (#106 O5). _llama_server_port is a single-pid query — stays inline.
+            pid = await asyncio.to_thread(self._pid_on_port, port)
             if pid is not None:
                 # If the occupant is a llama-server on exactly that port, adopt
                 # it as an external server (the user can Stop it from the
@@ -260,7 +262,8 @@ class LlamaServerManager:
                                         and self._llama_server_port(pid) is not None):
                 pid = None
             if pid is None:
-                pid = self._pid_on_port(port)
+                # full-system scan off the loop (#106 O5)
+                pid = await asyncio.to_thread(self._pid_on_port, port)
             if pid is not None:
                 if self._llama_server_port(pid) is None:
                     # (#95) The panel may only kill llama-server — never
@@ -397,13 +400,18 @@ class LlamaServerManager:
         self._publish_log(f"[panel] error: {message}")
         self._publish_state()
 
-    def _detect_external(self) -> None:
+    async def _detect_external(self) -> None:
         """If a server is already running, mark it external instead of erroring.
 
         Prefers a process scan — finds a llama-server on ANY port (even before
         it is listening); falls back to the legacy probe of default_server_port
-        (any process on the port). (#68)"""
-        found = self._find_external_server()
+        (any process on the port). (#68)
+
+        The psutil full scans run in a worker thread (#106 O5): process_iter
+        + net_connections cost hundreds of ms on Windows. The state/log
+        publishing stays on the event loop — the WS fan-out uses
+        asyncio.Queue, which is not thread-safe."""
+        found = await asyncio.to_thread(self._find_external_server)
         if found is not None:
             pid, port = found
             self._state = ServerState.EXTERNAL
@@ -413,7 +421,7 @@ class LlamaServerManager:
             self._publish_log(f"[panel] detected external server on port {port} (pid {pid})")
             return
         port = self._get_config().default_server_port
-        pid = self._pid_on_port(port)
+        pid = await asyncio.to_thread(self._pid_on_port, port)
         if pid is not None and (self._proc is None or self._proc.returncode is not None):
             if self._llama_server_port(pid) is None:
                 # (#95) The any-process fallback must not adopt (and thereby
