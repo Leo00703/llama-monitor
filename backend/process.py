@@ -23,6 +23,19 @@ from .metrics import run_nvidia_smi
 
 log = logging.getLogger("llama-monitor.process")
 
+# create_task alone keeps only a weak reference — an unheld task can be
+# GC'd mid-flight ("Task was destroyed but it is pending", #105). These
+# two reader/monitor tasks dying silently would stop log capture, so the
+# set keeps a strong reference until each task is done.
+_bg_tasks: set = set()
+
+
+def _spawn(coro) -> "asyncio.Future":
+    task = asyncio.create_task(coro)
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
+    return task
+
 LOG_BUFFER_SIZE = 4000
 # (#77) The WS "init" payload carries the recent log to every (re)connecting
 # client — on a lossy link (tailnet) right after a long generation the full
@@ -207,8 +220,8 @@ class LlamaServerManager:
             self._port = port
             self._external_pid = None
             pid = self._proc.pid
-            asyncio.create_task(self._read_output(self._proc))
-            asyncio.create_task(self._run_monitor(self._proc, port))
+            _spawn(self._read_output(self._proc))
+            _spawn(self._run_monitor(self._proc, port))
             return {"ok": True, "state": self._state.value, "pid": pid}
 
     async def stop(self) -> dict:

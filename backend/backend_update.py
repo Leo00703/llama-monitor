@@ -50,7 +50,18 @@ import httpx
 
 from .config import DATA_DIR, no_window_kwargs, spawn_argv
 
+# See backend/process.py _spawn: unreferenced tasks can be GC'd
+# mid-flight (#105).
+_bg_tasks: set = set()
+
 log = logging.getLogger("llama-monitor.backend")
+
+
+def _spawn(coro) -> "asyncio.Future":
+    task = asyncio.create_task(coro)
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
+    return task
 
 GITHUB_REPO = "ggml-org/llama.cpp"
 API_BASE = f"https://api.github.com/repos/{GITHUB_REPO}"
@@ -512,7 +523,7 @@ async def _kick_background_refresh() -> None:
         finally:
             _rel_refreshing = False
 
-    asyncio.create_task(_bg())
+    _spawn(_bg())
 
 
 async def find_asset(client: httpx.AsyncClient, tag: str, variant: str) -> Optional[dict]:

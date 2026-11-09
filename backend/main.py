@@ -98,6 +98,17 @@ def set_restart_hook(hook: Optional[Callable[..., None]]) -> None:
 
 _updater_stop = threading.Event()
 
+# See backend/process.py _spawn: unreferenced tasks can be GC'd
+# mid-flight (#105).
+_bg_tasks: set = set()
+
+
+def _spawn(coro) -> "asyncio.Future":
+    task = asyncio.create_task(coro)
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
+    return task
+
 
 def _update_loop(manager: LlamaServerManager, loop: asyncio.AbstractEventLoop,
                  config: AppConfig) -> None:
@@ -545,7 +556,7 @@ def create_app() -> FastAPI:
         await manager.on_startup()
         log.info("panel ready (state=%s)", manager.snapshot()["state"])
         loop = asyncio.get_running_loop()
-        task = asyncio.create_task(
+        task = _spawn(
             _metrics_loop(collector, manager, power, tracker, live_log, config,
                           store))
 
@@ -560,7 +571,7 @@ def create_app() -> FastAPI:
             except Exception:
                 log.exception("--help warmup failed")
 
-        asyncio.create_task(_warm_help())
+        _spawn(_warm_help())
         updater = threading.Thread(
             target=_update_loop, args=(manager, loop, config),
             daemon=True, name="update-checker")
@@ -752,7 +763,7 @@ def create_app() -> FastAPI:
         """Start a download task and guarantee it never dies silently: an
         unhandled task exception leaves the client's progress modal spinning
         with no terminal message (#86)."""
-        task = asyncio.create_task(be_download(tag, variant))
+        task = _spawn(be_download(tag, variant))
 
         def _done(t: asyncio.Task) -> None:
             if t.cancelled():
