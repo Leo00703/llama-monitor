@@ -252,6 +252,8 @@ without rebuilding.
 
 ## Gotchas
 
+- **Stale `_MEI*` startup cleanup is scoped + probe-guarded (#104)**: `_cleanup_stale_mei_dirs()` (tray.py) runs **only after** `acquire_single_instance()` succeeds and removes only folders that are (a) older than 24 h, (b) llama-monitor extractions (`frontend/index.html` + `frontend/js/app.js` — other PyInstaller apps' `_MEI*` are never touched), and (c) provably dead: it probes by **unlinking the folder's `python*.dll`** — Windows refuses to delete a mapped image (renaming the containing folder does NOT fail, so a rename probe cannot work) — a failed unlink means a live process owns the folder: skip it, deleting nothing. The old sweep (any `_MEI*` older than 24h, `rmtree(ignore_errors=True)`, run before the mutex) could gut a >24h-running instance's extraction and any other PyInstaller app's folder. The #34 purpose stands: force-killed bootloader parents leave ~25 MB dirs, still swept — just correctly targeted.
+
 - **Analytics `mktime` calls pass `tm_isdst=-1` (#102)**: `time.mktime` with `tm_isdst=0` interprets the components as STANDARD time, so every "local midnight" boundary (range_start "day", `_bucket_bounds`/`_bucket_next`, week/month edges) landed at 01:00 through the whole DST period — "today" lost its first hour and day/month charts shifted by an hour. `-1` lets mktime decide from the date itself (and resolves DST-transition days correctly). Windows note kept: far-past (pre-epoch) starts are clamped in `_bucket_sequence` because Windows mktime overflows there.
 
 - **Downloaded-file ownership in storage = the filename prefix (#101)**: every build/companion zip the panel downloads is named `llama-monitor-<asset>` (`PANEL_DL_PREFIX` + `panel_download_path()` — its partial is that name + `.part`), and `cleanup_partials()` deletes **only** panel-prefixed `.part`/`.zip`/`.tar.gz` files. The old sweep (any `*.part` + the release-name regex) ate browser download partials and hand-downloaded release zips whenever `llama_backend.storage_dir` overlapped a user download folder — storage defaults next to the exe, so that is a real folder the user cares about. Never widen the cleanup back to name-shape matching. Pre-#101 bare leftovers from interrupted panel downloads may linger in storage by design (deleting them is the data-loss bug); never re-add a legacy sweep without prefix-scoping it.
@@ -573,8 +575,10 @@ without rebuilding.
   (never a partial merge). The helper then relaunches the app (success OR
   failure — the user always gets a running panel; the lock-timeout path
   skips the relaunch since an instance is still alive).
-  `tray.py` removes stale `_MEI*` temp dirs (>24 h) at startup — a
-  force-killed parent (or a crash) leaves its ~25 MB extraction dir behind.
+  `tray.py` removes stale `_MEI*` temp dirs at startup — only its own old
+  dead extractions (#104 gotcha: mutex-scoped, llama-monitor-scoped,
+  delete-probed) — a force-killed parent (or a crash) leaves its ~25 MB
+  extraction dir behind.
   The restart hook is called with `deferred=True` and must NOT spawn
   `--restarting` (the helper is the relauncher). The outcome lands
   in `<data-dir>/update-result.txt` (`pending`, git output, `RESULT:ok` +
