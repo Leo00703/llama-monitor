@@ -508,12 +508,22 @@ def _restart_app(deferred: bool = False) -> None:
 
 
 def _cleanup_stale_mei_dirs() -> None:
-    """Remove leftover PyInstaller onefile temp dirs (_MEI*) older than a day.
+    """Remove leftover llama-monitor PyInstaller onefile extraction dirs
+    (_MEI*) older than a day — a stuck bootloader parent force-killed by the
+    update helper (the "Failed to remove temporary directory" dialog, #34)
+    or a crash leaves its ~25MB folder behind. Best-effort.
 
-    A stuck bootloader parent that the update helper had to force-kill (the
-    "Failed to remove temporary directory" dialog) — or a crash — leaves its
-    _MEI* extraction dir behind (~25MB each). A live instance's dir is always
-    fresh, so anything older than 24h is safe to remove. Best-effort.
+    #104 targeting — the old sweep deleted ANY old _MEI* (other PyInstaller
+    apps' folders, and a >24h-running instance's own extraction):
+    - scoped to llama-monitor extractions (our frontend payload);
+    - liveness probe = unlink of the extraction's python DLL: Windows
+      refuses to DELETE a mapped image (renaming the containing folder does
+      NOT fail, so a rename probe cannot work) — AccessDenied means the
+      folder is in use: skip it, deleting nothing;
+    - the 24h mtime floor stays: fresh extractions — this process's own
+      included, it is minutes old at startup — are never candidates, and
+      run_tray calls this only after the single-instance claim, so a live
+      llama-monitor instance is never touched.
     """
     if os.name != "nt":
         return
@@ -524,8 +534,16 @@ def _cleanup_stale_mei_dirs() -> None:
         cutoff = time.time() - 86400
         for d in temp.glob("_MEI*"):
             try:
-                if d.is_dir() and d.stat().st_mtime < cutoff:
-                    shutil.rmtree(d, ignore_errors=True)
+                if not d.is_dir() or d.stat().st_mtime >= cutoff:
+                    continue
+                if not ((d / "frontend" / "index.html").is_file()
+                        and (d / "frontend" / "js" / "app.js").is_file()):
+                    continue  # another PyInstaller app's folder — never touch
+                dlls = sorted(d.glob("python*.dll"))
+                if not dlls:
+                    continue  # not a recognisable extraction — leave alone
+                dlls[0].unlink()  # AccessDenied while something maps it
+                shutil.rmtree(d, ignore_errors=True)
             except OSError:
                 pass
     except Exception:
@@ -589,7 +607,6 @@ def run_smoke() -> int:
 def run_tray(restarting: bool = False) -> int:
     global _icon, _config_ref, _panel_browser_url, _preset_id, _panel_token
     _install_stdout_stderr()
-    _cleanup_stale_mei_dirs()
     setup_logging()
     if restarting:
         log.info("restart handoff: waiting for the previous instance to exit")
@@ -624,6 +641,10 @@ def run_tray(restarting: bool = False) -> int:
             _message_box("llama-monitor",
                          "llama-monitor is already running (see system tray).")
         return 0
+
+    # Only after the single-instance claim (#104): never sweep _MEI* folders
+    # while another llama-monitor instance owns the machine.
+    _cleanup_stale_mei_dirs()
 
     try:
         config = load_config()
