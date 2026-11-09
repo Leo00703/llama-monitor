@@ -1483,14 +1483,19 @@ def create_app() -> FastAPI:
         except (TypeError, ValueError):
             return 0.0
 
+    # Plain (sync) defs on purpose: every analytics read is a blocking
+    # sqlite scan + Python-side aggregation; as `async def` they ran inline
+    # on the event loop — a large "all" range froze the WebSockets and the
+    # SSE proxy with it. FastAPI dispatches sync handlers to the threadpool
+    # (#106 O1).
     @app.get("/api/analytics/summary")
-    async def analytics_summary(range: str = "week") -> dict:
+    def analytics_summary(range: str = "week") -> dict:
         if range not in RANGES:
             return {"ok": False, "error": f"range must be one of {', '.join(RANGES)}"}
         return {"ok": True, "summary": analytics.summary(range, _price())}
 
     @app.get("/api/analytics/timeseries")
-    async def analytics_timeseries(range: str = "week", bucket: str = "") -> dict:
+    def analytics_timeseries(range: str = "week", bucket: str = "") -> dict:
         if range not in RANGES:
             return {"ok": False, "error": f"range must be one of {', '.join(RANGES)}"}
         if bucket and bucket not in BUCKETS:
@@ -1498,20 +1503,20 @@ def create_app() -> FastAPI:
         return {"ok": True, **analytics.timeseries(range, _price(), bucket or None)}
 
     @app.get("/api/analytics/models")
-    async def analytics_models(range: str = "week") -> dict:
+    def analytics_models(range: str = "week") -> dict:
         if range not in RANGES:
             return {"ok": False, "error": f"range must be one of {', '.join(RANGES)}"}
         return {"ok": True, "models": analytics.models(range, _price())}
 
     @app.get("/api/analytics/records")
-    async def analytics_records(range: str = "week", limit: int = 100) -> dict:
+    def analytics_records(range: str = "week", limit: int = 100) -> dict:
         if range not in RANGES:
             return {"ok": False, "error": f"range must be one of {', '.join(RANGES)}"}
         limit = max(1, min(int(limit), 500))
         return {"ok": True, "records": analytics.records(range, limit)}
 
     @app.get("/api/analytics/export")
-    async def analytics_export(range: str = "week") -> Response:
+    def analytics_export(range: str = "week") -> Response:
         if range not in RANGES:
             return JSONResponse({"error": f"range must be one of {', '.join(RANGES)}"}, status_code=400)
         return Response(
