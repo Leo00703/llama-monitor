@@ -5,11 +5,38 @@
    Slow-by-design endpoints pass a longer timeout explicitly. */
 const API_TIMEOUT = 20000;
 
-function request(path, init = {}, timeout = API_TIMEOUT) {
+/* Optional panel token (#92): stored once entered after the first 401,
+   sent as X-Panel-Token on every call and as ?token= on the WebSocket
+   (a browser WebSocket cannot set headers). */
+const TOKEN_KEY = "lm.panel.token";
+
+function panelToken() {
+  try { return localStorage.getItem(TOKEN_KEY) || ""; } catch (_) { return ""; }
+}
+
+function authHeaders(base) {
+  const headers = { ...(base || {}) };
+  const t = panelToken();
+  if (t) headers["X-Panel-Token"] = t;
+  return headers;
+}
+
+function request(path, init = {}, timeout = API_TIMEOUT, retried = false) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeout);
-  return fetch(path, { ...init, signal: ctrl.signal })
-    .then((res) => res.json())
+  return fetch(path, { ...init, headers: authHeaders(init.headers), signal: ctrl.signal })
+    .then((res) => {
+      if (res.status === 401 && !retried) {
+        const typed = window.prompt(
+          "This panel is token-protected (#92).\n\nEnter the panel token " +
+          "(Settings → Panel token) or close this dialog to keep browsing read-only:");
+        if (typed !== null && typed.trim()) {
+          try { localStorage.setItem(TOKEN_KEY, typed.trim()); } catch (_) { /* private mode */ }
+          return request(path, init, timeout, true);
+        }
+      }
+      return res.json();
+    })
     .finally(() => clearTimeout(t));
 }
 
@@ -49,7 +76,8 @@ const API = {
     function open() {
       if (closed) return;
       const proto = location.protocol === "https:" ? "wss" : "ws";
-      ws = new WebSocket(`${proto}://${location.host}${path}`);
+      const tok = panelToken();
+      ws = new WebSocket(`${proto}://${location.host}${path}${tok ? `?token=${encodeURIComponent(tok)}` : ""}`);
       ws.onopen = () => { delay = 1500; };
       ws.onmessage = (e) => {
         try { onEvent(JSON.parse(e.data)); } catch (_) { /* ignore */ }

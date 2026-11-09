@@ -72,7 +72,7 @@ const Presets = {
       ngram_mod: { n_match: 24, n_min: 48, n_max: 64 },
     },
     slots: -1, cont_batching: "auto", kv_unified: "auto",
-    host: "0.0.0.0", port: 8080, api_key: "",
+    host: "127.0.0.1", port: 8080, api_key: "",
     jinja: true, reasoning_preserve: false, merge_qkv: false, graph_reuse: 0,
     fit: false, extra_flags: "",
   },

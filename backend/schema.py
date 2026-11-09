@@ -174,7 +174,10 @@ class LaunchSettings(BaseModel):
     kv_unified: str = "auto"  # auto | on | off
 
     # network & observability
-    host: str = "0.0.0.0"
+    # 127.0.0.1 = llama.cpp's own default (#92): reach the server through
+    # the panel proxy; set 0.0.0.0 here on purpose to expose inference on
+    # the LAN directly
+    host: str = "127.0.0.1"
     port: int = Field(8080, ge=1, le=65535)
     api_key: str = ""
     jinja: bool = True

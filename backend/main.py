@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import os
+import secrets
 import shutil
 import threading
 import time
@@ -13,6 +14,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any, AsyncIterator, Callable, Optional
+from urllib.parse import parse_qs
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, Response, StreamingResponse
@@ -292,6 +294,58 @@ class SlowRequestLogger(BaseHTTPMiddleware):
         return response
 
 
+class PanelTokenGate:
+    """Optional shared-secret panel auth (#92).
+
+    Enforced only while `panel.token` is set: every /api/* (except
+    /api/health), /proxy/* and /ws/* request must present the token via
+    the X-Panel-Token header — or ?token= for the WebSocket, since a
+    browser WebSocket cannot set headers. Pure ASGI (not
+    BaseHTTPMiddleware) so the WebSocket scope can be rejected too.
+    Static files stay open: they carry no data and are the bootstrap the
+    token prompt needs.
+    """
+
+    def __init__(self, app, get_config) -> None:
+        self.app = app
+        self.get_config = get_config
+
+    @staticmethod
+    def _protected(path: str) -> bool:
+        return ((path.startswith("/api/") and path != "/api/health")
+                or path.startswith("/proxy/") or path.startswith("/ws/"))
+
+    async def __call__(self, scope, receive, send) -> None:
+        token = (self.get_config().panel.token or "").strip()
+        if token and scope["type"] in ("http", "websocket") \
+                and self._protected(scope.get("path", "")):
+            if scope["type"] == "websocket":
+                given = (parse_qs(scope.get("query_string", b"").decode("latin-1"))
+                         .get("token") or [""])[0]
+            else:
+                headers = {k.lower(): v for k, v in scope.get("headers", [])}
+                given = headers.get(b"x-panel-token", b"").decode("latin-1")
+            if not secrets.compare_digest(given, token):
+                if scope["type"] == "websocket":
+                    await send({"type": "websocket.close", "code": 1008})
+                else:
+                    body = json.dumps(
+                        {"ok": False, "error": "panel token required"}).encode()
+                    await send({"type": "http.response.start", "status": 401,
+                                "headers": [(b"content-type", b"application/json"),
+                                            (b"content-length",
+                                             str(len(body)).encode())]})
+                    await send({"type": "http.response.body", "body": body})
+                return
+        await self.app(scope, receive, send)
+
+
+def _is_loopback_host(host: str) -> bool:
+    host = (host or "").strip().lower()
+    return host in ("", "localhost", "::1") or host == "127.0.0.1" \
+        or host.startswith("127.")
+
+
 def create_app() -> FastAPI:
     config: AppConfig = load_config()
     manager = LlamaServerManager(lambda: config)
@@ -427,6 +481,18 @@ def create_app() -> FastAPI:
     # card is the only place visible in both dev and frozen builds, and the
     # next "panel hangs during inference" report should name the endpoint.
     app.add_middleware(SlowRequestLogger, manager=manager)
+
+    # (#92) Registered last = outermost: the token check runs before any
+    # route or the static mount sees the request.
+    app.add_middleware(PanelTokenGate, get_config=lambda: config)
+    if config.panel.token.strip():
+        manager.note("[panel] panel token enforced on /api, /proxy and /ws")
+    elif not _is_loopback_host(config.panel.host):
+        manager.note(
+            "[panel] WARNING: listening on a non-loopback address without a "
+            "panel token — anyone who can reach this port can drive the "
+            "panel (incl. launching programs). Set a token in Settings."
+        )
 
     # ------------------------------------------------------------------
     # launch preparation (presets -> validated, version-checked flags)

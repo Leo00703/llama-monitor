@@ -48,8 +48,9 @@ const Settings = {
       document.getElementById("set-root").value = cfg.models_root || "";
       document.getElementById("set-port").value = cfg.default_server_port || 8080;
       const panel = cfg.panel || {};
-      document.getElementById("set-phost").value = panel.host || "0.0.0.0";
+      document.getElementById("set-phost").value = panel.host || "127.0.0.1";
       document.getElementById("set-pport").value = panel.port || 8000;
+      document.getElementById("set-ptoken").value = panel.token || "";
       document.getElementById("set-tlscert").value = panel.tls_cert || "";
       document.getElementById("set-tlskey").value = panel.tls_key || "";
       document.getElementById("set-energy-price").value = cfg.energy_price_eur_kwh ?? 0.2;
@@ -171,8 +172,9 @@ const Settings = {
       models_root: P(val("set-root")),
       default_server_port: parseInt(document.getElementById("set-port").value, 10) || 8080,
       panel: {
-        host: document.getElementById("set-phost").value.trim() || "0.0.0.0",
+        host: document.getElementById("set-phost").value.trim() || "127.0.0.1",
         port: parseInt(document.getElementById("set-pport").value, 10) || 8000,
+        token: document.getElementById("set-ptoken").value.trim(),
         tls_cert: P(val("set-tlscert")),
         tls_key: P(val("set-tlskey")),
       },
@@ -200,6 +202,19 @@ const Settings = {
       if (body.llama_backend) this.llamaBackend = { ...this.llamaBackend, ...body.llama_backend };
       Backend.refresh();
       UI.toast("settings saved");
+      // keep this browser's stored token in sync with the saved setting (#92)
+      try {
+        if (body.panel.token) localStorage.setItem("lm.panel.token", body.panel.token);
+        else localStorage.removeItem("lm.panel.token");
+      } catch (_) { /* private mode */ }
+      const host = body.panel.host.toLowerCase();
+      const loopback = host === "127.0.0.1" || host === "localhost" ||
+        host === "::1" || host.startsWith("127.");
+      if (!loopback && !body.panel.token) {
+        UI.toast("panel listens on a non-loopback address without a token — "
+               + "anyone who can reach the port can launch programs. Set a Panel token.",
+               "warn");
+      }
       // echo the normalized values into the fields (quotes/trailing seps gone)
       for (const key of Object.keys(PATH_FIELDS)) {
         const inp = document.getElementById(PATH_FIELDS[key].input);

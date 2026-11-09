@@ -192,8 +192,12 @@ migrate_legacy_data()
 
 
 class PanelSettings(BaseModel):
-    host: str = "0.0.0.0"
+    host: str = "127.0.0.1"
     port: int = Field(8000, ge=1, le=65535)
+    # optional panel token (#92): when set, every /api (except /api/health),
+    # /proxy and /ws request must carry it — X-Panel-Token header, or
+    # ?token= on the WebSocket (browsers cannot set headers there).
+    token: str = ""
     # optional TLS (empty = plain http): the paths point at a PEM cert and
     # its key. Needed for PWA installs on LAN / tailscale — browsers only
     # offer "install as app" on a secure context (https or localhost).

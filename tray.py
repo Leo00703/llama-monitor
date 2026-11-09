@@ -260,13 +260,22 @@ def _panel_verify(url: str) -> bool:
     return not url.startswith("https")
 
 
+# the tray authenticates with the token from the on-disk config (#92)
+_panel_token: str = ""
+
+
+def _panel_headers() -> dict[str, str]:
+    return {"X-Panel-Token": _panel_token} if _panel_token else {}
+
+
 def _panel_get(url: str, path: str, timeout: float):
-    return httpx.get(f"{url}{path}", timeout=timeout, verify=_panel_verify(url))
+    return httpx.get(f"{url}{path}", timeout=timeout, verify=_panel_verify(url),
+                     headers=_panel_headers())
 
 
 def _panel_post(url: str, path: str, timeout: float, **kwargs):
     return httpx.post(f"{url}{path}", timeout=timeout, verify=_panel_verify(url),
-                      **kwargs)
+                      headers=_panel_headers(), **kwargs)
 
 
 def load_mark() -> Image.Image:
@@ -325,7 +334,7 @@ def start_panel(config: AppConfig) -> tuple[threading.Thread, uvicorn.Server]:
             }
     cfg = uvicorn.Config(
         app,
-        host=config.panel.host or "0.0.0.0",
+        host=config.panel.host or "127.0.0.1",
         port=config.panel.port,
         log_level="warning",
         lifespan="on",
@@ -555,12 +564,14 @@ def shutdown_panel(thread: threading.Thread, server: uvicorn.Server) -> None:
 
 def run_smoke() -> int:
     """Headless self-test used by CI: boot the panel, hit /api/health, exit."""
+    global _panel_token
     setup_logging()
     try:
         config = load_config()
     except RuntimeError as exc:
         print(f"smoke FAIL: {exc}")
         return 1
+    _panel_token = config.panel.token.strip()
     url = panel_url(config)
     log.info("smoke: starting panel on %s", url)
     panel_thread, server = start_panel(config)
@@ -576,7 +587,7 @@ def run_smoke() -> int:
 
 
 def run_tray(restarting: bool = False) -> int:
-    global _icon, _config_ref, _panel_browser_url, _preset_id
+    global _icon, _config_ref, _panel_browser_url, _preset_id, _panel_token
     _install_stdout_stderr()
     _cleanup_stale_mei_dirs()
     setup_logging()
@@ -621,6 +632,7 @@ def run_tray(restarting: bool = False) -> int:
         return 1
 
     _config_ref = config
+    _panel_token = config.panel.token.strip()
     _panel_browser_url = panel_url(config)
     url = panel_url(config)
 
