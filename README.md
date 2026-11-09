@@ -215,6 +215,9 @@ Then open `http://127.0.0.1:8000` (`http://<server-ip>:8000` when you bound a
 public interface) in a browser. Point your OpenAI-compatible
 clients at `http://<server-ip>:8000/proxy/v1/...` to have generation parameters
 applied to every request through the panel.
+Both streaming and non-streaming requests mirror the server's real status
+code and response headers (a rejected request is a real 4xx/5xx for the
+client, not a 200), and failed generations are counted in Analytics.
 
 > Note: the panel only manages `llama-server` processes it started itself.
 > If a `llama-server` is already running on the port you try to use, the
