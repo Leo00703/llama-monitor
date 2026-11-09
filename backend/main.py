@@ -253,7 +253,9 @@ class StartRequest(BaseModel):
 
 
 class PresetRequest(BaseModel):
-    name: str = "New preset"
+    # None = leave the stored name alone (PUT with only launch/generation
+    # must never rename, #103); create falls back to the default name.
+    name: Optional[str] = None
     launch: Optional[LaunchSettings] = None
     generation: Optional[dict[str, Any]] = None
 
@@ -1358,7 +1360,7 @@ def create_app() -> FastAPI:
     @app.post("/api/presets")
     async def presets_create(body: PresetRequest) -> dict:
         launch = body.launch or LaunchSettings()
-        preset = store.create(body.name, launch)
+        preset = store.create(body.name or "New preset", launch)
         if body.generation is not None:
             preset.launch.generation = body.generation
             store.update(preset.id, generation=body.generation)
