@@ -29,6 +29,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import fnmatch
+import hashlib
 import json
 import logging
 import os
@@ -564,9 +565,20 @@ async def find_companion_asset(
 ProgressCb = Callable[[int, int], None]
 
 
-async def download_file(asset: dict, dest: Path, progress: Optional[ProgressCb] = None) -> None:
-    """Stream the release asset to dest (atomic replace; .part removed on failure)."""
+async def download_file(asset: dict, dest: Path,
+                        progress: Optional[ProgressCb] = None,
+                        expected_sha256: str = "") -> str:
+    """Stream a release asset to dest; returns its sha256 hex.
+
+    Atomic replace; .part removed on failure. (#96) The digest is computed
+    while streaming and cross-checked against the declared asset size, and
+    — when the caller passes it — against the user-configured
+    `expected_sha256` override, BEFORE anything is extracted or executed.
+    GitHub ships no digests for llama.cpp assets, so the hard-fail override
+    is the only pin against a swapped asset; the size check catches truncated
+    or tampered downloads out of the box."""
     tmp = dest.parent / (dest.name + ".part")
+    digest = hashlib.sha256()
     try:
         total = asset.get("size") or 0
         done = 0
@@ -579,6 +591,7 @@ async def download_file(asset: dict, dest: Path, progress: Optional[ProgressCb] 
                 with open(tmp, "wb") as f:
                     async for chunk in resp.aiter_bytes(256 * 1024):
                         f.write(chunk)
+                        digest.update(chunk)
                         done += len(chunk)
                         now = time.time()
                         if progress and now - last_tick > 0.3:
@@ -586,7 +599,20 @@ async def download_file(asset: dict, dest: Path, progress: Optional[ProgressCb] 
                             progress(done, total)
                 if progress:  # fast (local) downloads may never hit the tick
                     progress(done, total)
+        name = asset.get("name") or dest.name
+        if total and done != total:
+            raise UpdateError(
+                f"{name}: download size mismatch — got {done} bytes, "
+                f"the asset declares {total}")
+        sha = digest.hexdigest()
+        expected = (expected_sha256 or "").strip().lower().removeprefix("sha256:")
+        if expected and sha != expected:
+            raise UpdateError(
+                f"{name}: sha256 mismatch — downloaded {sha}, expected "
+                f"{expected} (llama_backend.expected_sha256); refusing to "
+                "install an archive that does not match the pinned digest")
         tmp.replace(dest)
+        return sha
     except BaseException:
         # never leave stale partials — retries used to re-download over them
         # and they accumulated as multi-GB orphans (#72)
@@ -621,7 +647,10 @@ def extract_archive(archive: Path, dest: Path) -> None:
 
 
 async def verify_build(build_dir: Path, expected_tag: str) -> dict[str, Any]:
-    """Run `--version` inside the extracted build; the flip needs a match."""
+    """Run `--version` inside the extracted build; the flip needs a match.
+
+    Only ever called after download_file's size/sha256 checks — a freshly
+    downloaded binary is never executed before those sanity checks (#96)."""
     exe = build_dir / server_exe_name()
     if not exe.exists():
         return {"ok": False, "error": f"{exe.name} not found in the extracted build"}
@@ -650,12 +679,14 @@ def read_manifest(build_dir: Path) -> Optional[dict]:
 
 
 def write_manifest(build_dir: Path, tag: str, variant: str,
-                   url: str, size: int) -> None:
+                   url: str, size: int, sha256: str = "") -> None:
     manifest = {
         "tag": tag,
         "variant": variant,
         "source_url": url,
         "size_bytes": size,
+        "sha256": sha256,  # digest of the downloaded archive, computed at
+                           # download time (#96) — provenance + re-verify
         "installed_at": datetime.now().isoformat(timespec="seconds"),
     }
     (build_dir / MANIFEST_NAME).write_text(
@@ -694,7 +725,8 @@ def missing_cuda_dlls(build_dir: Path) -> list[str]:
     return missing
 
 
-def record_cuda_runtime(build_dir: Path, url: str, size_bytes: int) -> None:
+def record_cuda_runtime(build_dir: Path, url: str, size_bytes: int,
+                        sha256: str = "") -> None:
     """Record the installed companion CUDA-runtime asset in the panel
     manifest (diagnostics + repair). No-op when the manifest does not
     exist yet (the install flow writes it right before calling this)."""
@@ -708,6 +740,7 @@ def record_cuda_runtime(build_dir: Path, url: str, size_bytes: int) -> None:
     m["cuda_runtime"] = {
         "url": url,
         "size_bytes": size_bytes,
+        "sha256": sha256,
         "installed_at": datetime.now().isoformat(timespec="seconds"),
     }
     with contextlib.suppress(OSError):

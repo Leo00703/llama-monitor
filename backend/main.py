@@ -818,7 +818,9 @@ def create_app() -> FastAPI:
                     "percent": round(done * 100 / total) if total else 0,
                 }})
 
-            await backend_update.download_file(asset, zip_path, progress)
+            sha256 = await backend_update.download_file(
+                asset, zip_path, progress,
+                config.llama_backend.expected_sha256.strip())
             build_dir = storage / f"llama-{tag}-{variant}"
             if build_dir.exists():
                 shutil.rmtree(build_dir, ignore_errors=True)
@@ -830,7 +832,7 @@ def create_app() -> FastAPI:
                 return fail(ver["error"])
             backend_update.write_manifest(
                 build_dir, tag, variant, asset["browser_download_url"],
-                asset.get("size") or 0)
+                asset.get("size") or 0, sha256)
             # the archive has served its purpose — the extracted build dir +
             # manifest is the managed artifact; keeping the ~100-200 MB zip
             # would accumulate one per version in the storage folder (#51)
@@ -874,13 +876,13 @@ def create_app() -> FastAPI:
                                                    if total else 0),
                                            }})
 
-                    await backend_update.download_file(
+                    csha256 = await backend_update.download_file(
                         companion, czip, progress_cuda)
                     backend_update.extract_archive(czip, build_dir)
                     czip.unlink(missing_ok=True)
                     backend_update.record_cuda_runtime(
                         build_dir, companion["browser_download_url"],
-                        companion.get("size") or 0)
+                        companion.get("size") or 0, csha256)
                     gpu = await backend_update.probe_gpu(
                         str(exe_path), force=True, timeout=60.0)
                 if not gpu["gpu"]:
@@ -1185,12 +1187,12 @@ def create_app() -> FastAPI:
                                                if total else 0),
                                        }})
 
-                await backend_update.download_file(companion, czip, progress)
+                csha256 = await backend_update.download_file(companion, czip, progress)
             backend_update.extract_archive(czip, build_dir)
             czip.unlink(missing_ok=True)
             backend_update.record_cuda_runtime(
                 build_dir, companion["browser_download_url"],
-                companion.get("size") or 0)
+                companion.get("size") or 0, csha256)
             gpu = await backend_update.probe_gpu(str(exe), force=True)
         except Exception as exc:
             log.exception("CUDA runtime repair failed")

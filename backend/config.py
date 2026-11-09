@@ -227,6 +227,10 @@ class LlamaBackendSettings(BaseModel):
                                 # cpu | vulkan | cuda-<ver> | rocm-… | sycl-…
     storage_dir: str = ""       # "" = sibling of the current build folder
     last_check: str = ""        # local ISO timestamp of the last check
+    # Optional sha256 hex (or "sha256:<hex>") pinned by the user for the
+    # downloaded build archive; a mismatch aborts the install (#96).
+    # Empty = no pin (the download is only size-verified).
+    expected_sha256: str = ""
     pending: Optional[LlamaBackendPending] = None
 
     @field_validator("storage_dir", mode="before")
