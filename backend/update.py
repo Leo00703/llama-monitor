@@ -27,7 +27,8 @@ FETCH_TIMEOUT = 300.0   # updates download the bundled exe (~25MB) on slow lines
 MAX_COMMITS = 10        # commit subjects surfaced to the UI
 BOOTSTRAP_WAIT_SECONDS = 90  # max wait for the old process to exit (helper)
 
-_lock = threading.Lock()
+_lock = threading.Lock()      # guards _cache only — never held across git
+_exec_lock = threading.Lock()  # one check (git fetch) at a time (#105)
 _cache: dict[str, Any] = {"ts": 0.0, "data": None}
 
 
@@ -189,8 +190,23 @@ def _dirty_lines(root: Path) -> list[str]:
 
 
 def check(force: bool = False) -> dict[str, Any]:
-    """Compare HEAD with the remote; results cached for CHECK_TTL seconds."""
+    """Compare HEAD with the remote; results cached for CHECK_TTL seconds.
+
+    The fetch (up to FETCH_TIMEOUT s) runs under _exec_lock, never under
+    _lock — so a slow git never blocks the cache read in /api/update/check
+    nor the _invalidate after an apply. Waiters double-check the cache
+    under _lock once the in-flight fetch lands (#105)."""
     with _lock:
+        if (
+            not force
+            and _cache["data"] is not None
+            and time.time() - _cache["ts"] < CHECK_TTL
+        ):
+            return _cache["data"]
+    # Release _lock before the slow git fetch; _exec_lock serialises actual
+    # fetches. A waiter that finds the cache freshly written after acquiring
+    # _exec_lock skips a redundant fetch.
+    with _exec_lock:
         if (
             not force
             and _cache["data"] is not None
@@ -207,8 +223,9 @@ def check(force: bool = False) -> dict[str, Any]:
                 "ahead": 0, "dirty": False, "dirty_paths": [], "commits": [],
                 "error": str(exc), "checked_at": time.time(),
             }
-        _cache["ts"] = time.time()
-        _cache["data"] = data
+        with _lock:
+            _cache["ts"] = time.time()
+            _cache["data"] = data
         return data
 
 
