@@ -21,6 +21,9 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
+import time
+import uuid
 from pathlib import Path
 from typing import Literal, Optional
 
@@ -407,8 +410,36 @@ def load_config() -> AppConfig:
     return cfg
 
 
+_save_lock = threading.Lock()
+
+
 def save_config(cfg: AppConfig) -> None:
-    """Atomically persist the configuration to config.json."""
-    tmp = CONFIG_PATH.with_name("config.json.tmp")
-    tmp.write_text(json.dumps(cfg.model_dump(), indent=2) + "\n", encoding="utf-8")
-    tmp.replace(CONFIG_PATH)
+    """Atomically persist the configuration to config.json.
+
+    (#111) Callers span the threadpool (sync routes) AND the event loop
+    (be_* async paths) of one process, so the write+replace is serialized
+    by a module lock; the unique tmp name additionally keeps two writer
+    processes from clobbering each other's in-flight temp file.
+    """
+    payload = json.dumps(cfg.model_dump(), indent=2) + "\n"
+    tmp = CONFIG_PATH.with_name(
+        f"config.json.{os.getpid()}.{uuid.uuid4().hex}.tmp")
+    with _save_lock:
+        try:
+            tmp.write_text(payload, encoding="utf-8")
+            # Windows: an open destination handle without share-delete
+            # (Defender scanning the fresh rename, an editor, another
+            # Python >= 3.13 reader) makes the replace fail with Access
+            # denied; such holds are short, so retry briefly before failing.
+            for attempt in range(5):
+                try:
+                    tmp.replace(CONFIG_PATH)
+                    break
+                except PermissionError:
+                    if attempt == 4:
+                        raise
+                    time.sleep(0.05 * (attempt + 1))
+        finally:
+            # no-op after a successful replace (tmp was moved); cleans up
+            # the partial after a failed write/replace instead of leaking
+            tmp.unlink(missing_ok=True)
