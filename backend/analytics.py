@@ -572,12 +572,16 @@ def _default_bucket(range_name: str) -> str:
 def _bucket_bounds(bucket: str, ts: float) -> float:
     d = time.localtime(ts)
     if bucket == "hour":
-        return ts - (ts % 3600)
+        # local wall-clock hour (#109: `ts - ts % 3600` is UTC-aligned, so in
+        # :30/:45-offset zones the buckets never started on the wall-clock hour)
+        return time.mktime((d.tm_year, d.tm_mon, d.tm_mday, d.tm_hour, 0, 0, 0, 0, -1))
     if bucket == "day":
         return time.mktime((d.tm_year, d.tm_mon, d.tm_mday, 0, 0, 0, 0, 0, -1))
     if bucket == "week":
-        day = time.mktime((d.tm_year, d.tm_mon, d.tm_mday, 0, 0, 0, 0, 0, -1))
-        return day - time.localtime(day).tm_wday * 86400
+        # Monday 00:00 local via mktime day-arithmetic (#109): the old
+        # epoch-minus tm_wday*86400 drifts ±1h across DST transitions
+        return time.mktime(
+            (d.tm_year, d.tm_mon, d.tm_mday - d.tm_wday, 0, 0, 0, 0, 0, -1))
     if bucket == "month":
         return time.mktime((d.tm_year, d.tm_mon, 1, 0, 0, 0, 0, 0, -1))
     return ts - (ts % 86400)
@@ -586,11 +590,17 @@ def _bucket_bounds(bucket: str, ts: float) -> float:
 def _bucket_next(bucket: str, ts: float) -> float:
     d = time.localtime(ts)
     if bucket == "hour":
-        return ts + 3600
+        return _bucket_bounds("hour", ts + 3600)
     if bucket == "day":
         return time.mktime((d.tm_year, d.tm_mon, d.tm_mday + 1, 0, 0, 0, 0, 0, -1))
     if bucket == "week":
-        return ts + 7 * 86400
+        # renormalized like day (#109): a fixed 7*86400 epoch step falls out
+        # of sync with the local-midnight Monday keys once a DST transition
+        # crosses the range, and every later bucket was silently dropped
+        monday = _bucket_bounds("week", ts)
+        dm = time.localtime(monday)
+        return time.mktime(
+            (dm.tm_year, dm.tm_mon, dm.tm_mday + 7, 0, 0, 0, 0, 0, -1))
     if bucket == "month":
         y, m = d.tm_year, d.tm_mon + 1
         if m > 12:
