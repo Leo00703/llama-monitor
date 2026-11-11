@@ -349,11 +349,18 @@ class PanelTokenGate:
                 and _protected_path(scope.get("path", "")):
             if scope["type"] == "websocket":
                 given = (parse_qs(scope.get("query_string", b"").decode("latin-1"))
-                         .get("token") or [""])[0]
+                         .get("token") or [""])[0].encode("utf-8")
             else:
                 headers = {k.lower(): v for k, v in scope.get("headers", [])}
-                given = headers.get(b"x-panel-token", b"").decode("latin-1")
-            if not secrets.compare_digest(given, token):
+                given = headers.get(b"x-panel-token", b"")
+            # Compare BYTES (#110): compare_digest(str, str) raises TypeError
+            # on any non-ASCII char — a unicode token 500'd every protected
+            # request, and any non-ASCII header byte was an attacker-visible
+            # 500. UTF-8 both sides: the HTTP header path yields raw wire
+            # bytes (browsers send the UTF-8 encoding of the value), the WS
+            # path is percent-encoded UTF-8 (encodeURIComponent), and parse_qs
+            # has already decoded it back. A mismatch is a clean 401/close.
+            if not secrets.compare_digest(given, token.encode("utf-8")):
                 if scope["type"] == "websocket":
                     await send({"type": "websocket.close", "code": 1008})
                 else:
@@ -1378,6 +1385,16 @@ def create_app() -> FastAPI:
             new_config = AppConfig.model_validate(body)
         except ValidationError as exc:
             return {"ok": False, "error": str(exc)}
+        # (#110) A non-ASCII token breaks the browser's own fetch (header
+        # values must be latin-1), so it is never sendable — reject at save.
+        # Enforced here, not as a Pydantic validator: one on the model would
+        # also fire on config LOAD and refuse to boot for a user whose
+        # on-disk token is already non-ASCII.
+        if any(ord(c) > 126 or ord(c) < 33
+               for c in new_config.panel.token or ""):
+            return {"ok": False, "error":
+                    "panel token must be printable ASCII (no spaces) — "
+                    "browsers cannot send non-ASCII header values"}
         # Merge only the keys present in the body: partial clients (e.g. the
         # settings page, which never sends active_preset_id) must not reset
         # fields they didn't submit — a full-replace wiped the active preset.
