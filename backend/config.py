@@ -90,6 +90,27 @@ def _same_file(a: Path, b: Path) -> bool:
         return False
 
 
+def _is_same_file(a: Path, b: Path) -> bool:
+    """True when both paths name one and the same existing file.
+
+    Identity (device+inode, and path casefolding where the platform has it)
+    rather than content: bytes-comparing a file against itself is always
+    "identical", which is what made #107 delete the live presets.
+    """
+    try:
+        if os.path.normcase(os.path.realpath(str(a))) == os.path.normcase(
+            os.path.realpath(str(b))
+        ):
+            return True
+    except OSError:
+        pass
+    try:
+        sa, sb = a.stat(), b.stat()
+        return sa.st_dev == sb.st_dev and sa.st_ino == sb.st_ino
+    except OSError:
+        return False
+
+
 def migrate_legacy_data() -> None:
     """Merge old in-repo config/data into DATA_DIR (the single source of truth).
 
@@ -131,7 +152,9 @@ def migrate_legacy_data() -> None:
                     continue
                 target = PRESETS_DIR / f.name
                 if target.exists():
-                    if _same_file(f, target):
+                    if _is_same_file(f, target):
+                        continue  # source IS the live file (#107): never touch it
+                    elif _same_file(f, target):
                         try:
                             f.unlink()  # exact duplicate of the live preset
                             dropped += 1
