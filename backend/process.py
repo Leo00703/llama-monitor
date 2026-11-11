@@ -44,6 +44,10 @@ LOG_BUFFER_SIZE = 4000
 WS_INIT_LOG_LIMIT = 1000
 STOP_TIMEOUT = 10.0
 KILL_TIMEOUT = 5.0
+# (#108) Ctrl-Break is never delivered to panel-spawned children on Windows
+# (CREATE_NO_WINDOW children + the frozen tray has no console), so the
+# "graceful" wait is capped short there instead of burning STOP_TIMEOUT.
+WIN_BREAK_GRACE = 2.0
 # Per-line cap for the log capture: the reader splits on read() chunks, a
 # pathological line is truncated at this size before reaching UI/WS (#98).
 LOG_LINE_LIMIT = 8 * 1024 * 1024
@@ -232,18 +236,44 @@ class LlamaServerManager:
             if proc is not None and proc.returncode is None:
                 self._stop_requested = True
                 self._publish_log("[panel] stopping server...")
+                # (#108) Snapshot the process tree BEFORE anything dies: when
+                # the tracked pid is a .bat/.cmd wrapper, killing the wrapper
+                # reparents llama-server and it becomes undiscoverable after.
+                tree = self._tree_pids(proc.pid)
                 self._terminate(proc)
+                # (#108) Ctrl-Break is never delivered to the panel's children
+                # (CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP; the frozen
+                # tray has no console at all), so on Windows don't burn the
+                # full STOP_TIMEOUT waiting for a signal that cannot arrive.
+                grace = WIN_BREAK_GRACE if os.name == "nt" else STOP_TIMEOUT
                 try:
-                    await asyncio.wait_for(proc.wait(), timeout=STOP_TIMEOUT)
+                    await asyncio.wait_for(proc.wait(), timeout=grace)
                 except asyncio.TimeoutError:
-                    self._publish_log("[panel] graceful stop timed out, killing process")
-                    self._kill(proc)
-                    with contextlib.suppress(Exception):
-                        await asyncio.wait_for(proc.wait(), timeout=KILL_TIMEOUT)
+                    self._publish_log(
+                        "[panel] graceful stop did not take, killing process tree")
+                # Reaching here does not prove the tree is dead: the tracked
+                # pid may have died (or been hard-terminated) while wrapper
+                # children keep holding the port.
+                self._kill_pids(tree)
+                survivors = [] if await self._await_gone(tree, KILL_TIMEOUT) \
+                    else self._alive(tree)
                 self._proc = None
                 self._port = None
                 self._external_pid = None
                 self._preset_id = None
+                if survivors:
+                    # (#108) Report honestly instead of a guaranteed STOPPED:
+                    # a survivor still holds the port/VRAM. The next start()
+                    # re-finds the port owner and adopts it (llama-server) or
+                    # refuses it (#95), so the state self-heals from there.
+                    desc = ", ".join(
+                        f"{p} ({self._process_name(p)})" for p in survivors)
+                    self._state = ServerState.ERROR
+                    self._error = f"process refused to stop: {desc}"
+                    self._publish_log(f"[panel] {self._error}")
+                    self._publish_state()
+                    return {"ok": False, "error": self._error,
+                            "state": self._state.value}
                 self._state = ServerState.STOPPED
                 self._error = ""
                 self._publish_log("[panel] server stopped")
@@ -275,20 +305,23 @@ class LlamaServerManager:
                     return {"ok": False, "error": msg}
                 self._publish_log(f"[panel] stopping external server (pid {pid})")
                 self._terminate_pid(pid)
-                try:
-                    psutil.Process(pid)
-                    for _ in range(int(STOP_TIMEOUT * 10)):
-                        if not psutil.pid_exists(pid):
-                            break
-                        await asyncio.sleep(0.1)
-                    else:
-                        with contextlib.suppress(psutil.Error):
-                            psutil.Process(pid).kill()
-                except psutil.Error:
-                    pass
+                if not await self._await_gone([pid], STOP_TIMEOUT):
+                    self._publish_log("[panel] external server did not exit, killing")
+                    self._kill_pids([pid])
+                gone = not await self._await_gone([pid], KILL_TIMEOUT)
                 self._port = None
                 self._external_pid = None
                 self._preset_id = None
+                if not gone:
+                    # (#108) A survivor still owns the port — say so instead
+                    # of claiming a stop that did not happen.
+                    self._state = ServerState.ERROR
+                    self._error = (
+                        f"external server (pid {pid}) refused to stop")
+                    self._publish_log(f"[panel] {self._error}")
+                    self._publish_state()
+                    return {"ok": False, "error": self._error,
+                            "state": self._state.value}
                 self._state = ServerState.STOPPED
                 self._error = ""
                 self._publish_log("[panel] external server stopped")
@@ -308,7 +341,11 @@ class LlamaServerManager:
         use_args = args if args is not None else self._launch_args
         if not use_args:
             return {"ok": False, "error": "no launch arguments to restart with"}
-        await self.stop()
+        res = await self.stop()
+        if not res.get("ok"):
+            # (#108) The old server is still holding the port — starting a
+            # second one over it would only mask the real failure.
+            return res
         return await self.start(use_args)
 
     # ------------------------------------------------------------------
@@ -546,15 +583,36 @@ class LlamaServerManager:
             proc.terminate()
 
     @staticmethod
-    def _kill(proc: asyncio.subprocess.Process) -> None:
-        # Kill the whole tree: when the server runs through a .bat/.cmd
-        # wrapper, the tracked pid is cmd.exe and llama-server is its child.
-        with contextlib.suppress(psutil.Error, ProcessLookupError):
-            parent = psutil.Process(proc.pid)
-            for child in parent.children(recursive=True):
-                child.kill()
-        with contextlib.suppress(ProcessLookupError):
-            proc.kill()
+    def _tree_pids(pid: int) -> list[int]:
+        """Snapshot pid + its whole descendant tree, children first, the
+        tracked pid last — taken BEFORE anything dies (#108): killing a
+        .bat/.cmd wrapper reparents llama-server, and after that it can
+        never be found again."""
+        try:
+            parent = psutil.Process(pid)
+            kids = [c.pid for c in parent.children(recursive=True)]
+        except psutil.Error:
+            return [pid]
+        return kids + [pid]
+
+    @staticmethod
+    def _kill_pids(pids: list[int]) -> None:
+        for pid in pids:
+            with contextlib.suppress(psutil.Error, ProcessLookupError):
+                psutil.Process(pid).kill()
+
+    @staticmethod
+    def _alive(pids: list[int]) -> list[int]:
+        return [p for p in pids if psutil.pid_exists(p)]
+
+    async def _await_gone(self, pids: list[int], timeout: float) -> bool:
+        """True when every pid in the snapshot exited within timeout."""
+        deadline = asyncio.get_running_loop().time() + timeout
+        while self._alive(pids):
+            if asyncio.get_running_loop().time() >= deadline:
+                return False
+            await asyncio.sleep(0.1)
+        return True
 
     @staticmethod
     def _terminate_pid(pid: int) -> None:
