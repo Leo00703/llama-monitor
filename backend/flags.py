@@ -14,9 +14,10 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import os
 import re
 import shlex
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -106,6 +107,10 @@ def validate_settings(
 class FlagContext:
     models_root: Optional[Path] = None
     warnings: Optional[list[str]] = None  # filled during build
+    # flag names the semantic rules emitted BEFORE extra_flags (#113) —
+    # extra_flags is last in FLAG_RULES, so this set is complete by the
+    # time the extra rule runs; used to keep panel-managed flags singular
+    emitted: set[str] = field(default_factory=set)
 
     def resolve(self, rel: str) -> str:
         """Resolve a model-relative path against models_root."""
@@ -311,15 +316,72 @@ def _r_metrics(s: LaunchSettings, c: FlagContext) -> Optional[list[str]]:
     return ["--metrics", "--slots"]
 
 
+def _split_extra(text: str) -> list[str]:
+    """(#113) Split the extra_flags field. POSIX shlex eats backslashes —
+    a pasted Windows path (`C:\\models\\my lora.gguf`) became
+    `C:modelsmy` + a stray argument. posix=False keeps backslashes and
+    still groups on quotes, but preserves the quote characters, so the
+    surrounding pair is stripped afterwards."""
+    if os.name == "nt":
+        toks = shlex.split(text, posix=False)
+        return [t[1:-1]
+                if len(t) > 1 and t[0] == t[-1] and t[0] in "\"'" else t
+                for t in toks]
+    return shlex.split(text)
+
+
+# short forms of the highest-impact panel-managed flags, so `-p 9999` in
+# extra_flags collides with --port like `--port 9999` does (#113). Only
+# unambiguous llama.cpp aliases belong here.
+_EXTRA_ALIASES = {
+    "-m": "--model",
+    "-p": "--port",
+    "-c": "--ctx-size",
+    "-t": "--threads",
+    "-ngl": "--n-gpu-layers",
+    "--hostname": "--host",
+}
+
+
 def _r_extra(s: LaunchSettings, c: FlagContext) -> Optional[list[str]]:
     if not s.extra_flags.strip():
         return None
     try:
-        return shlex.split(s.extra_flags)
+        tokens = _split_extra(s.extra_flags)
     except ValueError:
         if c.warnings is not None:
             c.warnings.append(f"extra_flags could not be parsed: {s.extra_flags!r}")
         return None
+    # (#113) llama.cpp keeps the LAST occurrence of a flag, so a bare
+    # extra "--port 9999" silently beat the preset's 8080 while the panel's
+    # readiness probe / proxy / stop still used 8080. Deterministic
+    # precedence instead: panel-managed flags (those emitted by the
+    # semantic rules) occur exactly once — the semantic value; colliding
+    # extra occurrences are dropped with a warning.
+    kept: list[str] = []
+    dropped: list[str] = []
+    i = 0
+    while i < len(tokens):
+        tok = tokens[i]
+        if _is_flag(tok):
+            name = _flag_name(tok)
+            canon = _EXTRA_ALIASES.get(name, name)
+            if canon in c.emitted:
+                dropped.append(canon)
+                i += 1
+                # consume the value token of "--flag value"; "--flag=value"
+                # carried its value inside the flag token itself
+                if "=" not in tok and i < len(tokens) \
+                        and not _is_flag(tokens[i]):
+                    i += 1
+                continue
+        kept.append(tok)
+        i += 1
+    if dropped and c.warnings is not None:
+        c.warnings.append(
+            "extra_flags dropped (panel-managed, set the preset field "
+            "instead): " + ", ".join(sorted(set(dropped))))
+    return kept or None
 
 
 FLAG_RULES: list[tuple[str, Callable[[LaunchSettings, FlagContext], Optional[list[str]]]]] = [
@@ -402,6 +464,11 @@ def build_args(
                 )
                 continue
         args.extend(tokens)
+        # #113: remember the panel-managed flag names actually emitted
+        # before extra_flags (which is last in FLAG_RULES) so they stay single
+        for t in tokens:
+            if _is_flag(t):
+                ctx.emitted.add(_flag_name(t))
 
     return args, warnings
 
