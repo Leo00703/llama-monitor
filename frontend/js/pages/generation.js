@@ -220,7 +220,14 @@ const Generation = {
         if (Number.isNaN(n)) { out[key] = null; continue; }
         v = type === "int" ? Math.trunc(n) : n;
       } else if (type.startsWith("sel:")) {
-        v = el.value;
+        // (#131) DOM select values are strings; when every option is numeric
+        // (mirostat's 0/1/2), store a number so the default-dedupe, the
+        // saved-chip comparison and the proxy payload agree with the
+        // /props-numeric server default instead of drifting to "1"
+        const opts = type.slice(4).split(",");
+        const allNum = opts.length > 0 &&
+          opts.every((o) => o.trim() !== "" && Number.isFinite(Number(o)));
+        v = allNum ? Number(el.value) : el.value;
       } else if (type === "bool") {
         if (!el.checked && !this.shownValue(key)) continue;
         v = el.checked;
