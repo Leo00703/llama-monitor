@@ -190,6 +190,18 @@ const Dashboard = {
       this.userPicked = true;
       this.renderPick();
       this.renderRunningHint();
+      // (#144) persist the pick as the ACTIVE preset: this is what the
+      // tray's Start (via /api/state) and the proxy get_launch fallbacks
+      // launch — the /activate route existed with zero callers, so the
+      // pick was memory-only and the tray's preset was only controllable
+      // by editing config.json.
+      this.activeId = id;
+      API.post(`/api/presets/${id}/activate`, undefined)
+        .then((res) => {
+          if (!res || res.ok === false)
+            UI.toast(`could not set the active preset: ${(res && res.error) || "panel did not answer"}`, "err");
+        })
+        .catch(() => UI.toast("could not set the active preset", "err"));
       // keep a visible preview in sync with the new selection
       const pre = document.getElementById("flag-preview");
       if (!pre.classList.contains("hidden")) this.preview(true);
