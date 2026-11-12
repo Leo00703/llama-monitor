@@ -11,9 +11,11 @@ The issue it fixes (`#…`), or the reason for the change.
 There is no test framework in this repo (by design) — say exactly what you ran
 and what you saw:
 
-- [ ] **UI**: headless Chrome audit at 390 / 720 / 900 / 1024 / 1440 px —
-      `document.scrollWidth == innerWidth` on every page (hard rule: no
-      horizontal scroll on mobile)
+- [ ] **UI**: headless Chrome audit at 390 / 720 / 900 / 1024 / 1440 px — set the
+      viewport with CDP `Emulation.setDeviceMetricsOverride` (Chrome clamps
+      window width to ~500px) and check
+      `document.documentElement.scrollWidth <= <width>` on every page (hard
+      rule: no horizontal scroll on mobile)
 - [ ] **Backend**: ad-hoc inline Python with synthetic data — what you checked
 - [ ] **Live E2E**: panel started, API exercised, a real generation run
       (when the request path is touched)
