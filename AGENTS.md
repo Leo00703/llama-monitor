@@ -395,8 +395,9 @@ without rebuilding.
   allow a RENAME of the mapped exe, so the unattended path is: `mv
   llama-monitor.exe .old.exe` → `git checkout -- llama-monitor.exe` → `git pull
   --rebase` (git can now write the new blob) → push → `rm .old.exe` (works while
-  the process holds it share-delete; if it fails the stray copy is untracked —
-  there is no `*.exe` ignore rule — so delete it after quitting the tray).
+  the process holds it share-delete; if it fails the stray is ignored by the
+  `*.old.exe` rule (#152) so an accidental `git add -A` cannot commit it —
+  delete it after quitting the tray anyway, it is dead weight).
   Quitting the tray first is the simpler path.
 - **Unsigned exes**: Smart App Control (enforce mode) blocks freshly built exes
   by hash; SmartScreen warns on any unsigned exe. Known environment caveat,
