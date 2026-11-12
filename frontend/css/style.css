@@ -1488,6 +1488,7 @@ code {
 .chip-ok     { border-color: rgba(0, 188, 125, 0.5);  background: rgba(0, 188, 125, 0.08); color: #4de2a8; }
 .chip-running { border-color: rgba(246, 94, 0, 0.55); background: rgba(246, 94, 0, 0.1);  color: #ff8a3d; }
 .chip-warn   { border-color: rgba(254, 154, 0, 0.5); background: rgba(254, 154, 0, 0.09); color: #ffc766; }
+.chip-err    { border-color: rgba(255, 100, 103, 0.5);  background: rgba(255, 100, 103, 0.09); color: var(--err); }
 .chip-params { border-color: rgba(20, 71, 230, 0.55); background: rgba(20, 71, 230, 0.12); color: #8aa2ff; }
 .chip-quant  { border-color: rgba(0, 188, 125, 0.5);  background: rgba(0, 188, 125, 0.08); color: #4de2a8; }
 
@@ -1650,6 +1651,22 @@ code {
 .preset-card.selected {
   border-color: rgba(246, 94, 0, 0.55);
   background: rgba(246, 94, 0, 0.06);
+}
+
+/* (#124) unreadable preset file: red card, error text instead of the
+   model/updated line; not clickable (no form to open) — Delete only */
+.preset-card.preset-broken {
+  border-color: rgba(255, 100, 103, 0.45);
+  background: rgba(255, 100, 103, 0.04);
+  cursor: default;
+}
+.preset-card.preset-broken:hover { background: rgba(255, 100, 103, 0.07); }
+.preset-broken .preset-sub {
+  color: var(--err);
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 /* phones: the presets action buttons drop to their own right-aligned row so

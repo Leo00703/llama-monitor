@@ -1471,7 +1471,10 @@ def create_app() -> FastAPI:
 
     @app.get("/api/presets")
     async def presets_list() -> dict:
-        return {"presets": store.list(), "active_id": config.active_preset_id}
+        # (#124) `broken`: files present but unreadable — the Presets page
+        # renders them as deletable red rows instead of losing them silently
+        return {"presets": store.list(), "active_id": config.active_preset_id,
+                "broken": store.broken()}
 
     @app.get("/api/presets/{preset_id}")
     async def presets_get(preset_id: str) -> dict:

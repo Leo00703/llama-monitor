@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import contextlib
 import copy
 import json
+import logging
 import time
 import uuid
 from pathlib import Path
@@ -13,11 +15,17 @@ from pydantic import BaseModel, ValidationError
 
 from .schema import LaunchSettings, Preset
 
+log = logging.getLogger("llama-monitor.presets")
+
 
 class PresetStore:
     def __init__(self, root: Path) -> None:
         self._root = root
         self._root.mkdir(parents=True, exist_ok=True)
+        # (#124) file name -> mtime signature of the last load failure;
+        # keeps the warning-once-per-file invariant across repeated
+        # (per-metrics-tick) get() calls on a broken active preset
+        self._warned: dict[str, str] = {}
 
     # ------------------------------------------------------------------
 
@@ -36,11 +44,59 @@ class PresetStore:
         path = self._path(preset_id)
         if not path.exists():
             return None
+        preset, err = self._load(path)
+        if err is not None:
+            self._warn_broken(path, err)
+        return preset
+
+    def broken(self) -> list[dict[str, Any]]:
+        """(#124) JSON files that exist but cannot be loaded. A preset that
+        fails validation (schema drift after a panel update) or is corrupt
+        (half-written JSON) used to vanish with no trace; the Presets page
+        shows these as red "unreadable" rows the user can inspect (error
+        text) and delete — it is their data, hiding it silently is not
+        acceptable."""
+        out: list[dict[str, Any]] = []
+        for p in sorted(self._root.glob("*.json")):
+            _, err = self._load(p)
+            if err is None:
+                continue
+            name = p.stem
+            with contextlib.suppress(Exception):
+                raw = json.loads(p.read_text(encoding="utf-8-sig"))
+                if isinstance(raw, dict) and isinstance(raw.get("name"), str) and raw["name"]:
+                    name = raw["name"]
+            out.append({"id": p.stem, "name": name, "error": err})
+        return out
+
+    def _load(self, path: Path) -> tuple[Optional[Preset], Optional[str]]:
+        """(preset, error): error is None on success, else a short
+        human-readable reason. Deliberately distinguishes the failure
+        classes — "corrupt JSON" vs "not a valid preset" points at a
+        different cause (power loss/AV write vs panel/schema drift)."""
         try:
             data = json.loads(path.read_text(encoding="utf-8-sig"))
-            return Preset.model_validate(data)
-        except (json.JSONDecodeError, ValidationError):
-            return None
+            return Preset.model_validate(data), None
+        except OSError as exc:
+            return None, f"could not read file: {type(exc).__name__}: {exc}"
+        except json.JSONDecodeError as exc:
+            return None, f"corrupt JSON: {exc}"
+        except ValidationError as exc:
+            errs = exc.errors()
+            first = errs[0] if errs else {}
+            loc = ".".join(str(x) for x in first.get("loc", ()))
+            return None, f"not a valid preset: {loc}: {first.get('msg', 'validation error')}"
+
+    def _warn_broken(self, path: Path, err: str) -> None:
+        try:
+            st = path.stat()
+            sig = f"{st.st_mtime_ns}:{st.st_size}"
+        except OSError:
+            sig = "?"
+        if self._warned.get(path.name) == sig:
+            return  # already warned about this exact file state
+        self._warned[path.name] = sig
+        log.warning("preset %s failed to load: %s", path.name, err)
 
     def create(self, name: str, launch: LaunchSettings) -> Preset:
         preset = Preset(name=name, launch=launch)

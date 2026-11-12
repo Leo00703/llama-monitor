@@ -93,7 +93,8 @@ const Presets = {
         return;
       }
       const card = e.target.closest(".preset-card");
-      if (card) this.openForm(card.dataset.id);
+      // (#124) broken preset cards have no form to open — Delete only
+      if (card && !card.classList.contains("preset-broken")) this.openForm(card.dataset.id);
     });
     document.getElementById("pf-spectype").addEventListener("change", () => {
       this.syncSpecFields();
@@ -294,6 +295,27 @@ const Presets = {
     return `<div class="preset-card" data-id="${UI.esc(p.id)}">` + this.cardInner(p, t) + `</div>`;
   },
 
+  /* (#124) one unreadable preset file: red row with the error text and a
+     Delete button (delete works on the id/filename without loading the
+     JSON), so the user can see and remove it instead of it vanishing */
+  brokenCardHtml(b) {
+    const active = b.id && b.id === this.activeId
+      ? `<span class="chip chip-err">active</span>` : "";
+    return `<div class="preset-card preset-broken" data-id="${UI.esc(b.id)}">
+        <span class="model-logo preset-logo" style="background:rgba(255,100,103,.18);color:var(--err)" title="Unreadable preset">!</span>
+        <div class="preset-main">
+          <div class="preset-line1">
+            <h3 class="preset-name" title="${UI.esc(b.name)}">${UI.esc(b.name)}</h3>
+            <span class="preset-chips"><span class="chip chip-err">unreadable</span>${active}</span>
+          </div>
+          <div class="preset-sub" title="${UI.esc(b.error)}">${UI.esc(b.error)}</div>
+        </div>
+        <div class="preset-actions">
+          <button type="button" class="btn btn-danger" data-act="del" data-id="${UI.esc(b.id)}">Delete</button>
+        </div>
+      </div>`;
+  },
+
   async load() {
     let data;
     try {
@@ -303,12 +325,17 @@ const Presets = {
       return;
     }
     const rows = data.presets || [];
+    const broken = data.broken || [];
     this.activeId = data.active_id || "";
     const list = document.getElementById("presets-list");
-    list.innerHTML = rows.map((p) => this.cardHtml(p)).join("");
+    list.innerHTML = rows.map((p) => this.cardHtml(p)).join("")
+      + broken.map((b) => this.brokenCardHtml(b)).join("");
     document.getElementById("presets-count").textContent =
-      rows.length ? `${rows.length} preset${rows.length > 1 ? "s" : ""}` : "";
-    document.getElementById("presets-empty").classList.toggle("hidden", rows.length > 0);
+      rows.length + broken.length
+        ? `${rows.length} preset${rows.length === 1 ? "" : "s"}`
+          + (broken.length ? ` (+${broken.length} unreadable)` : "")
+        : "";
+    document.getElementById("presets-empty").classList.toggle("hidden", rows.length + broken.length > 0);
     this.refreshDatalists();
   },
 
