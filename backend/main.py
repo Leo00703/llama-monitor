@@ -150,62 +150,67 @@ async def _metrics_loop(collector: MetricsCollector, manager: LlamaServerManager
     last_prune = time.monotonic() - 86400.0
     while True:
         await asyncio.sleep(METRICS_INTERVAL)
-        # failed_requests retention (#106 O2) — deliberately BEFORE the
-        # listener skip: the failure backlog accumulates exactly while
-        # nobody is watching (server offline, panel unattended).
-        if time.monotonic() - last_prune >= 86400.0:
-            last_prune = time.monotonic()
-            try:
-                n = await asyncio.to_thread(analytics.prune_failed)
-                if n > 0:
-                    log.info("retention: pruned %d failed request rows", n)
-            except Exception:
-                log.exception("analytics retention failed")
-        # Nobody is looking: skip the whole sample (nvidia-smi subprocess,
-        # psutil, /metrics + /slots polling). The panel is often left
-        # running unattended; energy sampling degrades to None for that
-        # window, which only affects generations made without the panel UI.
-        if not manager.has_listeners:
-            continue
+        # (#115) The whole tick is guarded, not just collector.snapshot():
+        # store.get reads the preset JSON every tick (AV lock / concurrent
+        # preset-delete can raise OSError), and the enrich/broadcast tail
+        # was unguarded — one raise used to kill the loop permanently and
+        # the dashboard froze on its last sample, silently. Degrading one
+        # sample instead is the whole point; CancelledError still escapes.
         try:
+            # failed_requests retention (#106 O2) — deliberately BEFORE the
+            # listener skip: the failure backlog accumulates exactly while
+            # nobody is watching (server offline, panel unattended).
+            if time.monotonic() - last_prune >= 86400.0:
+                last_prune = time.monotonic()
+                try:
+                    n = await asyncio.to_thread(analytics.prune_failed)
+                    if n > 0:
+                        log.info("retention: pruned %d failed request rows", n)
+                except Exception:
+                    log.exception("analytics retention failed")
+            # Nobody is looking: skip the whole sample (nvidia-smi subprocess,
+            # psutil, /metrics + /slots polling). The panel is often left
+            # running unattended; energy sampling degrades to None for that
+            # window, which only affects generations made without the panel UI.
+            if not manager.has_listeners:
+                continue
             data = await collector.snapshot(manager.current_port())
-        except Exception:  # metrics must never take the panel down
-            log.exception("metrics collection failed")
-            continue
-        total_w = sum(g["power_w"] for g in data.get("gpus", []) if g.get("power_w") is not None)
-        # CPU package power joins the energy total where the OS exposes it
-        # (Linux RAPL/AMD hwmon; None on Windows — see CpuSensors)
-        cpu_w = (data.get("cpu_sensors") or {}).get("power_w")
-        if cpu_w is not None:
-            total_w += cpu_w
-        power.add(float(data.get("ts") or time.time()), total_w if total_w > 0 else None)
-        _enrich_inference(data, tracker, live_log)
-        tracker.tick()
-        data["usage_style"] = config.dashboard.usage_style  # live mode switch
-        inf = data.get("inference")
-        if inf and inf.get("n_slots"):
-            # Slots the known preset wants (-1 = auto is never a mismatch).
-            # The UI compares it with the running server's live slot count
-            # and hints when the preset's setting has not been applied yet
-            # (needs a restart).
-            pid = manager.preset_id or config.active_preset_id
-            preset = store.get(pid) if pid else None
-            if preset is not None:
-                if preset.launch.slots > 0:
-                    data["preset_slots"] = preset.launch.slots
-                # GPU-offload sanity check (#81): the preset asks for GPU
-                # layers, the model finished loading, but the startup log
-                # never reported an offload — the CUDA backend most likely
-                # failed to load (Windows: missing runtime DLLs) and every
-                # inference silently runs on the CPU. Only for servers the
-                # panel started itself (manager.preset_id): their logs are
-                # the ones we can parse.
-                if (manager.preset_id is not None
-                        and preset.launch.n_gpu_layers > 0
-                        and live_log.loaded_weights
-                        and not live_log.gpu_offload):
-                    data["gpu_offload_missing"] = True
-        manager.broadcast({"type": "metrics", "data": data})
+            total_w = sum(g["power_w"] for g in data.get("gpus", []) if g.get("power_w") is not None)
+            # CPU package power joins the energy total where the OS exposes it
+            # (Linux RAPL/AMD hwmon; None on Windows — see CpuSensors)
+            cpu_w = (data.get("cpu_sensors") or {}).get("power_w")
+            if cpu_w is not None:
+                total_w += cpu_w
+            power.add(float(data.get("ts") or time.time()), total_w if total_w > 0 else None)
+            _enrich_inference(data, tracker, live_log)
+            tracker.tick()
+            data["usage_style"] = config.dashboard.usage_style  # live mode switch
+            inf = data.get("inference")
+            if inf and inf.get("n_slots"):
+                # Slots the known preset wants (-1 = auto is never a mismatch).
+                # The UI compares it with the running server's live slot count
+                # and hints when the preset's setting has not been applied yet
+                # (needs a restart).
+                pid = manager.preset_id or config.active_preset_id
+                preset = store.get(pid) if pid else None
+                if preset is not None:
+                    if preset.launch.slots > 0:
+                        data["preset_slots"] = preset.launch.slots
+                    # GPU-offload sanity check (#81): the preset asks for GPU
+                    # layers, the model finished loading, but the startup log
+                    # never reported an offload — the CUDA backend most likely
+                    # failed to load (Windows: missing runtime DLLs) and every
+                    # inference silently runs on the CPU. Only for servers the
+                    # panel started itself (manager.preset_id): their logs are
+                    # the ones we can parse.
+                    if (manager.preset_id is not None
+                            and preset.launch.n_gpu_layers > 0
+                            and live_log.loaded_weights
+                            and not live_log.gpu_offload):
+                        data["gpu_offload_missing"] = True
+            manager.broadcast({"type": "metrics", "data": data})
+        except Exception:  # one bad tick must never freeze the dashboard forever
+            log.exception("metrics tick failed (continuing)")
 
 
 # A log rate older than this is stale, not live (progress lines come about
