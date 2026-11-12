@@ -1030,8 +1030,11 @@ def create_app() -> FastAPI:
         panel-managed server (if running), flip the config, restart with
         the same preset. External servers keep running on the old build
         until restarted manually."""
-        d = (body or {}).get("dir") or ""
-        if not d:
+        d = (body or {}).get("dir")
+        # (#126) same sweep as backend_download: a non-string would reach
+        # Path() and raise TypeError (uncaught by the OSError/RuntimeError
+        # guard below) -> raw 500 instead of the ok:false envelope.
+        if not isinstance(d, str) or not d:
             return {"ok": False, "error": "missing build dir"}
         try:
             target_dir = Path(d).expanduser().resolve()
@@ -1165,8 +1168,16 @@ def create_app() -> FastAPI:
     @app.post("/api/backend/download")
     async def backend_download(body: dict[str, Any] | None = None) -> dict:
         body = body or {}
-        tag = (body.get("tag") or "").strip()
-        variant = (body.get("variant") or config.llama_backend.variant).strip()
+        # (#126) type-check before .strip(): a truthy non-string JSON value
+        # ({"tag": 123}) used to raise AttributeError -> unhandled 500.
+        # Non-string falls back exactly like the falsy cases used to, so the
+        # existing `if not tag:` / is_valid_tag_* paths produce the ok:false
+        # envelope like every other failure in this route.
+        raw_tag = body.get("tag")
+        tag = raw_tag.strip() if isinstance(raw_tag, str) else ""
+        raw_variant = body.get("variant")
+        variant = (raw_variant.strip() if isinstance(raw_variant, str)
+                   else config.llama_backend.variant)
         if not tag:
             # no explicit tag: use the channel's latest (fresh check)
             res = await be_run_check(manual=True)
@@ -1235,8 +1246,11 @@ def create_app() -> FastAPI:
         nonlocal be_downloading
         if be_downloading:
             return {"ok": False, "error": "a download is already in progress"}
-        d = (body or {}).get("dir") or ""
-        if not d:
+        d = (body or {}).get("dir")
+        # (#126) same sweep as backend_download: a non-string would reach
+        # Path() and raise TypeError (uncaught by the OSError/RuntimeError
+        # guard below) -> raw 500 instead of the ok:false envelope.
+        if not isinstance(d, str) or not d:
             return {"ok": False, "error": "missing build dir"}
         try:
             build_dir = Path(d).expanduser().resolve()
