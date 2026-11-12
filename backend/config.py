@@ -361,6 +361,27 @@ def no_window_kwargs() -> dict:
     return {}
 
 
+def loopback_bind(bind: str | None) -> bool:
+    """True when a server bound to `bind` is reachable on 127.0.0.1.
+
+    (#112) Empty/loopback/wildcard binds are; a server bound to a specific
+    NIC address is NOT — its loopback port never opens, so the panel's
+    readiness probe and its internal HTTP calls must dial the bound host.
+    """
+    h = (bind or "").strip().strip("[]")
+    return (not h or h in ("0.0.0.0", "::", "localhost", "::1")
+            or h.startswith("127."))
+
+
+def server_client_host(bind: str | None) -> str:
+    """Host the panel dials to reach a server bound to `bind` (#112);
+    URL-safe (bare IPv6 gets bracketed)."""
+    if loopback_bind(bind):
+        return "127.0.0.1"
+    h = (bind or "").strip().strip("[]")
+    return f"[{h}]" if ":" in h else h
+
+
 def onefile_relaunch_env() -> dict[str, str]:
     """Environment for (re)launching the frozen onefile exe.
 

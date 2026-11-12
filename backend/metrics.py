@@ -261,11 +261,17 @@ class MetricsCollector:
     """Polls system + inference metrics and computes live tok/s deltas."""
 
     def __init__(self,
-                 get_auth: Optional[Callable[[], dict[str, str]]] = None) -> None:
+                 get_auth: Optional[Callable[[], dict[str, str]]] = None,
+                 get_base_url: Optional[Callable[[], Optional[str]]] = None,
+                 ) -> None:
         """`get_auth` returns headers (Authorization) for the llama-server
         polls — the panel's internal /metrics + /slots GETs must carry the
-        preset's API key or every poll 401s under --api-key (#99)."""
+        preset's API key or every poll 401s under --api-key (#99).
+        `get_base_url` returns the http://host:port to dial — the bound host,
+        not loopback, for a NIC-bound server (#112); None falls back to
+        loopback + the snapshot port."""
         self._get_auth = get_auth or (lambda: {})
+        self._get_base_url = get_base_url or (lambda: None)
         psutil.cpu_percent()
         psutil.cpu_percent(percpu=True)
         self._cpu_sensors = CpuSensors()
@@ -316,7 +322,7 @@ class MetricsCollector:
         }
 
     async def _inference(self, port: int) -> Optional[dict]:
-        base = f"http://127.0.0.1:{port}"
+        base = self._get_base_url() or f"http://127.0.0.1:{port}"
         headers = self._get_auth() or {}
         # One long-lived client, two concurrent GETs (#106 O3): the old code
         # rebuilt the AsyncClient every 1.5 s tick (fresh TCP handshake,
@@ -330,6 +336,19 @@ class MetricsCollector:
             self._client.get(f"{base}/slots", headers=headers),
             return_exceptions=True,
         )
+        _CONN_FAIL = (httpx.ConnectError, httpx.ConnectTimeout)
+        if (isinstance(mres, _CONN_FAIL) and isinstance(sres, _CONN_FAIL)
+                and "127.0.0.1" not in base):
+            # #112: the launch host (preset) may not be where an ADOPTED
+            # external server actually listens — one loopback retry. A
+            # firewalled/dropped NIC address raises ConnectTimeout, which
+            # is NOT a ConnectError subclass in httpx (0.28).
+            base = f"http://127.0.0.1:{port}"
+            mres, sres = await asyncio.gather(
+                self._client.get(f"{base}/metrics", headers=headers),
+                self._client.get(f"{base}/slots", headers=headers),
+                return_exceptions=True,
+            )
         if isinstance(mres, asyncio.CancelledError):
             raise mres
         if isinstance(sres, asyncio.CancelledError):

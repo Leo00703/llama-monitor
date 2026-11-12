@@ -13,12 +13,13 @@ import signal
 import socket
 import subprocess
 import sys
+import time
 from enum import Enum
 from typing import Any, Callable, Optional
 
 import psutil
 
-from .config import no_window_kwargs, spawn_argv
+from .config import loopback_bind, no_window_kwargs, spawn_argv
 from .metrics import run_nvidia_smi
 
 log = logging.getLogger("llama-monitor.process")
@@ -48,6 +49,13 @@ KILL_TIMEOUT = 5.0
 # (CREATE_NO_WINDOW children + the frozen tray has no console), so the
 # "graceful" wait is capped short there instead of burning STOP_TIMEOUT.
 WIN_BREAK_GRACE = 2.0
+# (#112) readiness monitoring: a NIC-bound server (--host <LAN address>)
+# never opens loopback — the monitor probes the bound host too, notes slow
+# loads, and only gives up when the process is alive yet has logged nothing
+# for READINESS_IDLE_TIMEOUT seconds (a loading model keeps emitting
+# progress lines, so a slow-but-live load is never killed).
+READINESS_NOTE_AFTER = 60.0
+READINESS_IDLE_TIMEOUT = 180.0
 # Per-line cap for the log capture: the reader splits on read() chunks, a
 # pathological line is truncated at this size before reaching UI/WS (#98).
 LOG_LINE_LIMIT = 8 * 1024 * 1024
@@ -162,6 +170,7 @@ class LlamaServerManager:
                 return {"ok": False, "error": msg}
 
             port = self._port_from_args(args) or self._get_config().default_server_port
+            host = self._host_from_args(args) or "127.0.0.1"
             # off the event loop: net_connections is a full-system scan
             # (#106 O5). _llama_server_port is a single-pid query — stays inline.
             pid = await asyncio.to_thread(self._pid_on_port, port)
@@ -227,7 +236,7 @@ class LlamaServerManager:
             self._external_pid = None
             pid = self._proc.pid
             _spawn(self._read_output(self._proc))
-            _spawn(self._run_monitor(self._proc, port))
+            _spawn(self._run_monitor(self._proc, port, host))
             return {"ok": True, "state": self._state.value, "pid": pid}
 
     async def stop(self) -> dict:
@@ -499,13 +508,50 @@ class LlamaServerManager:
         elif line:
             self._publish_log(line.decode(errors="replace"))
 
-    async def _run_monitor(self, proc: asyncio.subprocess.Process, port: int) -> None:
-        """Wait until the server accepts connections, then watch for exit."""
+    async def _run_monitor(self, proc: asyncio.subprocess.Process,
+                           port: int, host: str) -> None:
+        """Wait until the server accepts connections, then watch for exit.
+
+        (#112) The readiness probe dials every host the server could be
+        listening on — a `--host <LAN address>` bind never opens loopback,
+        which left the state stuck in STARTING forever. Give up only if the
+        process is alive, the port stays closed AND the server has logged
+        nothing for READINESS_IDLE_TIMEOUT s (a loading model keeps
+        printing progress lines, so slow loads are never false-positived).
+        """
+        hosts = self._probe_hosts(host)
         ready = False
+        started = time.monotonic()
+        logged_at = started
+        last_logs = len(self._log)
+        noted = False
         while proc.returncode is None and not ready and not self._stop_requested:
             await asyncio.sleep(0.4)
-            if await self._port_open(port):
+            now = time.monotonic()
+            logs = len(self._log)
+            if logs != last_logs:  # a loading model keeps printing progress
+                logged_at = now
+                last_logs = logs
+            if await self._port_open(port, hosts):
                 ready = True
+            elif not noted and now - started >= READINESS_NOTE_AFTER:
+                noted = True
+                self._publish_log(
+                    f"[panel] port {port} not open on {host} yet — model "
+                    "loading can take minutes, still watching")
+                last_logs = logs  # the panel's own note is not server activity
+            elif now - logged_at >= READINESS_IDLE_TIMEOUT:
+                waited = int(now - started)
+                self._set_error_state(
+                    f"server did not open port {port} on {host} within "
+                    f"{waited}s and has logged nothing since — is the "
+                    "preset's host/port correct for this machine?")
+                # (#108 lesson) the wedged server may be a CHILD of a
+                # wrapper — snapshot the tree before killing it
+                tree = self._tree_pids(proc.pid)
+                self._terminate(proc)
+                self._kill_pids(tree)
+                break
         if ready and proc.returncode is None:
             self._state = ServerState.RUNNING
             self._error = ""
@@ -632,6 +678,22 @@ class LlamaServerManager:
         return None
 
     @staticmethod
+    def _host_from_args(args: list[str]) -> Optional[str]:
+        for i, arg in enumerate(args):
+            if arg == "--host" and i + 1 < len(args):
+                return args[i + 1]
+        return None
+
+    @staticmethod
+    def _probe_hosts(host: str) -> list[str]:
+        """(#112) Loopback + the bound address. Wildcard/loopback binds are
+        already covered by the loopback probe; for a NIC-bound server the
+        bound address is the only thing that can answer."""
+        if loopback_bind(host):
+            return ["127.0.0.1"]
+        return ["127.0.0.1", host]
+
+    @staticmethod
     def _process_name(pid: int) -> str:
         try:
             return psutil.Process(pid).name()
@@ -693,11 +755,14 @@ class LlamaServerManager:
         return None
 
     @staticmethod
-    async def _port_open(port: int) -> bool:
+    async def _port_open(port: int, hosts: list[str]) -> bool:
+        """(#112) any of `hosts` accepting = open (loopback covers
+        wildcard/loopback binds; the bound address covers a NIC bind)."""
         def check() -> bool:
-            with contextlib.suppress(OSError):
-                with socket.create_connection(("127.0.0.1", port), timeout=0.5):
-                    return True
+            for host in hosts:
+                with contextlib.suppress(OSError):
+                    with socket.create_connection((host, port), timeout=0.5):
+                        return True
             return False
 
         return await asyncio.to_thread(check)

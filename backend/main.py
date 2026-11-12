@@ -581,7 +581,8 @@ def create_app() -> FastAPI:
     )
     # After the proxy: the /metrics + /slots polls must carry the preset's
     # API key too, or every poll 401s under --api-key (#99).
-    collector = MetricsCollector(get_auth=proxy.auth_header)
+    collector = MetricsCollector(get_auth=proxy.auth_header,
+                                 get_base_url=proxy.base_url)
 
     _key_warn_at = [0.0]
 

@@ -1,6 +1,7 @@
 """HTTP proxy to the running llama-server (plan 4.7/4.9).
 
-Forwards /proxy/* requests to http://127.0.0.1:<port>/*, injecting the
+Forwards /proxy/* requests to http://<bound host>:<port>/* (#112: a
+NIC-bound server is not reachable on loopback), injecting the
 preset's saved generation defaults into request bodies. Fields explicitly
 present in the request body always win over saved defaults (setdefault).
 """
@@ -13,6 +14,8 @@ import time
 from typing import Any, AsyncIterator, Callable, Optional
 
 import httpx
+
+from .config import server_client_host
 
 log = logging.getLogger("llama-monitor.proxy")
 
@@ -66,7 +69,10 @@ class ServerProxy:
         port = self._get_port()
         if port is None:
             return None
-        return f"http://127.0.0.1:{port}"
+        # (#112) dial the host the server actually bound — a server started
+        # with --host <LAN address> never opens loopback
+        launch = self._get_launch() or {}
+        return f"http://{server_client_host(launch.get('host'))}:{port}"
 
     def auth_header(self) -> dict[str, str]:
         """Authorization header for the panel's own polls of the live
