@@ -117,9 +117,12 @@ def _bootstrap_failure(exc: BaseException) -> int:
         )
         try:
             import subprocess
+            # (#145) real newlines inside a single-quoted PowerShell string are
+            # legal; `n only expands in DOUBLE-quoted strings — the old
+            # \n->`n replace made the dialog render literal backtick-n dots.
             ps = ("Add-Type -AssemblyName System.Windows.Forms; "
                   "[System.Windows.Forms.MessageBox]::Show('"
-                  + body.replace("\n", "`n").replace("'", "''")
+                  + body.replace("'", "''")
                   + "', 'llama-monitor - startup failed')")
             subprocess.Popen(
                 ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
