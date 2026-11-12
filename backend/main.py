@@ -140,6 +140,13 @@ def _update_loop(manager: LlamaServerManager, loop: asyncio.AbstractEventLoop,
         _updater_stop.wait(max(minutes, 1) * 60.0)
 
 
+async def _rmtree_async(path: Path) -> None:
+    """(#116) Delete a build tree (hundreds of files, up to a few GB) off
+    the event loop — sync rmtree froze the panel (WS + every route) for
+    seconds on the install/rollback cleanup paths."""
+    await asyncio.to_thread(shutil.rmtree, path, ignore_errors=True)
+
+
 async def _metrics_loop(collector: MetricsCollector, manager: LlamaServerManager,
                         power: PowerSampler, tracker: PrintTimingTracker,
                         live_log: LiveLogStats, config: AppConfig,
@@ -896,11 +903,12 @@ def create_app() -> FastAPI:
                 config.llama_backend.expected_sha256.strip())
             build_dir = storage / f"llama-{tag}-{variant}"
             if build_dir.exists():
-                shutil.rmtree(build_dir, ignore_errors=True)
-            backend_update.extract_archive(zip_path, build_dir)
+                await _rmtree_async(build_dir)
+            await asyncio.to_thread(backend_update.extract_archive,
+                                    zip_path, build_dir)
             ver = await backend_update.verify_build(build_dir, tag)
             if not ver["ok"]:
-                shutil.rmtree(build_dir, ignore_errors=True)
+                await _rmtree_async(build_dir)
                 zip_path.unlink(missing_ok=True)
                 return fail(ver["error"])
             backend_update.write_manifest(
@@ -931,7 +939,7 @@ def create_app() -> FastAPI:
                     cfree = backend_update.free_bytes(storage)
                     cneed = (companion.get("size") or 0) * 2
                     if cfree is not None and cfree < cneed:
-                        shutil.rmtree(build_dir, ignore_errors=True)
+                        await _rmtree_async(build_dir)
                         return fail(
                             f"not enough free space for the CUDA runtime "
                             f"DLLs: need ~{cneed / 1048576:.0f} MB, have "
@@ -951,7 +959,8 @@ def create_app() -> FastAPI:
 
                     csha256 = await backend_update.download_file(
                         companion, czip, progress_cuda)
-                    backend_update.extract_archive(czip, build_dir)
+                    await asyncio.to_thread(backend_update.extract_archive,
+                                            czip, build_dir)
                     czip.unlink(missing_ok=True)
                     backend_update.record_cuda_runtime(
                         build_dir, companion["browser_download_url"],
@@ -962,7 +971,7 @@ def create_app() -> FastAPI:
                     missing = backend_update.missing_cuda_dlls(build_dir)
                     detail = (f" (missing in the build folder: "
                               f"{', '.join(missing)})" if missing else "")
-                    shutil.rmtree(build_dir, ignore_errors=True)
+                    await _rmtree_async(build_dir)
                     return fail(
                         f"CUDA runtime not active after install{detail} — "
                         "the server lists no GPU device (llama-server "
@@ -1268,7 +1277,7 @@ def create_app() -> FastAPI:
                                        }})
 
                 csha256 = await backend_update.download_file(companion, czip, progress)
-            backend_update.extract_archive(czip, build_dir)
+            await asyncio.to_thread(backend_update.extract_archive, czip, build_dir)
             czip.unlink(missing_ok=True)
             backend_update.record_cuda_runtime(
                 build_dir, companion["browser_download_url"],
