@@ -20,6 +20,15 @@ dist/
 # Baked at build time (GITHUB_SHA / local HEAD) — never source-tracked
 backend/_buildinfo.json
 
+# Update-recovery leftover (AGENTS.md gotcha: rename the locked running exe
+# so git can rewrite it -> mv llama-monitor.exe .old.exe). The repo TRACKS
+# exactly one exe (the repo-root llama-monitor.exe), so a blanket *.exe rule
+# is impossible — this closes the gap narrowly. `*` also matches the leading
+# dot, and covers variants ending in .old.exe (llama-monitor.old.exe).
+# Delete the leftover after quitting the tray; the rule only prevents an
+# accidental `git add -A` blob.
+*.old.exe
+
 # Local scratchpad / to-do (never committed)
 TODO.md
 
