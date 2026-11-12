@@ -6,6 +6,7 @@ const Analytics = (() => {
   const RANGES = ["day", "week", "month", "year", "all"];
   let range = "week";
   let busy = false;
+  let pendingReload = false; // (#132) set when a refresh was requested while busy
 
   const $ = (id) => document.getElementById(id);
 
@@ -371,7 +372,14 @@ const Analytics = (() => {
   }
 
   async function refresh() {
-    if (busy) return;
+    if (busy) {
+      // (#132) a range click (or page re-show) during an in-flight load must
+      // not be dropped: that left the controls on the new range while the
+      // charts kept showing the old one — permanently, since re-clicking the
+      // now-active button is a no-op. Remember it and refetch when done.
+      pendingReload = true;
+      return;
+    }
     busy = true;
     try {
       const [sumRes, tsRes, modelsRes, recordsRes] = await Promise.all([
@@ -388,6 +396,10 @@ const Analytics = (() => {
       UI.toast(`analytics load failed: ${e}`, "err");
     } finally {
       busy = false;
+      if (pendingReload) {
+        pendingReload = false;
+        refresh(); // re-fetch so the charts end up matching the selected range
+      }
     }
   }
 
