@@ -541,8 +541,8 @@ class AnalyticsStore:
         for r in self._fetch(range_name):
             writer.writerow([
                 time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(r["ts"])),
-                r["preset_name"] or "",
-                r["model"] or "",
+                _safe(r["preset_name"]),
+                _safe(r["model"]),
                 r["prompt_tokens"] if r["prompt_tokens"] is not None else "",
                 r["gen_tokens"] if r["gen_tokens"] is not None else "",
                 "" if r["prompt_tps"] is None else f"{r['prompt_tps']:.2f}",
@@ -550,7 +550,24 @@ class AnalyticsStore:
                 "" if r["total_ms"] is None else f"{r['total_ms']:.0f}",
                 "" if r["energy_wh"] is None else f"{r['energy_wh']:.3f}",
             ])
-        return buf.getvalue()
+        # UTF-8 BOM (#125): without it Windows Excel decodes the UTF-8 body as
+        # the local ANSI codepage and non-ASCII preset/model names arrive as
+        # mojibake; Excel and LibreOffice both honour the BOM, plain-text
+        # consumers tolerate it
+        return "\ufeff" + buf.getvalue()
+
+
+_FORMULA_LEAD = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _safe(v) -> str:
+    """(#125) Neutralize CSV formula injection (CWE-1236) in the free-text
+    columns: preset names are user-typed and model names come from the
+    server / GGUF filename — a cell whose first char is a formula lead is
+    evaluated as a formula by Excel/LibreOffice. A space prefix keeps the
+    text (and its leading char) visually intact while disabling evaluation."""
+    s = "" if v is None else str(v)
+    return f" {s}" if s[:1] in _FORMULA_LEAD else s
 
 
 def _avg(values: list[float]) -> Optional[float]:
