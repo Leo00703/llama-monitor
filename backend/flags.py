@@ -342,6 +342,10 @@ _EXTRA_ALIASES = {
 
 
 def _r_extra(s: LaunchSettings, c: FlagContext) -> Optional[list[str]]:
+    if not s.apply_extra_flags:
+        # (#154) toggle off: the saved text stays saved, it is just not
+        # emitted (non-destructive include/exclude for the launch)
+        return None
     if not s.extra_flags.strip():
         return None
     try:

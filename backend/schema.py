@@ -189,6 +189,9 @@ class LaunchSettings(BaseModel):
     # could only ever be dropped-with-warning or crash the launch.
     fit: bool = False
     extra_flags: str = ""
+    # master switch for the extra_flags box: false keeps the saved text but
+    # emits nothing (flags._r_extra) — toggling is non-destructive
+    apply_extra_flags: bool = True
 
     # generation defaults (plan 4.9) — injected per-request via the proxy,
     # saved here only for convenience as preset defaults

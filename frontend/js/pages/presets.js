@@ -54,6 +54,7 @@ const Presets = {
     ["pf-reasoning", "reasoning_preserve", "bool"],
     ["pf-fit", "fit", "bool"],
     ["pf-extra", "extra_flags", "str"],
+    ["pf-apply-extra", "apply_extra_flags", "bool"],
   ],
 
   DEFAULTS: {
@@ -72,7 +73,7 @@ const Presets = {
     slots: -1, cont_batching: "auto", kv_unified: "auto",
     host: "127.0.0.1", port: 8080, api_key: "",
     jinja: true, reasoning_preserve: false,
-    fit: false, extra_flags: "",
+    fit: false, extra_flags: "", apply_extra_flags: true,
   },
 
   init() {
