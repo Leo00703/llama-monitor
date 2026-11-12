@@ -37,6 +37,30 @@ def _spawn(coro) -> "asyncio.Future":
     task.add_done_callback(_bg_tasks.discard)
     return task
 
+
+_SECRET_FLAG = "--api-key"
+
+
+def _redact_secrets(tokens: list[str]) -> list[str]:
+    """(#114) Mask secret flag values for any log line. The log ring is
+    replayed to every connecting client and broadcast on /ws/logs, and the
+    panel is open on the LAN by default (#92), so the launch command with
+    the preset's --api-key was a credential readable by any browser."""
+    out: list[str] = []
+    redact_next = False
+    for tok in tokens:
+        if redact_next:
+            out.append("***")
+            redact_next = False
+        elif tok == _SECRET_FLAG:
+            out.append(tok)
+            redact_next = True
+        elif tok.startswith(_SECRET_FLAG + "="):
+            out.append(f"{_SECRET_FLAG}=***")
+        else:
+            out.append(tok)
+    return out
+
 LOG_BUFFER_SIZE = 4000
 # (#77) The WS "init" payload carries the recent log to every (re)connecting
 # client — on a lossy link (tailnet) right after a long generation the full
@@ -197,7 +221,7 @@ class LlamaServerManager:
             self._error = ""
             self._state = ServerState.STARTING
             self._publish_state()
-            cmd = " ".join([exe, *args])
+            cmd = " ".join([exe, *_redact_secrets(args)])  # (#114) no keys in logs
             self._publish_log(f"[panel] starting: {cmd}")
             log.info("starting: %s", cmd)
             try:
