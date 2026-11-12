@@ -104,6 +104,38 @@ const API = {
 
   del: (path, timeout) => request(path, { method: "DELETE" }, timeout),
 
+  /* File download (#128): window.location navigation cannot carry the
+     X-Panel-Token header, so a token-protected panel rendered the 401 JSON
+     as a page and never downloaded. Fetch through authHeaders() (same token
+     as every API call) into a Blob, then trigger a "save as" via an object
+     URL. Errors (401 JSON, 400 bad range, ...) reject so callers can toast. */
+  async download(path, timeout = API_TIMEOUT) {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), timeout);
+    let res;
+    try {
+      res = await fetch(path, { headers: authHeaders({ Accept: "*/*" }), signal: ctrl.signal });
+    } finally {
+      clearTimeout(t);
+    }
+    if (!res.ok) {
+      let msg = `HTTP ${res.status}`;
+      try { const j = await res.json(); if (j && j.error) msg = j.error; } catch (_) { /* non-JSON */ }
+      throw new Error(msg);
+    }
+    const blob = await res.blob();
+    const cd = res.headers.get("Content-Disposition") || "";
+    const m = /filename="?([^";]+)"?/i.exec(cd);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = m ? m[1] : "download";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  },
+
   /**
    * Connect to a WebSocket with automatic reconnect.
    * @param {string} path e.g. "/ws/logs"

@@ -451,9 +451,16 @@ const Analytics = (() => {
         moveRangeSlider(false);
       }, 150);
     });
-    $("btn-analytics-export").addEventListener("click", () => {
+    $("btn-analytics-export").addEventListener("click", async () => {
       if (!RANGES.includes(range)) return;
-      window.location = `/api/analytics/export?range=${range}`;
+      // (#128) was `window.location = ...` — a navigation cannot send
+      // X-Panel-Token, so the token gate (#92) replaced the tab with the
+      // 401 JSON. API.download() fetches with the token and saves the CSV.
+      try {
+        await API.download(`/api/analytics/export?range=${range}`);
+      } catch (e) {
+        UI.toast(`export failed: ${e.message || e}`, "err");
+      }
     });
   }
 
