@@ -469,18 +469,48 @@ def toggle_server() -> None:
                 if not _preset_id:
                     _notify("No preset selected", "Select an active preset in the panel first.")
                     return
-                _panel_post(
+                # #143: the old 10 s cap expired during the server-side cold
+                # path (prepare_launch's nvidia-smi probe + the first uncached
+                # `llama-server --help` under an AV scan) while the server
+                # came up anyway. The web shell gives start 90 s; stop has a
+                # 10 s graceful + 5 s force-kill escalation budget server-side.
+                res = _panel_post(
                     base, "/api/server/start",
                     json={"args": [], "preset_id": _preset_id},
-                    timeout=10.0,
+                    timeout=120.0,
                 )
             else:
-                _panel_post(base, "/api/server/stop", timeout=10.0)
+                res = _panel_post(base, "/api/server/stop", timeout=30.0)
+            _report_action(res)
         except httpx.HTTPError as exc:
             log.exception("server control failed")
-            _notify("Action failed", str(exc))
+            # A timeout here does not mean the action failed — the panel is
+            # still working on it and poll_loop will reflect the real state.
+            _notify("Action failed",
+                    f"{exc} — the action may still be in progress; check the panel")
 
     threading.Thread(target=_toggle, daemon=True).start()
+
+
+def _report_action(res) -> None:
+    """Surface the start/stop outcome (#143).
+
+    Every server-side refusal is HTTP 200 with an {ok:false} envelope —
+    port occupied / #95 "refusing to stop it" / preset deleted / flag
+    validation errors. Discarding the body made those silently do nothing.
+    """
+    try:
+        body = res.json()
+    except ValueError:
+        body = None
+    if isinstance(body, dict) and body.get("ok"):
+        return  # success — poll_loop updates the icon state
+    if isinstance(body, dict):
+        detail = body.get("error") or "; ".join(
+            str(e) for e in body.get("errors") or [])
+    else:
+        detail = ""
+    _notify("Action failed", detail or f"the panel returned HTTP {res.status_code}")
 
 
 def _notify(title: str, message: str) -> None:
