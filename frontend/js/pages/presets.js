@@ -384,12 +384,13 @@ const Presets = {
       if (type === "bool") v = el.checked;
       else if (type === "intlist") v = UI.parseIntList(el.value);
       else if (type === "strlist") v = el.value.split(",").map((s) => s.trim()).filter(Boolean);
-      else if (type === "int" || type === "int0") {
-        const n = parseInt(el.value, 10);
-        v = Number.isNaN(n) ? 0 : n;
-      } else if (type === "float0") {
-        const n = parseFloat(el.value);
-        v = Number.isNaN(n) ? 0 : n;
+      else if (type === "int" || type === "int0" || type === "float0") {
+        // (#135) blank/garbage must NOT store 0 — 0 poisons the preset (applyDefaults
+        // never refills it) and emitted verbatim it dies the launch (-b 0). Omit the
+        // key: applyDefaults + Pydantic defaults fill it instead.
+        const n = type === "float0" ? parseFloat(el.value) : parseInt(el.value, 10);
+        if (Number.isNaN(n)) continue;
+        v = n;
       } else v = el.value;
       this.setPath(launch, path, v);
     }

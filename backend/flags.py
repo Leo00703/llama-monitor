@@ -200,11 +200,13 @@ def _r_threads_batch(s: LaunchSettings, c: FlagContext) -> Optional[list[str]]:
 
 
 def _r_batch(s: LaunchSettings, c: FlagContext) -> Optional[list[str]]:
-    return ["-b", str(s.batch_size)]
+    # 0 is never a valid batch size (#135) — treat it like "unset" instead of
+    # emitting -b 0, which kills the server at init.
+    return ["-b", str(s.batch_size)] if s.batch_size > 0 else None
 
 
 def _r_ubatch(s: LaunchSettings, c: FlagContext) -> Optional[list[str]]:
-    return ["-ub", str(s.micro_batch)]
+    return ["-ub", str(s.micro_batch)] if s.micro_batch > 0 else None
 
 
 def _r_cache_reuse(s: LaunchSettings, c: FlagContext) -> Optional[list[str]]:
