@@ -182,8 +182,9 @@ class LaunchSettings(BaseModel):
     api_key: str = ""
     jinja: bool = True
     reasoning_preserve: bool = False
-    merge_qkv: bool = False
-    graph_reuse: int = 0
+    # merge_qkv / graph_reuse removed (#120): --merge-qkv / -gr exist in no
+    # current llama.cpp (master + b11304 arg.cpp verified) — the toggles
+    # could only ever be dropped-with-warning or crash the launch.
     fit: bool = False
     extra_flags: str = ""
 

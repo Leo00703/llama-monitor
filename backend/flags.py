@@ -299,14 +299,6 @@ def _r_reasoning(s: LaunchSettings, c: FlagContext) -> Optional[list[str]]:
     return ["--reasoning-preserve"] if s.reasoning_preserve else ["--no-reasoning-preserve"]
 
 
-def _r_merge_qkv(s: LaunchSettings, c: FlagContext) -> Optional[list[str]]:
-    return ["--merge-qkv"] if s.merge_qkv else None
-
-
-def _r_graph_reuse(s: LaunchSettings, c: FlagContext) -> Optional[list[str]]:
-    return ["-gr", str(s.graph_reuse)] if s.graph_reuse > 0 else None
-
-
 def _r_fit(s: LaunchSettings, c: FlagContext) -> Optional[list[str]]:
     # llama.cpp defaults fit_params=true, so OMITTING --fit is "on", not
     # "off" — the unchecked box must emit the explicit negative (#119).
@@ -417,8 +409,6 @@ FLAG_RULES: list[tuple[str, Callable[[LaunchSettings, FlagContext], Optional[lis
     ("api_key", _r_api_key),
     ("jinja", _r_jinja),
     ("reasoning_preserve", _r_reasoning),
-    ("merge_qkv", _r_merge_qkv),
-    ("graph_reuse", _r_graph_reuse),
     ("fit", _r_fit),
     ("observability", _r_metrics),
     ("extra_flags", _r_extra),

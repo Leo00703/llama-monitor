@@ -52,9 +52,7 @@ const Presets = {
     ["pf-apikey", "api_key", "str"],
     ["pf-jinja", "jinja", "bool"],
     ["pf-reasoning", "reasoning_preserve", "bool"],
-    ["pf-mergeqkv", "merge_qkv", "bool"],
     ["pf-fit", "fit", "bool"],
-    ["pf-gr", "graph_reuse", "int0"],
     ["pf-extra", "extra_flags", "str"],
   ],
 
@@ -73,7 +71,7 @@ const Presets = {
     },
     slots: -1, cont_batching: "auto", kv_unified: "auto",
     host: "127.0.0.1", port: 8080, api_key: "",
-    jinja: true, reasoning_preserve: false, merge_qkv: false, graph_reuse: 0,
+    jinja: true, reasoning_preserve: false,
     fit: false, extra_flags: "",
   },
 
