@@ -1092,10 +1092,12 @@ fieldset.fieldset legend {
 
 .toast {
   position: fixed;
-  bottom: 24px;
+  bottom: calc(24px + env(safe-area-inset-bottom, 0px));
   left: 50%;
   transform: translateX(-50%);
-  z-index: 100;
+  z-index: 110; /* (#140) above .update-toast (100) so transient messages stay
+                   readable, below the modal overlays (120/1000); toasts
+                   auto-dismiss, the card doesn't */
   padding: 10px 18px;
   border-radius: 999px;
   background: rgba(32, 32, 32, 0.92);
