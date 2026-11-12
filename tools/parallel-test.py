@@ -3,7 +3,9 @@
 Fires N simultaneous streaming /v1/chat/completions requests directly at the
 server (no UI, no panel proxy) and measures whether they run in parallel.
 
-Usage:  python parallel-test.py http://127.0.0.1:8080 [N]     (default N = 2)
+Usage:  python parallel-test.py http://127.0.0.1:8080 [N] [--api-key KEY]
+        (a --api-key-protected server needs the key on everything but /health;
+        env LLAMA_MONITOR_TEST_API_KEY also works)
 
 Verdict (the printed wall/one ratio — wall time vs ONE warm-up request):
   wall/one ~ 1.0  -> fully parallel (server OK — a UI/client problem)
@@ -12,10 +14,37 @@ Verdict (the printed wall/one ratio — wall time vs ONE warm-up request):
 (wall/sum is deliberately not used — see the comment at the verdict.)
 """
 import json
+import os
 import sys
 import time
 import urllib.request
+import urllib.error
 import concurrent.futures
+
+AUTH = None  # "Bearer <key>" header value, set by --api-key / env (#149)
+
+
+def auth_headers(extra=None):
+    h = dict(extra or {})
+    if AUTH:
+        h["Authorization"] = AUTH
+    return h
+
+
+def open_url(req, timeout=10):
+    try:
+        return urllib.request.urlopen(req, timeout=timeout)
+    except urllib.error.HTTPError as e:
+        # 401/403 on a key-protected server: the hint the user actually needs
+        if e.code in (401, 403):
+            if AUTH:
+                print("  hint: the server rejected the provided API key — "
+                      "check --api-key against the preset's api_key")
+            else:
+                print("  hint: the server has an API key — pass --api-key KEY "
+                      "(or set LLAMA_MONITOR_TEST_API_KEY)")
+        raise
+
 
 def one_request(base, i):
     body = json.dumps({
@@ -28,14 +57,14 @@ def one_request(base, i):
     }).encode()
     req = urllib.request.Request(
         base + "/v1/chat/completions", data=body,
-        headers={"Content-Type": "application/json"})
+        headers=auth_headers({"Content-Type": "application/json"}))
     t0 = time.monotonic()
     first = None
     chunks = 0
     status = None
     err = None
     try:
-        with urllib.request.urlopen(req, timeout=300) as r:
+        with open_url(req, 300) as r:
             status = r.status
             for raw in r:
                 line = raw.decode("utf-8", "replace").strip()
@@ -47,26 +76,54 @@ def one_request(base, i):
                         if first is None:
                             first = time.monotonic() - t0
     except Exception as e:
+        status = getattr(e, "code", status)  # HTTPError carries .code
         err = f"{type(e).__name__}: {e}"
     return dict(i=i, dt=time.monotonic() - t0, first=first, chunks=chunks,
                 status=status, err=err)
 
 def main():
-    if len(sys.argv) < 2:
+    global AUTH
+    args = sys.argv[1:]
+    key = None
+    rest = []
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == "--api-key" and i + 1 < len(args):
+            key = args[i + 1]
+            i += 2
+        elif a.startswith("--api-key="):
+            key = a.split("=", 1)[1]
+            i += 1
+        elif a.startswith("--"):
+            print(f"unknown option: {a}")
+            print(__doc__)
+            return 2
+        else:
+            rest.append(a)
+            i += 1
+    if len(rest) < 1:
         print(__doc__)
         return 2
-    base = sys.argv[1].rstrip("/")
-    n = int(sys.argv[2]) if len(sys.argv) > 2 else 2
+    if not key:
+        key = os.environ.get("LLAMA_MONITOR_TEST_API_KEY") or None
+    if key:
+        # same header format the panel's proxy sends (backend/proxy.py)
+        AUTH = f"Bearer {key}"
+    base = rest[0].rstrip("/")
+    n = int(rest[1]) if len(rest) > 1 else 2
 
     # health + live slot count (the /slots endpoint is the ground truth)
     try:
-        with urllib.request.urlopen(base + "/health", timeout=10) as r:
+        with open_url(urllib.request.Request(base + "/health",
+                                             headers=auth_headers())) as r:
             print(f"health: {r.read().decode().strip()}")
     except Exception as e:
         print(f"health check failed: {e}  (is the URL right? include the port)")
         return 2
     try:
-        with urllib.request.urlopen(base + "/slots", timeout=10) as r:
+        with open_url(urllib.request.Request(base + "/slots",
+                                             headers=auth_headers())) as r:
             data = json.loads(r.read().decode())
             slots = data.get("slots", data) if isinstance(data, dict) else data
             # build-proof busy read: modern llama.cpp /slots entries carry
