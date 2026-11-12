@@ -21,6 +21,20 @@ function authHeaders(base) {
   return headers;
 }
 
+/* (#127) Remember a dismissed token prompt for the rest of the page
+   session: /api/state polls every 10 s, and without this the dismissed
+   dialog re-fired forever ("close this dialog to keep browsing
+   read-only" actually has to mean that). Re-armed by any non-401
+   response — the panel answering without the gate means a token is
+   available (or no longer needed) again. */
+let tokenPromptDismissed = false;
+
+function unauthorizedError(path) {
+  const err = new Error(`401 unauthorized — panel token required (${path})`);
+  err.unauthorized = true; // refreshState shows "locked" instead of "offline"
+  return err;
+}
+
 /* A response is parsed as JSON when it is valid JSON (regardless of HTTP
    status — the token gate, request guard and proxy all return
    {"ok": false, "error": ...} on non-2xx and callers read that body); a
@@ -46,15 +60,24 @@ function request(path, init = {}, timeout = API_TIMEOUT, retried = false) {
   const t = setTimeout(() => ctrl.abort(), timeout);
   return fetch(path, { ...init, headers: authHeaders(init.headers), signal: ctrl.signal })
     .then((res) => {
-      if (res.status === 401 && !retried) {
-        const typed = window.prompt(
-          "This panel is token-protected (#92).\n\nEnter the panel token " +
-          "(Settings → Panel token) or close this dialog to keep browsing read-only:");
-        if (typed !== null && typed.trim()) {
-          try { localStorage.setItem(TOKEN_KEY, typed.trim()); } catch (_) { /* private mode */ }
-          return request(path, init, timeout, true);
+      if (res.status === 401) {
+        // Never resolve the token gate's {"ok": false, ...} body as if it
+        // were data (#127): callers rendered it (literal "undefined" status
+        // badge, enabled buttons) or ran .map() on it. Throw so their
+        // existing error paths take over.
+        if (!retried && !tokenPromptDismissed) {
+          const typed = window.prompt(
+            "This panel is token-protected (#92).\n\nEnter the panel token " +
+            "(Settings → Panel token) or close this dialog to keep browsing read-only:");
+          if (typed !== null && typed.trim()) {
+            try { localStorage.setItem(TOKEN_KEY, typed.trim()); } catch (_) { /* private mode */ }
+            return request(path, init, timeout, true);
+          }
+          tokenPromptDismissed = true; // closed / empty — stop interrupting this session
         }
+        throw unauthorizedError(path);
       }
+      tokenPromptDismissed = false; // gate answered (authorized or open): re-arm the prompt
       return parseBody(res, path);
     })
     .finally(() => clearTimeout(t));

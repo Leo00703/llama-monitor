@@ -167,8 +167,12 @@ function hideSplash() {
 function applyState(state) {
   hideSplash();
   Dashboard.syncRunning(state); // dashboard card follows the running preset
+  // (#127) a payload without a known state value (malformed WS event, old
+  // shell in cache) used to render the literal "undefined" badge with all
+  // action buttons enabled — keep the last known state instead
+  if (!STATE_LABELS[state.state]) state = { ...state, state: serverState };
   serverState = state.state;
-  const label = STATE_LABELS[serverState] || serverState;
+  const label = STATE_LABELS[serverState];
   statusText.textContent = label;
   badge.className = `badge badge-${serverState}`;
   errorLabel.textContent = state.error || "";
@@ -188,15 +192,29 @@ async function refreshState() {
     applyState(state);
     setHost(true);
     hostWasOnline = true;
-  } catch (_) {
-    hideSplash(); // server unreachable: show the panel + its error, no spin
-    statusText.textContent = "offline";
-    badge.className = "badge badge-error";
-    setHost(false);
-    if (hostWasOnline) { // (#77) the badge alone is easy to miss — say it once
-      hostWasOnline = false;
-      UI.toast("can't reach the panel — retrying every 10 s", "err");
+  } catch (e) {
+    hideSplash(); // unreachable or locked: show the panel + its error, no spin
+    // (#127) the token gate answers 401 (api.js throws an unauthorized
+    // error): the panel host IS reachable, it just wants a token — saying
+    // "can't reach" would be wrong, and the old code rendered the 401
+    // envelope as data: badge "undefined", buttons enabled
+    if (e && e.unauthorized) {
+      statusText.textContent = "locked";
+      badge.className = "badge badge-error";
+      errorLabel.textContent = "panel token required — reload the page to enter it";
+      setHost(true);
+    } else {
+      statusText.textContent = "offline";
+      badge.className = "badge badge-error";
+      errorLabel.textContent = "";
+      setHost(false);
+      if (hostWasOnline) { // (#77) the badge alone is easy to miss — say it once
+        hostWasOnline = false;
+        UI.toast("can't reach the panel — retrying every 10 s", "err");
+      }
     }
+    // unknown server state = unknown action validity (#127)
+    btnStart.disabled = btnStop.disabled = btnRestart.disabled = true;
   }
 }
 
