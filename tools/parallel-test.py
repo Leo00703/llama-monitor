@@ -5,9 +5,11 @@ server (no UI, no panel proxy) and measures whether they run in parallel.
 
 Usage:  python parallel-test.py http://127.0.0.1:8080 [N]     (default N = 2)
 
-Verdict:
-  ratio ~0.5 with N=2  -> fully parallel (server OK — a UI/client problem)
-  ratio ~1.0           -> serialized (server is single-slot or stalling)
+Verdict (the printed wall/one ratio — wall time vs ONE warm-up request):
+  wall/one ~ 1.0  -> fully parallel (server OK — a UI/client problem)
+  wall/one ~ N    -> serialized (server is single-slot or stalling)
+  anything between -> PARTIAL
+(wall/sum is deliberately not used — see the comment at the verdict.)
 """
 import json
 import sys
@@ -67,7 +69,11 @@ def main():
         with urllib.request.urlopen(base + "/slots", timeout=10) as r:
             data = json.loads(r.read().decode())
             slots = data.get("slots", data) if isinstance(data, dict) else data
-            busy = sum(1 for s in slots if s.get("idle") is False)
+            # build-proof busy read: modern llama.cpp /slots entries carry
+            # is_processing (same tolerant read as backend/metrics.py);
+            # s["idle"] is from an older schema and is simply absent now.
+            busy = sum(1 for s in slots
+                       if s.get("is_processing") or s.get("idle") is False)
             print(f"server: {len(slots)} slot(s) live, {busy} busy  <- the ground truth")
     except Exception as e:
         print(f"warning: /slots not readable ({e})")
