@@ -556,7 +556,17 @@ without rebuilding.
   compare it with `git log` to know which fix the bundled exe contains.
 - **CI commits the exe back to `main`**: `build-exe.yml` pushes the built exe
   to the repo root as bot commit `"Build: refresh bundled tray exe"` (sha256
-  skip when unchanged). Loop prevention = the workflow skips the whole build
+  skip when unchanged). #151: the push is a bounded 5-attempt loop and every
+  attempt first re-aligns onto the current main tip (`git fetch --depth 1
+  origin main` + `git reset --hard FETCH_HEAD`, then re-commit from `dist/`)
+  before `git push origin HEAD:main` — main routinely moves during the
+  minutes-long build and a bare push gets rejected (red badge + stale exe).
+  The sha-compare runs against the NEW tip, so a duplicate refresh already
+  published by a racing run is skipped with a notice. Never replace the
+  reset-and-recommit with a plain `git pull --rebase`: the checkout is
+  shallow (fetch-depth: 1), and re-applying a single exe-blob commit from
+  `dist/` is the conflict-free form of the same thing. Loop prevention =
+  the workflow skips the whole build
   when the triggering push's HEAD is that exact bot commit (author + subject
   match) — keep that commit subject stable. Observed 2026-08-19: GitHub does
   NOT trigger a new run for the bot's own push (no run is ever registered
