@@ -308,7 +308,11 @@ def _r_graph_reuse(s: LaunchSettings, c: FlagContext) -> Optional[list[str]]:
 
 
 def _r_fit(s: LaunchSettings, c: FlagContext) -> Optional[list[str]]:
-    return ["--fit", "on"] if s.fit else None
+    # llama.cpp defaults fit_params=true, so OMITTING --fit is "on", not
+    # "off" — the unchecked box must emit the explicit negative (#119).
+    # An old build without the flag gets dropped by --help validation with
+    # a warning (the sanctioned escape hatch).
+    return ["--fit", "on" if s.fit else "off"]
 
 
 def _r_metrics(s: LaunchSettings, c: FlagContext) -> Optional[list[str]]:
