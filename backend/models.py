@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import threading
 import time
 from pathlib import Path
@@ -35,7 +36,17 @@ def _iter_files(root: Path):
     files and directories: .DS_Store on macOS, .git, .cache, …).
     Deterministic: directories are recursed in sorted order, files yielded
     in place — the same order as `sorted(root.rglob("*"))` minus the
-    hidden entries."""
+    hidden entries.
+
+    (#123) Directories are keyed by os.path.realpath: junctions/symlinked
+    folders whose subtree overlaps another walk path used to list every
+    model once per link path (a self-referencing junction grows the walk
+    until the OS path cap), and the mmproj-by-parent grouping got the same
+    directory twice. Symlinked .gguf files are de-duplicated the same way.
+    First sorted path wins, so the order stays deterministic."""
+    seen_dirs: set[str] = set()
+    seen_files: set[str] = set()
+
     def walk(d: Path):
         try:
             entries = sorted(d.iterdir())
@@ -45,9 +56,25 @@ def _iter_files(root: Path):
             if entry.name.startswith("."):
                 continue
             if entry.is_dir():
+                try:
+                    key = os.path.realpath(entry)
+                except OSError:
+                    continue
+                if key in seen_dirs:
+                    continue
+                seen_dirs.add(key)
                 yield from walk(entry)
             else:
+                if entry.is_symlink():
+                    try:
+                        key = os.path.realpath(entry)
+                    except OSError:
+                        continue
+                    if key in seen_files:
+                        continue
+                    seen_files.add(key)
                 yield entry
+    seen_dirs.add(os.path.realpath(root))
     yield from walk(root)
 
 
