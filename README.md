@@ -103,7 +103,10 @@ Then open `http://127.0.0.1:8000` and, under **Settings**, point
   line-continuation character) — so the same setup can be started from a
   terminal.
 - **Presets** — full CRUD on launch configurations, stored as *semantic*
-  settings (never raw CLI strings). A translation layer converts them to real
+  settings (never raw CLI strings). The dashboard's preset dropdown switches
+  the **active** preset live and persists it — the tray's Start server and the
+  proxy's preset fallback launch exactly this one. A translation layer converts
+  them to real
   `llama-server` flags at launch time, and validates them against the actually
   installed version via `llama-server --help` — unknown flags are reported as
   warnings instead of blocking the start. Speculative decoding is organized
@@ -315,7 +318,14 @@ python tools/parallel-test.py http://127.0.0.1:8080 2 --api-key YOUR_KEY
 For Windows there is a single-file `.exe` that runs the whole panel in the
 system tray — no console, no browser tab needed for the panel itself. The tray
 icon mirrors the server state (colored status dot + tooltip) and its menu has
-**Open panel**, **Start / Stop server**, and **Quit**. The panel is embedded in
+**Open panel**, **Start / Stop server**, and **Quit**. It polls the panel every
+2 s and re-reads the saved config each poll, so changing the panel port or
+rotating the panel token in Settings is picked up within seconds (the icon and
+**Open panel** follow); a token-gated panel shows as its own error state rather
+than a false "stopped", and after ~20 s of silence the icon reports **panel
+unreachable — restart llama-monitor** with a notification. Start waits up to
+2 min for a cold model load; Stop follows the server's 10 s graceful + 5 s
+force-kill budget. The panel is embedded in
 the same process (uvicorn in a daemon thread) on the configured
 `panel.host:panel.port`, so OpenAI-compatible proxying works exactly as above.
 
@@ -328,7 +338,8 @@ the same process (uvicorn in a daemon thread) on the configured
   runs a headless smoke test, then PyInstaller) produces
   `dist\llama-monitor.exe`.
 - **Run from source** — `python tray.py` (Windows only; `--smoke` runs the
-  headless self-test used by CI).
+  headless self-test used by CI — it boots only the panel, so it also works in
+  a venv with just `requirements.txt` installed; pystray/Pillow are tray-only).
 
 On macOS and Linux the panel is run from source with
 `python -m uvicorn backend.main:app` (see **Run** above) — there is no tray
@@ -347,6 +358,9 @@ dialog and writes a diagnostic log (`llama-monitor-startup-error.log` next to
 the exe, or `startup-error.log` in the data dir when run from source) listing
 the DLLs actually found in the bundle. Re-running the exe, adding an antivirus
 exclusion for the temp folder, or re-downloading the exe usually resolves it.
+A genuinely missing Python package is not retried — the dialog names it
+directly (a missing `pystray` / Pillow says `pip install -r
+requirements-tray.txt` instead of blaming the antivirus).
 
 ## Project layout
 
@@ -446,9 +460,10 @@ Keep the same shape as the project's own locked specs:
   separate commits, never mixed with code.
 - **Verify before opening** — there is no test framework (by design), so the
   PR description must say what was run and what was seen:
-  - UI: headless Chrome at 390 / 720 / 900 / 1024 / 1440 px —
-    `document.scrollWidth == innerWidth` on every page (hard rule: no
-    horizontal scroll on mobile)
+  - UI: headless Chrome at 390 / 720 / 900 / 1024 / 1440 px — set the viewport
+    with CDP `Emulation.setDeviceMetricsOverride` (Chrome clamps window width
+    to ~500px) and check `document.documentElement.scrollWidth <= <width>` on
+    every page (hard rule: no horizontal scroll on mobile)
   - backend: ad-hoc inline Python with synthetic data
   - live E2E: start the panel, exercise the API, run a real generation
   - frozen builds: `python tray.py --smoke`
