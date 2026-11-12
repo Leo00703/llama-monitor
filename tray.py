@@ -31,6 +31,12 @@ from typing import Optional
 _BOOTSTRAP_RETRIES = 10
 _BOOTSTRAP_RETRY_WAIT = 2.0
 
+# (#150) `--smoke` boots only the panel — pystray/Pillow are tray-only deps
+# (requirements-tray.txt), and the documented self-test must run in a
+# panel-only venv. Raw argv peek: main() parses args only after the imports.
+_SMOKE_ONLY = "--smoke" in sys.argv[1:]
+_TRAY_ONLY_PACKAGES = {"pystray", "PIL"}
+
 
 def _data_dir_fallback() -> Path:
     """Resolve the user data dir without importing backend.config (which
@@ -104,17 +110,34 @@ def _bootstrap_failure(exc: BaseException) -> int:
         # A detached WinForms dialog (powershell 5.1 is on every Win10/11);
         # skipped in --smoke so CI never blocks on a dialog, and silently
         # dropped if powershell/subprocess are themselves unavailable.
-        body = (
-            "A required runtime component could not be loaded.\n\n"
-            "This usually means antivirus software quarantined or is still\n"
-            "scanning the files the app extracts to the system temp folder,\n"
-            "or the executable is incomplete.\n\n"
-            "1. Wait a moment, then start llama-monitor again.\n"
-            "2. If it keeps failing, add an antivirus exclusion for the\n"
-            "   temp folder (or the app folder), then try again.\n"
-            "3. Re-download the executable (git pull or the in-app update).\n\n"
-            f"Details: {log_path}"
-        )
+        cause = exc if isinstance(exc, ModuleNotFoundError) else exc.__cause__
+        if isinstance(cause, ModuleNotFoundError):
+            # (#150) a genuinely missing package is a setup problem, not an
+            # antivirus symptom — say so and give the one install command.
+            base = ((getattr(cause, "name", "") or "?").split(".") or ["?"])[0]
+            if base in _TRAY_ONLY_PACKAGES:
+                fix = ("pip install -r requirements-tray.txt\n\n"
+                       "pystray and Pillow are tray-only dependencies; the\n"
+                       "panel itself and the --smoke self-test do not need them.")
+            else:
+                fix = "pip install -r requirements.txt"
+            body = (
+                f"llama-monitor could not start: the Python package '{base}'\n"
+                f"is not installed in this Python environment.\n\n{fix}\n\n"
+                f"Details: {log_path}"
+            )
+        else:
+            body = (
+                "A required runtime component could not be loaded.\n\n"
+                "This usually means antivirus software quarantined or is still\n"
+                "scanning the files the app extracts to the system temp folder,\n"
+                "or the executable is incomplete.\n\n"
+                "1. Wait a moment, then start llama-monitor again.\n"
+                "2. If it keeps failing, add an antivirus exclusion for the\n"
+                "   temp folder (or the app folder), then try again.\n"
+                "3. Re-download the executable (git pull or the in-app update).\n\n"
+                f"Details: {log_path}"
+            )
         try:
             import subprocess
             # (#145) real newlines inside a single-quoted PowerShell string are
@@ -144,6 +167,51 @@ def _bootstrap_failure(exc: BaseException) -> int:
     return 1
 
 
+def _load_panel_stack() -> None:
+    """Panel runtime: config/backend/uvicorn/httpx (requirements.txt)."""
+    import httpx as _httpx
+    import uvicorn as _uvicorn
+    from backend.config import (
+        DATA_DIR as _DATA_DIR,
+        AppConfig as _AppConfig,
+        load_config as _load_config,
+        no_window_kwargs as _no_window_kwargs,
+        onefile_relaunch_env as _onefile_relaunch_env,
+    )
+    from backend.main import (
+        create_app as _create_app,
+        set_restart_hook as _set_restart_hook,
+    )
+    from backend.process import set_linger_server as _set_linger_server
+    globals().update({
+        "httpx": _httpx,
+        "uvicorn": _uvicorn,
+        "DATA_DIR": _DATA_DIR,
+        "AppConfig": _AppConfig,
+        "load_config": _load_config,
+        "no_window_kwargs": _no_window_kwargs,
+        "onefile_relaunch_env": _onefile_relaunch_env,
+        "create_app": _create_app,
+        "set_restart_hook": _set_restart_hook,
+        "set_linger_server": _set_linger_server,
+    })
+
+
+def _load_tray_stack() -> None:
+    """Tray-only runtime: pystray/PIL + the native helpers (#150 split)."""
+    import ctypes as _ctypes
+    import pystray as _pystray
+    import subprocess as _subprocess
+    from PIL import Image as _Image, ImageDraw as _ImageDraw
+    globals().update({
+        "ctypes": _ctypes,
+        "pystray": _pystray,
+        "subprocess": _subprocess,
+        "Image": _Image,
+        "ImageDraw": _ImageDraw,
+    })
+
+
 def _load_stack() -> None:
     """Import the native/third-party runtime and bind it as module globals.
 
@@ -151,50 +219,31 @@ def _load_stack() -> None:
     antivirus may still be holding the fresh DLLs, and a failed
     C-extension import is usually transient and succeeds a couple of
     seconds later (#64).
+
+    ModuleNotFoundError is NOT that case — a genuinely absent package does
+    not appear after a wait — so it fails fast with the real cause (#150).
+    A missing tray-only package explains itself with the one install
+    command instead of the antivirus wording.
     """
     last_exc: Optional[BaseException] = None
     for attempt in range(1, _BOOTSTRAP_RETRIES + 1):
         try:
-            import ctypes as _ctypes
-            import httpx as _httpx
-            import pystray as _pystray
-            import subprocess as _subprocess
-            import uvicorn as _uvicorn
-            from PIL import Image as _Image, ImageDraw as _ImageDraw
-            from backend.config import (
-                DATA_DIR as _DATA_DIR,
-                AppConfig as _AppConfig,
-                load_config as _load_config,
-                no_window_kwargs as _no_window_kwargs,
-                onefile_relaunch_env as _onefile_relaunch_env,
-            )
-            from backend.main import (
-                create_app as _create_app,
-                set_restart_hook as _set_restart_hook,
-            )
-            from backend.process import set_linger_server as _set_linger_server
-        except Exception as exc:  # ImportError in practice
+            _load_panel_stack()
+            if not _SMOKE_ONLY:
+                _load_tray_stack()
+        except ModuleNotFoundError as exc:
+            base = (exc.name or "").split(".")[0]
+            if base in _TRAY_ONLY_PACKAGES:
+                raise RuntimeError(
+                    f"the Python package '{base}' is missing — the tray launcher needs "
+                    f"pip install -r requirements-tray.txt (the panel itself and --smoke "
+                    f"do not need it)") from exc
+            raise
+        except Exception as exc:  # transient DLL locks etc. (#64)
             last_exc = exc
             if attempt < _BOOTSTRAP_RETRIES:
                 time.sleep(_BOOTSTRAP_RETRY_WAIT)
             continue
-        globals().update({
-            "ctypes": _ctypes,
-            "httpx": _httpx,
-            "pystray": _pystray,
-            "subprocess": _subprocess,
-            "uvicorn": _uvicorn,
-            "Image": _Image,
-            "ImageDraw": _ImageDraw,
-            "DATA_DIR": _DATA_DIR,
-            "AppConfig": _AppConfig,
-            "load_config": _load_config,
-            "no_window_kwargs": _no_window_kwargs,
-            "onefile_relaunch_env": _onefile_relaunch_env,
-            "create_app": _create_app,
-            "set_restart_hook": _set_restart_hook,
-            "set_linger_server": _set_linger_server,
-        })
         return
     raise last_exc
 
