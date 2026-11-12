@@ -854,14 +854,9 @@ def run_tray(restarting: bool = False) -> int:
         initial = _panel_get(url, "/api/state", 3.0).json()
     except (httpx.HTTPError, ValueError):
         initial = {"state": "stopped"}
-    initial_preset = ""
-    try:
-        initial_preset = _panel_get(url, "/api/config", 3.0).json().get(
-            "active_preset_id"
-        ) or ""
-    except (httpx.HTTPError, ValueError):
-        pass
-    _preset_id = initial_preset
+    # active_preset_id is folded into /api/state (#106 O6: the tray must never
+    # GET /api/config) — same read as the poller (#153).
+    _preset_id = initial.get("active_preset_id") or ""
 
     label, color = STATE_META.get(initial.get("state"), STATE_META["stopped"])
     _state.update(
