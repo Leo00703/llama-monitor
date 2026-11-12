@@ -455,6 +455,17 @@ const Backend = {
       }
       return;
     }
+    // (#138) the token gate 401 / request guard 403 return {ok:false} JSON,
+    // which parseBody resolves (#105). Without this check a gated tick reads
+    // as "not downloading, not done" -> the wrong "download did not complete"
+    // diagnosis while the real download keeps running. Count it like a
+    // thrown error and surface the gate's own message.
+    if (!d || d.ok === false || d.downloading === undefined) {
+      if (++this.pollErrors >= BE_POLL_MAX_ERRORS) {
+        this.modalFail(`${(d && d.error) || "the panel did not answer the poll"} — the download may still be running; reload the page to see its state`);
+      }
+      return;
+    }
     this.pollErrors = 0;
     if (d.downloading) return;  // task still running — keep polling
     this.stopPoll();
