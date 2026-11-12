@@ -43,7 +43,8 @@ def repo_root() -> Optional[Path]:
     return Path(__file__).resolve().parent.parent
 
 
-def _git(root: Path, *args: str, timeout: float = 60.0) -> tuple[int, str, str]:
+def _git(root: Path, *args: str, timeout: float = 60.0,
+         raw: bool = False) -> tuple[int, str, str]:
     try:
         proc = subprocess.run(
             ["git", *args],
@@ -53,7 +54,11 @@ def _git(root: Path, *args: str, timeout: float = 60.0) -> tuple[int, str, str]:
             timeout=timeout,
             **no_window_kwargs(),
         )
-        return proc.returncode, proc.stdout.strip(), proc.stderr.strip()
+        # raw=True: verbatim stdout — callers with whitespace-significant
+        # output (-z formats) must not lose the leading space of the first
+        # line to .strip()
+        out = proc.stdout if raw else proc.stdout.strip()
+        return proc.returncode, out, proc.stderr.strip()
     except (OSError, subprocess.TimeoutExpired) as exc:
         return 128, "", f"git {args[0] if args else ''} failed: {exc}"
 
@@ -173,19 +178,33 @@ def _check_now() -> dict[str, Any]:
 
 def _dirty_lines(root: Path) -> list[str]:
     """Changed TRACKED files (untracked strays don't block a ff-only merge,
-    so they are excluded here and in apply_update())."""
-    rc, out, _ = _git(root, "status", "--porcelain", "--untracked-files=no")
+    so they are excluded here and in apply_update()).
+
+    (#122) -z (NUL-separated) parsing: whitespace-splitting the plain
+    porcelain form reported garbage for renames ('R old -> new' -> the
+    path read as '-> new') and quoted spaced paths ('"my file.txt"' ->
+    'file.txt"'). With -z there is no quoting/escaping at all: every entry
+    is "XY path" terminated by NUL, and rename/copy entries carry the
+    source path in one extra NUL field. raw=True keeps the first entry's
+    leading worktree-status space from being .strip()'d off the stdout."""
+    rc, out, _ = _git(root, "status", "--porcelain", "-z",
+                      "--untracked-files=no", raw=True)
     if rc != 0:
         return []
-    paths = []
-    for line in out.splitlines():
-        if not line.strip() or line.startswith("??"):
+    paths: list[str] = []
+    fields = out.split("\0")
+    skip_next = False
+    for field in fields:
+        if not field:
+            continue  # trailing NUL
+        if skip_next:  # rename/copy source path (no status prefix)
+            skip_next = False
             continue
-        # "XY path" (XY = two status chars; the leading space of a
-        # worktree-only change is stripped away by _git, so split rather
-        # than slice by a fixed offset).
-        parts = line.split(None, 2)
-        paths.append(parts[-1] if len(parts) > 1 else line.strip())
+        if field.startswith("??"):
+            continue
+        paths.append(field[3:] if field[2:3] == " " else field[2:])
+        if field[0] in ("R", "C") or field[1] in ("R", "C"):
+            skip_next = True
     return paths
 
 
