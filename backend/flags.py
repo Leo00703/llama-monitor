@@ -63,6 +63,8 @@ def validate_settings(
             errors.append(f"{label} file not found: {p}")
 
     _check_model_file("model", s.model)
+    if s.mmproj.strip():
+        _check_model_file("mmproj", s.mmproj)  # (#121) same UX as the model check
     if s.spec.has_draft:
         _check_model_file("drafter model", s.spec.draft_model)
     if s.spec.draft_model.strip() and not s.spec.has_draft:

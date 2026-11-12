@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import time
 import uuid
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -148,13 +148,15 @@ class LaunchSettings(BaseModel):
     override_tensors: list[str] = Field(default_factory=list)
     cache_type_k: str = "f16"
     cache_type_v: str = "f16"
-    flash_attn: str = "auto"  # on | off | auto
-    load_mode: str = "mmap"  # none | mmap | mlock | mmap+mlock | dio
+    # Literal sets mirror the Settings page selects (#121): bad values are
+    # rejected at save/API time instead of reaching llama-server's parser
+    flash_attn: Literal["auto", "on", "off"] = "auto"
+    load_mode: Literal["mmap", "none", "mlock", "mmap+mlock", "dio"] = "mmap"
 
     # multi-GPU
     tensor_split: list[int] = Field(default_factory=list)
     main_gpu: int = 0
-    split_mode: str = "layer"  # none | layer | row
+    split_mode: Literal["layer", "none", "row"] = "layer"
 
     # CPU & batching
     threads: int = 0  # 0 = auto
