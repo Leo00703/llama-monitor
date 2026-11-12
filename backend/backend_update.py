@@ -771,14 +771,27 @@ def record_cuda_runtime(build_dir: Path, url: str, size_bytes: int,
 
 def resolve_storage(config) -> Path:
     """Where downloaded builds live: the configured folder, else the
-    sibling of the current build folder (its parent), else the data dir."""
+    sibling of the current build folder (its parent), else the data dir.
+
+    (#118) The official Windows zip is FLAT (llama-server.exe at the zip
+    root), so the canonical "extract into C:\\llama\\" layout makes the
+    sibling rule compute the DRIVE ROOT — builds, downloads and the
+    local_builds/prune walks would then hit C:\\ (or /) and downloads fail
+    on permissions. When the computed storage is a filesystem root (or the
+    exe's own folder, the inverted shape of the same problem), fall back to
+    the data-dir default used without an exe.
+    """
     lb = getattr(config, "llama_backend", None)
     custom = (lb.storage_dir or "").strip() if lb else ""
     if custom:
         return Path(custom).expanduser()
     exe = config.resolved_exe()
     if exe:
-        return Path(exe).resolve().parent.parent
+        exe_dir = Path(exe).resolve().parent
+        storage = exe_dir.parent
+        if storage == storage.parent or storage == exe_dir:
+            return DATA_DIR / "llama-builds"
+        return storage
     return DATA_DIR / "llama-builds"
 
 

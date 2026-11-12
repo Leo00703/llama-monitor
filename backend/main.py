@@ -872,6 +872,26 @@ def create_app() -> FastAPI:
         try:
             storage = be_storage()
             storage.mkdir(parents=True, exist_ok=True)
+            # (#118) Never rmtree + re-extract over the build folder of the
+            # ACTIVE server (re-download of the tag+variant currently
+            # running): Windows's ignore_errors sweep guts the tree around
+            # the mapped exe/DLLs and the fresh extract then promotes a
+            # mixed old/new build; POSIX unlinks the running binary outright.
+            # Same contract as be_apply: stop the server first.
+            cur_exe = config.resolved_exe()
+            if cur_exe and manager.snapshot()["state"] in (
+                    "running", "starting", "restarting", "external"):
+                try:
+                    cur = Path(cur_exe).resolve()
+                    live_build = (storage / f"llama-{tag}-{variant}").resolve()
+                except (OSError, RuntimeError):
+                    cur = live_build = None
+                if cur is not None and live_build is not None \
+                        and (cur == live_build or live_build in cur.parents):
+                    return fail(
+                        "refusing to re-download into the build folder the "
+                        f"server is currently using ({live_build}) — stop "
+                        "the server first, then download again")
             headers = {"User-Agent": backend_update.USER_AGENT}
             async with httpx.AsyncClient(timeout=30, headers=headers,
                                          follow_redirects=True) as client:
