@@ -163,7 +163,9 @@ const Models = {
       ornith: "ornith.jpg",
       stablelm: "stablelm.webp",
     };
-    return known[p] ? `/icons/${known[p]}` : "";
+    // (#141) own-property only: a preset/model named "constructor" (etc.)
+    // would otherwise hit inherited Object members
+    return Object.prototype.hasOwnProperty.call(known, p) ? `/icons/${known[p]}` : "";
   },
 
   /* provider monogram badge: known brand colors, hashed hue otherwise.
@@ -184,7 +186,7 @@ const Models = {
       xhtokenai: ["#7c5cf5", "#fff"],
     };
     let label, bg, fg;
-    if (known[p]) {
+    if (Object.hasOwn(known, p)) { // (#141) own-property only (see iconFor)
       [bg, fg] = known[p];
       label = monogram(p);
     } else if (provider) {
