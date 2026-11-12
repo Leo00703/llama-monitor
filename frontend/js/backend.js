@@ -556,7 +556,10 @@ const Backend = {
     el.innerHTML = "";
     el.classList.add("hidden");
     let g;
-    try { g = await API.get(`/api/backend/gpu${force ? "?force=1" : ""}`); }
+    // (#136) server-side worst case ≈ 30 s (--list-devices probe 25 s +
+    // nvidia-smi 5 s) — the 20 s default would report a spurious failure
+    // exactly on the slow AV-scanning machines this check exists for.
+    try { g = await API.get(`/api/backend/gpu${force ? "?force=1" : ""}`, 35000); }
     catch (_) { return; }
     const probe = g.probe || {};
     const nv = g.nvidia_smi || {};
