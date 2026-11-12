@@ -72,6 +72,7 @@ const Settings = {
         storage_dir: lb.storage_dir || "",
         last_check: lb.last_check || "",
         pending: lb.pending || null,
+        expected_sha256: lb.expected_sha256 || "", // (#129) carry the pin through the save
       };
       document.getElementById("be-channel").value = this.llamaBackend.channel;
       // the variant select is filled by Backend.renderVariants() from the
