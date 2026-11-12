@@ -245,9 +245,13 @@ const Metrics = (() => {
     let vram = "";
     if (mode === "graph") {
       // A3: graphs-mode foot = temp (left) + VRAM (center) + power (right)
-      vram = g.vram_total_mb
-        ? footItem(`${(g.vram_used_mb / 1024).toFixed(1)} / ${(g.vram_total_mb / 1024).toFixed(1)} GB`)
-        : footItem("—", true);
+      if (g.vram_total_mb && g.vram_used_mb != null) {
+        vram = footItem(`${(g.vram_used_mb / 1024).toFixed(1)} / ${(g.vram_total_mb / 1024).toFixed(1)} GB`);
+      } else if (g.vram_total_mb) {
+        vram = footItem(`— / ${(g.vram_total_mb / 1024).toFixed(1)} GB`, true); // (#137) [N/A] VRAM
+      } else {
+        vram = footItem("—", true);
+      }
     }
     els.foot.innerHTML = `${temp}${vram}${power}`;
   }
@@ -277,17 +281,18 @@ const Metrics = (() => {
         els.utilInline.textContent = util != null ? `${util}%` : "";
         // the VRAM bar is the centerpiece: values + % above it
         if (g.vram_total_mb) {
-          const used = (g.vram_used_mb ?? 0) / 1024;
           const tot = g.vram_total_mb / 1024;
-          // (#78) always a bounded whole number: used can momentarily
-          // exceed total (driver accounting) and bad data must never turn
-          // into 1e308% — render "—" instead
-          const ratio = (g.vram_used_mb ?? 0) / g.vram_total_mb;
+          // (#137) [N/A] VRAM = unmeasured, NOT an idle GPU — show "—" like
+          // the util field does, never "0.0 / X GB" with a 0 % bar.
+          // (#78) used can momentarily exceed total (driver accounting) and
+          // bad data must never turn into 1e308% — render "—" instead
+          const ratio = g.vram_used_mb == null ? null : g.vram_used_mb / g.vram_total_mb;
           const pct = Number.isFinite(ratio)
             ? Math.min(100, Math.max(0, Math.round(ratio * 100)))
             : null;
           els.nums.style.display = "";
-          els.barMain.textContent = `${used.toFixed(1)} / ${tot.toFixed(1)} GB`;
+          els.barMain.textContent =
+            `${g.vram_used_mb == null ? "—" : (g.vram_used_mb / 1024).toFixed(1)} / ${tot.toFixed(1)} GB`;
           els.barPct.textContent = pct == null ? "—" : `${pct}%`;
           setUsage(els.barPct, pct);
           setBar(els.barFill, pct);
