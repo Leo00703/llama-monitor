@@ -206,6 +206,9 @@ except Exception as _bootstrap_exc:
 # as one instance (a renamed mutex would let both run and fight over the port).
 MUTEX_NAME = "Local\\llama-monitor-tray"
 POLL_INTERVAL = 2.0
+# WM_APP band (#142): the tray posts this to the pystray window to marshal
+# icon/title/menu mutations onto the message-loop thread (see apply_state)
+WM_APP_TRAY_UI = 0x8001
 HEALTH_TIMEOUT = 30.0
 TRAY_SIZE = 64
 ERROR_ALREADY_EXISTS = 183
@@ -313,11 +316,48 @@ def tray_title(state: str, label: str, error: str = "") -> str:
 
 
 def apply_state(icon: pystray.Icon, state: str, error: str = "") -> None:
+    """Record the new state and refresh icon/tooltip/menu.
+
+    #142: pystray 0.19 has no thread marshaling — on Windows these mutations
+    must run on the icon's message-loop thread, because _update_menu() does
+    DestroyMenu() on the very HMENU TrackPopupMenuEx() blocks in, and the
+    poller changes state exactly while the user watches the menu open. The
+    win32 backend dispatches custom messages through _message_handlers, so
+    the poller posts a WM_APP and the real work happens on the loop thread
+    (queued behind any open popup; applied as soon as it closes)."""
     label, color = STATE_META.get(state, STATE_META["stopped"])
     _state.update({"state": state, "label": label, "error": error or ""})
+    if not _post_ui(icon):
+        _apply_ui_now(icon)
+
+
+def _post_ui(icon: pystray.Icon) -> bool:
+    """Marshal a UI refresh onto the icon thread (win32 only). Returns False
+    when the icon must be mutated inline (other backends / window not up yet,
+    where no popup can be open to race against)."""
+    hwnd = getattr(icon, "_hwnd", None)
+    if os.name != "nt" or not hwnd:
+        return False
+    ctypes.windll.user32.PostMessageW(hwnd, WM_APP_TRAY_UI, 0, 0)
+    return True
+
+
+def _apply_ui_now(icon: pystray.Icon) -> None:
+    """The actual icon/title/menu mutations. Only ever call this on the
+    icon's message-loop thread (win32) or inline on a backend without the
+    popup-menu race."""
+    state = _state["state"]
+    error = _state["error"]
+    label, color = STATE_META.get(state, STATE_META["stopped"])
     icon.icon = dot_image(color)
-    icon.title = tray_title(state, label, error or "")
+    icon.title = tray_title(state, label, error)
     icon.update_menu()
+
+
+def _drain_ui(icon: pystray.Icon) -> int:
+    """Message-loop-thread handler for WM_APP_TRAY_UI (#142)."""
+    _apply_ui_now(icon)
+    return 0
 
 
 def start_panel(config: AppConfig) -> tuple[threading.Thread, uvicorn.Server]:
@@ -710,6 +750,13 @@ def run_tray(restarting: bool = False) -> int:
         pystray.Menu(_menu_items),
     )
     _icon = icon
+
+    # pystray win32 dispatches every window message through this table
+    # (_win32._dispatcher) — registering a WM_APP handler gives apply_state a
+    # thread-safe hop onto the message-loop thread (#142).
+    handlers = getattr(icon, "_message_handlers", None)
+    if handlers is not None:
+        handlers[WM_APP_TRAY_UI] = lambda w, l: _drain_ui(icon)
 
     poller = threading.Thread(
         target=poll_loop, args=(config, icon), name="tray-poller", daemon=True
