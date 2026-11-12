@@ -302,10 +302,12 @@ client, not a 200), and failed generations are counted in Analytics.
 
 `tools/parallel-test.py` checks whether a `llama-server` really serves
 concurrent chats — it reads the live slot count and fires N simultaneous
-streaming requests, then reports **PARALLEL** or **SERIALIZED**:
+streaming requests, then reports **PARALLEL** or **SERIALIZED**. A server
+started with an API key needs the same key for everything but `/health`:
 
 ```bash
 python tools/parallel-test.py http://127.0.0.1:8080 2
+python tools/parallel-test.py http://127.0.0.1:8080 2 --api-key YOUR_KEY
 ```
 
 ## Tray launcher (Windows .exe)
