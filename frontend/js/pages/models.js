@@ -57,12 +57,20 @@ const Models = {
     this.refresh();
   },
 
+  _reqSeq: 0, // (#134) response-ordering token
+
   async refresh() {
+    // (#134) double refreshes (fast re-clicks, page switch + WS reconnect)
+    // overlap recursive server scans; a slower EARLIER response could land
+    // last and re-render the stale tree — only the newest request may apply
+    const my = ++this._reqSeq;
     try {
       const data = await API.get("/api/models", 60000);
+      if (my !== this._reqSeq) return; // a newer refresh won the race
       this.models = data.models || [];
       this.root = data.root || "";
     } catch (e) {
+      if (my !== this._reqSeq) return; // superseded — don't toast a stale failure
       UI.toast(`failed to load models: ${e}`, "err");
     }
     if (!this.find(this.selected)) {

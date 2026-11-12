@@ -349,6 +349,10 @@ const Browse = {
   },
 
   async _load(startPath) {
+    // (#134) every folder click is an independent /api/browse GET; rapid
+    // clicks could land out of order and leave the label of one folder with
+    // the entries of another — only the newest request may write state
+    const my = (this._seq = (this._seq || 0) + 1);
     const list = document.getElementById("browse-list");
     const status = document.getElementById("browse-status");
     status.hidden = true;
@@ -359,6 +363,7 @@ const Browse = {
         `/api/browse?path=${encodeURIComponent(startPath || "")}&kind=${this._kind}&show_all=${this._showAll ? 1 : 0}`,
       );
     } catch (_) { /* reported as unreachable below */ }
+    if (my !== this._seq) return; // a newer navigation won the race (#134)
     if (!d || !d.ok) {
       this._at = "";
       this._parent = null;
