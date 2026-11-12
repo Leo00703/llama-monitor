@@ -9,6 +9,9 @@ const Dashboard = {
   // first successful /api/presets fetch (false until then: the card shows a
   // skeleton row, not the empty state — #58)
   loaded: false,
+  // (#133) the last /api/presets fetch FAILED (vs. a real empty list) —
+  // renderPick still draws, and the next server-state event retries once
+  loadError: false,
   pickOpen: false,
   // the preset the server is ACTUALLY running (from the server state);
   // source of truth for the card while the server is up (#56)
@@ -58,10 +61,17 @@ const Dashboard = {
       data = await API.get("/api/presets");
     } catch (e) {
       this.loaded = true; // fall back to the empty state; toast explains
+      this.loadError = true;
       UI.toast(`failed to load presets: ${e}`, "err");
+      // (#133) "fall back to the empty state" must actually render it —
+      // without this the skeleton shimmer stayed on screen forever (only a
+      // WS reconnect or a page reload recovered)
+      this.renderPick();
+      this.renderRunningHint();
       return;
     }
     this.loaded = true;
+    this.loadError = false;
     this.presets = data.presets || [];
     this.activeId = data.active_id || "";
     this.userPicked = false;
@@ -81,6 +91,10 @@ const Dashboard = {
 
   /** Called from applyState (REST + WS) with the latest server state. */
   syncRunning(state) {
+    // (#133) retry a failed presets fetch on the next state event (the 10 s
+    // poll or a WS state push) — a transient hiccup at page-open then heals
+    // without a manual reload; a genuinely empty list never re-fetches
+    if (this.loadError) this.refreshPresets();
     const up = state && (state.state === "running" || state.state === "external");
     const newId = up ? (state.preset_id || "") : "";
     const changed = newId !== this.runningId;
