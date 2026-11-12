@@ -220,6 +220,7 @@ const Generation = {
         if (Number.isNaN(n)) { out[key] = null; continue; }
         v = type === "int" ? Math.trunc(n) : n;
       } else if (type.startsWith("sel:")) {
+        if (el.value === "") { out[key] = null; continue; } // saved value matched no option (#130 clear rule)
         // (#131) DOM select values are strings; when every option is numeric
         // (mirostat's 0/1/2), store a number so the default-dedupe, the
         // saved-chip comparison and the proxy payload agree with the
