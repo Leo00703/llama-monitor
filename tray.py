@@ -209,6 +209,8 @@ except Exception as _bootstrap_exc:
 # as one instance (a renamed mutex would let both run and fight over the port).
 MUTEX_NAME = "Local\\llama-monitor-tray"
 POLL_INTERVAL = 2.0
+# (#146) consecutive dead polls (~20 s) before the tray says "panel unreachable"
+POLL_FAIL_ALERT = 10
 # WM_APP band (#142): the tray posts this to the pystray window to marshal
 # icon/title/menu mutations onto the message-loop thread (see apply_state)
 WM_APP_TRAY_UI = 0x8001
@@ -410,25 +412,67 @@ def wait_health(url: str, timeout: float) -> bool:
 
 
 def poll_loop(config: AppConfig, icon: pystray.Icon) -> None:
-    global _preset_id
-    base = panel_url(config)
+    global _preset_id, _panel_token, _panel_browser_url
     last = object()
+    fails = 0
     while not _stop.is_set():
+        # (#146) re-read config.json every poll: a panel-token rotation or a
+        # host/port/TLS change while running must not leave the tray pinned
+        # to boot values (the stale token made a 401 JSON parse as the
+        # "stopped" state on a running server). A small local file read is
+        # fine — #106 O6 only banned the extra GET /api/config.
+        try:
+            cfg = load_config()
+            _panel_token = cfg.panel.token.strip()
+            base = panel_url(cfg)
+            _panel_browser_url = base  # "Open panel" follows the new port too
+        except Exception:
+            cfg, base = config, panel_url(config)  # keep the last good view
         try:
             # one call per poll (#106 O6): /api/state carries
             # active_preset_id — the old second GET /api/config every 2 s
             # forever was pure idle traffic.
-            state = _panel_get(base, "/api/state", 3.0).json()
-            preset_id = state.get("active_preset_id") or ""
-            # the error text is part of the key: a changed error while the
-            # state stays "error" must refresh the tooltip
-            key = (state.get("state"), preset_id, state.get("error") or "")
-            if key != last:
-                _preset_id = preset_id
-                apply_state(icon, state.get("state") or "stopped", state.get("error") or "")
-                last = key
+            resp = _panel_get(base, "/api/state", 3.0)
+            if resp.status_code in (401, 403):
+                # (#146) a gated answer must never masquerade as "stopped" —
+                # show the gate's own message; the config re-read above makes
+                # this self-heal once the on-disk token matches again.
+                try:
+                    detail = str(resp.json().get("error") or "")
+                except ValueError:
+                    detail = ""
+                key = ("__gated__", detail)
+                if key != last:
+                    apply_state(
+                        icon, "error",
+                        detail or "panel rejected the tray token — restart llama-monitor")
+                    last = key
+                fails = 0
+            else:
+                state = resp.json()
+                preset_id = state.get("active_preset_id") or ""
+                # the error text is part of the key: a changed error while the
+                # state stays "error" must refresh the tooltip
+                key = (state.get("state"), preset_id, state.get("error") or "")
+                if key != last:
+                    _preset_id = preset_id
+                    apply_state(icon, state.get("state") or "stopped",
+                                state.get("error") or "")
+                    last = key
+                fails = 0
         except (httpx.HTTPError, ValueError):
-            pass
+            # (#146) silence forever was a lying zombie: after ~20 s of dead
+            # polls say so explicitly instead of freezing the last state.
+            fails += 1
+            if fails == POLL_FAIL_ALERT:
+                key = ("__unreachable__", base)
+                if key != last:
+                    apply_state(icon, "error",
+                                f"panel unreachable at {base} — restart llama-monitor")
+                    last = key
+                _notify("Panel unreachable",
+                        f"no answer from {base} for {fails * int(POLL_INTERVAL)} s — "
+                        "the panel port/host/token may have changed; restart llama-monitor")
         _stop.wait(POLL_INTERVAL)
 
 
