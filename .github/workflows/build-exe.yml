@@ -107,15 +107,39 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           new_sha=$(sha256sum dist/llama-monitor.exe | cut -d' ' -f1)
-          old_sha=$(git show HEAD:llama-monitor.exe 2>/dev/null | sha256sum | cut -d' ' -f1 || true)
-          if [ "$new_sha" = "$old_sha" ]; then
-            echo "exe bytes unchanged — nothing to commit"
-            exit 0
+          # (#151) main routinely moves during the minutes-long build (every
+          # push triggers a refresh; PyInstaller output is not byte-stable),
+          # so a bare push gets rejected: a red badge on a healthy commit and
+          # a stale shipped exe. Re-align onto the current main tip before
+          # EVERY attempt — our commit only replaces the exe blob, so
+          # resetting to the tip and re-committing from dist/ is a conflict-
+          # free rebase for a shallow (fetch-depth: 1) checkout, and the
+          # sha-compare against the NEW tip also catches "main already ships
+          # this exact exe".
+          pushed=0
+          for attempt in 1 2 3 4 5; do
+            git fetch --depth 1 origin main
+            git reset --hard FETCH_HEAD
+            old_sha=$(git show HEAD:llama-monitor.exe 2>/dev/null | sha256sum | cut -d' ' -f1 || true)
+            if [ "$new_sha" = "$old_sha" ]; then
+              echo "::notice::main already ships this exact exe build — nothing to commit"
+              pushed=1
+              break
+            fi
+            cp dist/llama-monitor.exe llama-monitor.exe
+            git add llama-monitor.exe
+            git commit -m "Build: refresh bundled tray exe"
+            if git push origin HEAD:main; then
+              pushed=1
+              break
+            fi
+            echo "push rejected (main moved during the build) — re-aligning, attempt $attempt/5"
+            sleep $((attempt * 5))
+          done
+          if [ "$pushed" != 1 ]; then
+            echo "::error::could not publish the refreshed exe after 5 attempts — main unchanged"
+            exit 1
           fi
-          cp dist/llama-monitor.exe llama-monitor.exe
-          git add llama-monitor.exe
-          git commit -m "Build: refresh bundled tray exe"
-          git push
 
       - name: Upload artifact
         if: steps.skip.outputs.skip != 'true'
