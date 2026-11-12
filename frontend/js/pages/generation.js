@@ -206,15 +206,18 @@ const Generation = {
   },
 
   readForm() {
+    // (#130) a visible field left empty is an EXPLICIT CLEAR (null), not an
+    // omission: the /generation endpoint merges instead of replacing, so an
+    // omitted key would keep its stored value.
     const out = {};
     for (const el of document.querySelectorAll(".gen-field [data-key]")) {
       const key = el.dataset.key;
       const type = el.dataset.type;
       let v;
       if (type === "num" || type === "int") {
-        if (el.value === "") continue;
+        if (el.value === "") { out[key] = null; continue; }
         const n = Number(el.value);
-        if (Number.isNaN(n)) continue;
+        if (Number.isNaN(n)) { out[key] = null; continue; }
         v = type === "int" ? Math.trunc(n) : n;
       } else if (type.startsWith("sel:")) {
         v = el.value;
@@ -223,15 +226,15 @@ const Generation = {
         v = el.checked;
       } else if (type === "strlist") {
         const arr = el.value.split(",").map((s) => s.trim()).filter(Boolean);
-        if (!arr.length) continue;
+        if (!arr.length) { out[key] = null; continue; }
         v = arr;
       } else if (type === "lines") {
         const arr = el.value.split("\n").filter((s) => s !== "");
-        if (!arr.length) continue;
+        if (!arr.length) { out[key] = null; continue; }
         v = arr;
       } else if (type === "json") {
         const raw = el.value.trim();
-        if (!raw) continue;
+        if (!raw) { out[key] = null; continue; }
         try {
           v = JSON.parse(raw);
         } catch (_) {
@@ -239,7 +242,7 @@ const Generation = {
           return null;
         }
       } else if (type === "area" || type === "str") {
-        if (!el.value) continue;
+        if (!el.value) { out[key] = null; continue; }
         v = el.value;
       }
       out[key] = v;
@@ -254,18 +257,22 @@ const Generation = {
 
     const generation = {};
     for (const [key, value] of Object.entries(values)) {
+      if (value === null) { generation[key] = null; continue; } // explicit clear (#130)
       const sd = this.serverDefaults[key];
       if (key in this.serverDefaults) {
+        // (#130) the endpoint MERGES, so matching the server default must
+        // send an explicit null or a previously-saved override would survive
         if (typeof value === "number" && typeof sd === "number" &&
             this.cleanNum(value) === this.cleanNum(sd)) {
-          continue; // same as server default once float32 noise is ignored
+          generation[key] = null;
+          continue;
         }
-        if (JSON.stringify(sd) === JSON.stringify(value)) continue;
+        if (JSON.stringify(sd) === JSON.stringify(value)) { generation[key] = null; continue; }
       }
       generation[key] = value;
     }
     if (generation.max_tokens !== undefined) {
-      generation.n_predict = generation.max_tokens; // dual-write: /completion reads n_predict
+      generation.n_predict = generation.max_tokens === null ? null : generation.max_tokens; // dual-write: /completion reads n_predict (#130: a cleared max_tokens must also clear the shadow, else it is re-injected from the merge)
     }
 
     try {
@@ -280,7 +287,8 @@ const Generation = {
     if (!this.presetId) { UI.toast("no preset to reset", "err"); return; }
     if (!confirm("Clear all saved generation defaults for this preset?")) return;
     try {
-      const res = await API.put(`/api/presets/${this.presetId}/generation`, { generation: {} });
+      // (#130) the endpoint now merges — reset needs the explicit full wipe
+      const res = await API.put(`/api/presets/${this.presetId}/generation`, { clear: true });
       if (!res.ok) { UI.toast(res.error || "reset failed", "err"); return; }
       UI.toast("generation defaults cleared");
       this.load();

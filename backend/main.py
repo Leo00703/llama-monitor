@@ -1593,7 +1593,25 @@ def create_app() -> FastAPI:
             generation = {}
         if not isinstance(generation, dict):
             return {"ok": False, "error": "generation must be an object"}
-        preset = store.update(preset_id, generation=generation)
+        # (#130) read-modify-write merge: the generation page sends only the
+        # fields it rendered, and full replacement silently deleted stored
+        # keys the form does not show — the n_predict dual-write, hand-edited
+        # or future-build parameters. A null value = explicit field clear;
+        # `clear: true` (the page's Reset) is the only full wipe. Same class
+        # of full-replace wipe as #50.
+        if body.get("clear") is True:
+            merged: dict[str, Any] = {}
+        else:
+            existing = store.get(preset_id)
+            if existing is None:
+                return {"ok": False, "error": "not found"}
+            merged = dict(existing.launch.generation or {})
+            for key, value in generation.items():
+                if value is None:
+                    merged.pop(key, None)
+                else:
+                    merged[key] = value
+        preset = store.update(preset_id, generation=merged)
         if preset is None:
             return {"ok": False, "error": "not found"}
         return {"ok": True, "generation": preset.launch.generation}
