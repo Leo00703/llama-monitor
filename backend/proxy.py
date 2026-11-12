@@ -220,6 +220,12 @@ class ServerProxy:
         except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
             await client.aclose()
             raise ProxyOffline(str(exc)) from exc
+        except BaseException:
+            # (#117) server died while reading headers (RemoteProtocolError),
+            # malformed status line, or mid-send cancellation: never leak the
+            # manually-built client — close it and let the route translate.
+            await client.aclose()
+            raise
         out_headers = {
             k: v for k, v in resp.headers.items()
             if k.lower() not in PROXY_SKIP_RESPONSE_HEADERS

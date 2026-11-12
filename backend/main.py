@@ -389,8 +389,17 @@ class PanelTokenGate:
 
 def _is_loopback_host(host: str) -> bool:
     host = (host or "").strip().lower()
-    return host in ("", "localhost", "::1") or host == "127.0.0.1" \
-        or host.startswith("127.")
+    if host in ("", "localhost"):
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    # (#117) when the panel listens on `::`, uvicorn reports IPv4 clients as
+    # IPv4-mapped IPv6 (::ffff:127.0.0.1) — still this machine, still loopback
+    if ip.version == 6 and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
+    return ip.is_loopback
 
 
 def _protected_path(path: str) -> bool:
@@ -1630,6 +1639,13 @@ def create_app() -> FastAPI:
                     if path.lstrip("/") in INJECT_PATHS:
                         _record_failure(400, path)
                     return JSONResponse({"error": "invalid JSON body"}, status_code=400)
+                # (#117) a valid-but-non-object body on a generation path
+                # (e.g. `[1,2]`) reached _injected's dict(body) -> ValueError
+                # -> raw 500 with no failure record; reject it as 400 now.
+                if path.lstrip("/") in INJECT_PATHS and not isinstance(body, dict):
+                    _record_failure(400, path)
+                    return JSONResponse({"error": "request body must be a JSON object"},
+                                        status_code=400)
         headers = dict(request.headers.items())
         query = request.url.query
         is_generation = path.lstrip("/") in INJECT_PATHS
@@ -1669,6 +1685,19 @@ def create_app() -> FastAPI:
             if is_generation:
                 _record_failure(503, path)
             return JSONResponse({"error": f"llama-server offline: {exc}"}, status_code=503)
+        except httpx.HTTPError as exc:
+            # (#117) the server accepted the connection and THEN died
+            # (ReadError / RemoteProtocolError mid-request — a crash or
+            # restart during a proxied generation): mirror as 502 and count
+            # the failure, instead of a raw FastAPI 500 that left
+            # failed_requests blind.
+            log.warning("proxy upstream error on %s: %s: %s",
+                        path, type(exc).__name__, exc)
+            if is_generation:
+                _record_failure(502, path)
+            return JSONResponse(
+                {"error": f"llama-server connection error: {exc}"},
+                status_code=502)
 
     # ------------------------------------------------------------------
     # REST: app self-update (git pull + tray relaunch, see update.py)
