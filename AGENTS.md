@@ -343,7 +343,14 @@ without rebuilding.
   self-extracted `%TEMP%\_MEI*` folder and a real-time AV scan can lock or
   quarantine them for seconds right after extraction (a top-level import then
   died with a raw `DLL load failed ... _ctypes` traceback — a --noconsole
-  build has no console to show it in; the exact report in issue #64). The
+  build has no console to show it in; the exact report in issue #64). Split in
+  #150: `_load_panel_stack()` (httpx/uvicorn/backend) + `_load_tray_stack()`
+  (ctypes/pystray/subprocess/PIL); `--smoke` loads only the panel stack (raw
+  `--smoke` argv peek, `_SMOKE_ONLY`), so the documented self-test runs in a
+  panel-only venv. `ModuleNotFoundError` fails fast (an absent package does
+  not appear after a wait — the retry is for AV-locked DLLs = ImportError/
+  DLL-load failures) and a missing pystray/PIL names `requirements-tray.txt`
+  instead of the AV wording in both stderr and the dialog. The
   bundle itself is complete: every CI exe ever shipped contains
   `VCRUNTIME140.dll`/`VCRUNTIME140_1.dll`/`libffi-8.dll`/`ucrtbase.dll` +
   `python312.dll`, all Authenticode-valid (Microsoft / Python Software
