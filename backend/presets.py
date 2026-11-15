@@ -26,6 +26,12 @@ class PresetStore:
         # keeps the warning-once-per-file invariant across repeated
         # (per-metrics-tick) get() calls on a broken active preset
         self._warned: dict[str, str] = {}
+        # file name -> ((mtime_ns, size), parsed preset). get() runs several
+        # times per proxied request (host, API key, generation defaults) and
+        # per 1.5 s metrics tick; each call used to re-read, re-parse and
+        # re-validate the JSON file. The stat signature catches edits made
+        # outside the panel; the panel's own writes/deletes drop the entry.
+        self._cache: dict[str, tuple[tuple[int, int], Preset]] = {}
 
     # ------------------------------------------------------------------
 
@@ -42,12 +48,24 @@ class PresetStore:
 
     def get(self, preset_id: str) -> Optional[Preset]:
         path = self._path(preset_id)
-        if not path.exists():
+        try:
+            st = path.stat()
+        except OSError:
+            self._cache.pop(path.name, None)
             return None
+        sig = (st.st_mtime_ns, st.st_size)
+        hit = self._cache.get(path.name)
+        if hit is not None and hit[0] == sig:
+            # a copy: callers mutate what they get (update(), create())
+            return hit[1].model_copy(deep=True)
         preset, err = self._load(path)
-        if err is not None:
-            self._warn_broken(path, err)
-        return preset
+        if err is not None or preset is None:
+            self._cache.pop(path.name, None)
+            if err is not None:
+                self._warn_broken(path, err)
+            return None
+        self._cache[path.name] = (sig, preset)
+        return preset.model_copy(deep=True)
 
     def broken(self) -> list[dict[str, Any]]:
         """(#124) JSON files that exist but cannot be loaded. A preset that
@@ -144,6 +162,7 @@ class PresetStore:
 
     def delete(self, preset_id: str) -> bool:
         path = self._path(preset_id)
+        self._cache.pop(path.name, None)
         if path.exists():
             path.unlink()
             return True
@@ -161,6 +180,7 @@ class PresetStore:
             tmp.replace(path)
         finally:
             tmp.unlink(missing_ok=True)  # no-op after a successful replace
+            self._cache.pop(path.name, None)
 
 
 def _now() -> float:
