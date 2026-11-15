@@ -901,6 +901,12 @@ def create_app() -> FastAPI:
         be_downloading = True
         t0 = time.time()
         zip_path: Path | None = None
+        # set once the build folder is (re)created by this run; removed again
+        # on any failure before the install is complete, so a crash between
+        # extraction and the CUDA-runtime step never leaves a folder that the
+        # picker offers as "downloaded · ready to install"
+        build_dir: Path | None = None
+        installed = False
 
         def fail(msg: str) -> dict:
             manager.broadcast({"type": "llama.update.failed",
@@ -1054,6 +1060,7 @@ def create_app() -> FastAPI:
                         "(nvidia-smi) and the selected variant, then "
                         "re-download; the DLLs may also be available via a "
                         "CUDA Toolkit on the PATH")
+            installed = True
             config.llama_backend.pending = LlamaBackendPending(
                 tag=tag, variant=variant, state="downloaded")
             save_config(config)
@@ -1067,6 +1074,8 @@ def create_app() -> FastAPI:
             # and keeping it reproduces the per-version accumulation (#51)
             if zip_path is not None:
                 zip_path.unlink(missing_ok=True)
+            if build_dir is not None and not installed:
+                await _rmtree_async(build_dir)
             return fail(str(exc))
         finally:
             be_downloading = False
