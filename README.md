@@ -277,7 +277,7 @@ in-app **Settings** page (which shows the data directory in use):
 | `llama_backend.variant` | Build flavor — the picker lists what the target build actually ships for your OS + CPU arch (`cpu`, `vulkan`, `cuda-<ver>`, `rocm-<ver>`, `openvino-<ver>`, `sycl`, …); the **Detect** button suggests one from `nvidia-smi` |
 | `llama_backend.auto_download` | Download new builds automatically when a check finds them (installing always stays manual) |
 | `llama_backend.storage_dir` | Folder for downloaded builds (default: a `llama-builds`-style sibling of the current build) |
-| `llama_backend.expected_sha256` | Optional sha256 of the build archive to download: when set, a download whose digest differs is refused (advanced pin — the panel otherwise size-verifies downloads and records every digest in the build manifest) |
+| `llama_backend.expected_sha256` | Optional sha256 of the build archive to download: when set, a download whose digest differs is refused (advanced pin — without it the panel still checks every download against its declared size and the sha256 GitHub publishes for the asset, and records the digest in the build manifest) |
 
 ## Run
 
