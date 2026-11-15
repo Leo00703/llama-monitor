@@ -153,9 +153,14 @@ class PresetStore:
 
     def _write(self, preset: Preset) -> None:
         path = self._path(preset.id)
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(preset.model_dump(), indent=2) + "\n", encoding="utf-8")
-        tmp.replace(path)
+        # unique temp name: two overlapping saves of one preset shared
+        # "<id>.tmp" and could replace() each other's half-written file
+        tmp = path.with_name(f"{path.stem}.{uuid.uuid4().hex}.tmp")
+        try:
+            tmp.write_text(json.dumps(preset.model_dump(), indent=2) + "\n", encoding="utf-8")
+            tmp.replace(path)
+        finally:
+            tmp.unlink(missing_ok=True)  # no-op after a successful replace
 
 
 def _now() -> float:
