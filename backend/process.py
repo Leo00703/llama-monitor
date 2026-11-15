@@ -341,7 +341,10 @@ class LlamaServerManager:
                 if not await self._await_gone([pid], STOP_TIMEOUT):
                     self._publish_log("[panel] external server did not exit, killing")
                     self._kill_pids([pid])
-                gone = not await self._await_gone([pid], KILL_TIMEOUT)
+                # _await_gone is True once the pid has EXITED. The result used
+                # to be negated here, so a clean stop was reported as "refused
+                # to stop" (state ERROR) and a real survivor as STOPPED.
+                gone = await self._await_gone([pid], KILL_TIMEOUT)
                 self._port = None
                 self._external_pid = None
                 self._preset_id = None
