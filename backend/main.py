@@ -906,6 +906,14 @@ def create_app() -> FastAPI:
             return {"ok": False, "error": msg}
 
         try:
+            # The scheduled auto-download passes config.llama_backend.variant
+            # straight in (POST /api/config does not shape-check it), and both
+            # values become path components of a folder this function
+            # rmtree's — validate here, not only in the HTTP route (#97).
+            if not backend_update.is_valid_tag(tag):
+                return fail(f"invalid build tag: {tag!r}")
+            if not backend_update.is_valid_variant(variant):
+                return fail(f"invalid variant: {variant!r}")
             storage = be_storage()
             storage.mkdir(parents=True, exist_ok=True)
             # (#118) Never rmtree + re-extract over the build folder of the
