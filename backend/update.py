@@ -225,6 +225,17 @@ def check(force: bool = False) -> dict[str, Any]:
     # Release _lock before the slow git fetch; _exec_lock serialises actual
     # fetches. A waiter that finds the cache freshly written after acquiring
     # _exec_lock skips a redundant fetch.
+    #
+    # A non-forced caller (a page load) that finds a fetch already in flight
+    # answers from the last result instead of queueing behind it: each
+    # queued caller parks one worker of the shared threadpool for up to
+    # FETCH_TIMEOUT s, and that pool also runs the metrics samplers.
+    if not force and not _exec_lock.acquire(blocking=False):
+        with _lock:
+            if _cache["data"] is not None:
+                return _cache["data"]
+    elif not force:
+        _exec_lock.release()
     with _exec_lock:
         if (
             not force
