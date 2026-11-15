@@ -1475,8 +1475,22 @@ def create_app() -> FastAPI:
 
     @app.post("/api/config")
     async def post_config(body: dict[str, Any]) -> dict:
+        # Nested settings objects (panel, dashboard, llama_backend) merge
+        # key-by-key over the stored values, like the top level does: a
+        # client that posts {"panel": {"host", "port"}} — an API script, or a
+        # browser tab still running a shell from before a field existed —
+        # must not reset the keys it did not send. Full replacement silently
+        # cleared panel.token (auth off) and the TLS paths that way; same
+        # class of wipe as #50 / #129 / #130.
+        if not isinstance(body, dict):
+            return {"ok": False, "error": "config must be a JSON object"}
+        current = config.model_dump()
+        merged = dict(body)
+        for name, value in body.items():
+            if isinstance(value, dict) and isinstance(current.get(name), dict):
+                merged[name] = {**current[name], **value}
         try:
-            new_config = AppConfig.model_validate(body)
+            new_config = AppConfig.model_validate(merged)
         except ValidationError as exc:
             return {"ok": False, "error": str(exc)}
         # (#110) A non-ASCII token breaks the browser's own fetch (header
