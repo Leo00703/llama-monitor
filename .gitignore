@@ -32,6 +32,14 @@ backend/_buildinfo.json
 # Local scratchpad / to-do (never committed)
 TODO.md
 
+# Audit write-ups and agent-tool scratch (local only — the findings belong in
+# GitHub issues + AGENTS.md, not in the repo tree)
+AUDIT_REPORT*.md
+*Audit.md
+.claude/
+CLAUDE.md
+AGENTS.local.md
+
 # graphify knowledge graph (graphify-out/ IS committed — graph.json + report
 # are the agent query target; only local artifacts are ignored)
 graphify-out/cache/
