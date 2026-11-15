@@ -593,12 +593,15 @@ async def download_file(asset: dict, dest: Path,
     """Stream a release asset to dest; returns its sha256 hex.
 
     Atomic replace; .part removed on failure. (#96) The digest is computed
-    while streaming and cross-checked against the declared asset size, and
-    — when the caller passes it — against the user-configured
-    `expected_sha256` override, BEFORE anything is extracted or executed.
-    GitHub ships no digests for llama.cpp assets, so the hard-fail override
-    is the only pin against a swapped asset; the size check catches truncated
-    or tampered downloads out of the box."""
+    while streaming and checked BEFORE anything is extracted or executed
+    against: the declared asset size; the sha256 GitHub publishes for the
+    asset (the release API's `digest` field, "sha256:<hex>" — present on
+    llama.cpp assets, verified against b12418; skipped when a release
+    carries none); and — when the caller passes it — the user-configured
+    `expected_sha256` pin. The API digest arrives over a different host and
+    request than the archive bytes (api.github.com vs the release CDN), so
+    it catches a corrupted or substituted download with no setup; the pin
+    additionally survives a re-uploaded asset."""
     tmp = dest.parent / (dest.name + ".part")
     digest = hashlib.sha256()
     try:
@@ -627,6 +630,12 @@ async def download_file(asset: dict, dest: Path,
                 f"{name}: download size mismatch — got {done} bytes, "
                 f"the asset declares {total}")
         sha = digest.hexdigest()
+        published = str(asset.get("digest") or "").strip().lower()
+        if published.startswith("sha256:") and sha != published[7:]:
+            raise UpdateError(
+                f"{name}: sha256 mismatch — downloaded {sha}, GitHub "
+                f"publishes {published[7:]} for this asset; refusing to "
+                "install a corrupted or substituted archive")
         expected = (expected_sha256 or "").strip().lower().removeprefix("sha256:")
         if expected and sha != expected:
             raise UpdateError(
