@@ -439,8 +439,11 @@ class PanelRequestGuard:
     Origin, when present, must be same-origin — host AND port: another web
     app on this machine (a dev server on localhost:5500 previewing an
     untrusted page, a second service on the same LAN address) is a
-    different origin and used to pass on the hostname alone. Non-browser
-    clients (curl, the tray, OpenAI SDKs) send neither header and pass through.
+    different origin and used to pass on the hostname alone. Browsers also
+    label every request with Sec-Fetch-Site; anything but same-origin /
+    none (typed URL, bookmark) is refused, which covers the cross-site
+    GETs that carry no Origin header at all. Non-browser clients (curl,
+    the tray, OpenAI SDKs) send none of these headers and pass through.
     """
 
     def __init__(self, app, get_config) -> None:
@@ -494,6 +497,10 @@ class PanelRequestGuard:
             reason = ""
             if not self._host_ok(host):
                 reason = "invalid host"
+            elif headers.get(b"sec-fetch-site", b"").strip().lower() in (
+                    b"cross-site", b"same-site"):
+                # the browser itself says another origin initiated this
+                reason = "cross-origin request blocked"
             else:
                 origin = headers.get(b"origin", b"").decode("latin-1").strip()
                 if origin:
