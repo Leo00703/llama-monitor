@@ -408,13 +408,23 @@ def _protected_path(path: str) -> bool:
             or path.startswith("/proxy/") or path.startswith("/ws/"))
 
 
-def _host_without_port(value: str) -> str:
+def _split_host_port(value: str) -> tuple[str, Optional[int]]:
+    """(host, port) of a Host header value; port is None when not given."""
     v = (value or "").strip().lower()
     if v.startswith("["):  # [::1]:8000
-        return v[1:].split("]", 1)[0]
+        host, _, rest = v[1:].partition("]")
+        return host, (int(rest[1:]) if rest[:1] == ":" and rest[1:].isdigit() else None)
     if v.count(":") == 1:  # host:port (hostname or IPv4)
-        v = v.split(":", 1)[0]
-    return v
+        host, _, port = v.partition(":")
+        return host, (int(port) if port.isdigit() else None)
+    return v, None
+
+
+def _host_without_port(value: str) -> str:
+    return _split_host_port(value)[0]
+
+
+_DEFAULT_PORTS = {"http": 80, "ws": 80, "https": 443, "wss": 443}
 
 
 class PanelRequestGuard:
@@ -426,8 +436,11 @@ class PanelRequestGuard:
     with full launch commands. The Host header must name this machine
     (loopback, an IP literal, the machine name, .local/.ts.net, or the
     configured panel host — never lock a LAN install out), and a browser
-    Origin, when present, must be same-origin. Non-browser clients
-    (curl, the tray, OpenAI SDKs) send neither header and pass through.
+    Origin, when present, must be same-origin — host AND port: another web
+    app on this machine (a dev server on localhost:5500 previewing an
+    untrusted page, a second service on the same LAN address) is a
+    different origin and used to pass on the hostname alone. Non-browser
+    clients (curl, the tray, OpenAI SDKs) send neither header and pass through.
     """
 
     def __init__(self, app, get_config) -> None:
@@ -455,16 +468,29 @@ class PanelRequestGuard:
         return cfg not in ("", "0.0.0.0", "::") and host == cfg
 
     @staticmethod
-    def _origin_ok(origin_host: str, host: str) -> bool:
-        if _is_loopback_host(origin_host) and _is_loopback_host(host):
-            return True  # localhost vs 127.0.0.1 — both already local-only
-        return origin_host == host
+    def _origin_ok(origin_host: str, host: str,
+                   origin_port: Optional[int] = None,
+                   host_port: Optional[int] = None) -> bool:
+        # localhost vs 127.0.0.1 — both already local-only
+        same_host = (origin_host == host
+                     or (_is_loopback_host(origin_host) and _is_loopback_host(host)))
+        if not same_host:
+            return False
+        if origin_port is None:
+            return True  # caller did not resolve a port (hostname-only check)
+        if host_port is None:
+            # Host without a port = the browser is talking to a default port
+            # (panel on 80/443, or a Host-preserving TLS proxy in front), so
+            # a same-origin Origin carries a default port too.
+            return origin_port in (80, 443)
+        return origin_port == host_port
 
     async def __call__(self, scope, receive, send) -> None:
         if scope["type"] in ("http", "websocket") \
                 and _protected_path(scope.get("path", "")):
             headers = {k.lower(): v for k, v in scope.get("headers", [])}
-            host = _host_without_port(headers.get(b"host", b"").decode("latin-1"))
+            host, host_port = _split_host_port(
+                headers.get(b"host", b"").decode("latin-1"))
             reason = ""
             if not self._host_ok(host):
                 reason = "invalid host"
@@ -472,12 +498,15 @@ class PanelRequestGuard:
                 origin = headers.get(b"origin", b"").decode("latin-1").strip()
                 if origin:
                     try:
-                        oh = urlparse(origin).hostname or ""
+                        parsed = urlparse(origin)
+                        oh = parsed.hostname or ""
+                        op = parsed.port or _DEFAULT_PORTS.get(parsed.scheme.lower())
                     except ValueError:
-                        oh = ""
+                        oh, op = "", None
                     # Origin present but unparseable/"null" (opaque origin):
                     # never a same-origin browser request -> block
-                    if not oh or not self._origin_ok(oh.lower(), host):
+                    if not oh or op is None or not self._origin_ok(
+                            oh.lower(), host, op, host_port):
                         reason = "cross-origin request blocked"
             if reason:
                 if scope["type"] == "websocket":
