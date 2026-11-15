@@ -146,8 +146,10 @@ most strictly: they are the ones pasting log excerpts and writing issue text.
 - One commit per fix; **push after every fix**. Docs updates are separate
   commits, never mixed with code changes.
 - Never commit: `TODO.md`, `config.json`, `data/`, `*.log`, `build/`, `dist/`,
-  `*.spec`, `.venv/` — and never commit user-identifying data (real paths,
-  hosts, keys), see **Privacy** above.
+  `*.spec`, `.venv/`, audit write-ups (`AUDIT_REPORT*.md`, `*Audit.md`) and
+  agent-tool scratch (`CLAUDE.md`, `.claude/`) — all gitignored — and never
+  commit user-identifying data (real paths, hosts, keys), see **Privacy** above.
+  Audit findings belong in GitHub Issues + AGENTS.md, not in the repo tree.
 - **Keep `README.md` current**: it describes the product (feature bullets,
   config keys, project layout, commands, tray exe). Re-check it and fix stale
   spots — in a separate `Docs:` commit — whenever a change alters what it
