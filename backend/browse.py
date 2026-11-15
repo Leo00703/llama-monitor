@@ -237,8 +237,13 @@ def _validate_tls(cert_value: str, key_value: str) -> dict[str, dict[str, str]]:
             return {kind: _res("err", "file not found")}
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     try:
-        ctx.load_cert_chain(Path(cert).expanduser(), Path(key).expanduser())
-    except (OSError, ssl.SSLError) as exc:
+        # password callback: without one OpenSSL prompts for the passphrase
+        # of an encrypted key on the controlling terminal — in a dev/console
+        # run that blocks this (event-loop) call, i.e. the whole panel, until
+        # someone types. An empty answer turns it into a clean SSLError.
+        ctx.load_cert_chain(Path(cert).expanduser(), Path(key).expanduser(),
+                            password=lambda: "")
+    except (OSError, ssl.SSLError, ValueError) as exc:
         reason = getattr(exc, "strerror", None) or str(exc)
         return {"tls_cert": _res("err", f"cert/key pair rejected: {reason}"),
                 "tls_key": _res("muted", "")}
