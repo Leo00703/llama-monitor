@@ -80,9 +80,16 @@ WIN_BREAK_GRACE = 2.0
 # progress lines, so a slow-but-live load is never killed).
 READINESS_NOTE_AFTER = 60.0
 READINESS_IDLE_TIMEOUT = 180.0
-# Per-line cap for the log capture: the reader splits on read() chunks, a
-# pathological line is truncated at this size before reaching UI/WS (#98).
-LOG_LINE_LIMIT = 8 * 1024 * 1024
+# StreamReader buffer bound for the child's stdout pipe (#98).
+LOG_STREAM_LIMIT = 8 * 1024 * 1024
+# Per-line cap for the log capture: a longer line is truncated before it
+# reaches the ring buffer / WS / log hooks. The ring holds 4000 lines and
+# every line is replayed to each connecting client and scanned by the
+# print_timing regexes, so the cap bounds memory (4000 x 16 KiB = 64 MiB
+# worst case, vs 32 GiB at the old 8 MiB cap) and keeps the hooks cheap.
+# 16 KiB is far beyond any structured llama-server line; only verbose
+# prompt/body dumps hit it.
+LOG_LINE_LIMIT = 16 * 1024
 
 # Most-specific-first: when the server dies, the first matching pattern in the
 # recent log tail explains WHY (e.g. the OOM line behind a model-load failure).
@@ -229,7 +236,7 @@ class LlamaServerManager:
                     *spawn_argv(exe, *args),
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.STDOUT,
-                    limit=LOG_LINE_LIMIT,  # defensive: _read_output avoids
+                    limit=LOG_STREAM_LIMIT,  # defensive: _read_output avoids
                     # readline() (its limit trap killed capture permanently —
                     # #98), but keep the buffer bounded anyway
                     **self._spawn_kwargs(),
@@ -515,20 +522,41 @@ class LlamaServerManager:
         # LimitOverrunError forever (the over-long line stays at the head of
         # the buffer), which used to kill this task and silence the panel log
         # for the rest of the server's lifetime (#98). read() has no limit.
+        #
+        # The unterminated tail (`carry`) is bounded too: output that never
+        # sends a newline (a `\r`-redrawn progress bar, binary noise) used to
+        # grow it without limit, and every chunk re-scanned the whole tail.
+        # Past LOG_LINE_LIMIT the head is published once (truncated) and the
+        # rest of that line is dropped until its newline arrives.
         assert proc.stdout is not None
         carry = b""
+        dropping = False  # inside an over-long line whose head was published
         while True:
             chunk = await proc.stdout.read(64 * 1024)
             if not chunk:
                 break
-            carry += chunk
-            while (idx := carry.find(b"\n")) >= 0:
-                line, carry = carry[:idx], carry[idx + 1:]
-                self._publish_log_line(line)
-        if carry:
+            parts = chunk.split(b"\n")
+            parts[0] = carry + parts[0]
+            carry = parts.pop()  # unterminated tail (b"" when chunk ends in \n)
+            for line in parts:
+                if dropping:
+                    dropping = False  # the over-long line ends here
+                else:
+                    self._publish_log_line(line)
+            if dropping:
+                carry = b""
+            elif len(carry) > LOG_LINE_LIMIT:
+                self._publish_log_line(carry)
+                carry = b""
+                dropping = True
+        if carry and not dropping:
             self._publish_log_line(carry)
 
     def _publish_log_line(self, line: bytes) -> None:
+        # a `\r`-redrawn progress line: keep only its final state
+        line = line.rstrip(b"\r")
+        if b"\r" in line:
+            line = line.rsplit(b"\r", 1)[1]
         if len(line) > LOG_LINE_LIMIT:
             self._publish_log(line[:LOG_LINE_LIMIT].decode(errors="replace")
                               + " [panel: over-long log line truncated]")
