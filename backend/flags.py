@@ -339,8 +339,23 @@ _EXTRA_ALIASES = {
     "-c": "--ctx-size",
     "-t": "--threads",
     "-ngl": "--n-gpu-layers",
+    "--gpu-layers": "--n-gpu-layers",
     "--hostname": "--host",
+    # the remaining short forms the semantic rules themselves emit
+    "-a": "--alias",
+    "-mm": "--mmproj",
+    "-fa": "--flash-attn",
+    "-tb": "--threads-batch",
+    "-b": "--batch-size",
+    "-ub": "--ubatch-size",
+    "-np": "--parallel",
+    "-ctk": "--cache-type-k",
+    "-ctv": "--cache-type-v",
 }
+
+
+def _canon_flag(name: str) -> str:
+    return _EXTRA_ALIASES.get(name, name)
 
 
 def _r_extra(s: LaunchSettings, c: FlagContext) -> Optional[list[str]]:
@@ -362,6 +377,13 @@ def _r_extra(s: LaunchSettings, c: FlagContext) -> Optional[list[str]]:
     # precedence instead: panel-managed flags (those emitted by the
     # semantic rules) occur exactly once — the semantic value; colliding
     # extra occurrences are dropped with a warning.
+    # Both sides are canonicalized: the rules emit SHORT forms for several
+    # flags (-m, -c, -ngl, -t, ...), so comparing an alias-expanded extra
+    # token against the raw emitted names only ever matched the flags whose
+    # rule happens to emit the long form (--port, --host). `-c 16384` or
+    # `--ctx-size 8192` in extra_flags went through as a duplicate and beat
+    # the preset field silently.
+    emitted = {_canon_flag(n) for n in c.emitted}
     kept: list[str] = []
     dropped: list[str] = []
     i = 0
@@ -369,8 +391,8 @@ def _r_extra(s: LaunchSettings, c: FlagContext) -> Optional[list[str]]:
         tok = tokens[i]
         if _is_flag(tok):
             name = _flag_name(tok)
-            canon = _EXTRA_ALIASES.get(name, name)
-            if canon in c.emitted:
+            canon = _canon_flag(name)
+            if canon in emitted:
                 dropped.append(canon)
                 i += 1
                 # consume the value token of "--flag value"; "--flag=value"
