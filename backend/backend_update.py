@@ -409,14 +409,21 @@ async def release_assets(client: httpx.AsyncClient, tag: str) -> list[dict]:
     hit = _assets_cache.get(tag)
     if hit is not None and time.monotonic() - hit[0] < _ASSETS_TTL:
         return hit[1]
+    # Only a real release document is cached. An error answer (rate limit
+    # 403, 5xx, an HTML error page) used to be stored as "this release ships
+    # nothing" for _ASSETS_TTL — every download then failed with a
+    # misleading "no <variant> build for <tag>" until the entry expired.
     try:
-        rel = (await client.get(f"{API_BASE}/releases/tags/{tag}")).json()
-    except httpx.HTTPError as exc:
+        resp = await client.get(f"{API_BASE}/releases/tags/{tag}")
+        resp.raise_for_status()
+        rel = resp.json()
+    except (httpx.HTTPError, ValueError) as exc:
         log.warning("release lookup for %s failed: %s", tag, exc)
         return hit[1] if hit else []
-    assets = rel.get("assets") or [] if isinstance(rel, dict) else []
+    assets = rel.get("assets") if isinstance(rel, dict) else None
     if not isinstance(assets, list):
-        assets = []
+        log.warning("release lookup for %s: unexpected response shape", tag)
+        return hit[1] if hit else []
     if len(_assets_cache) >= 8:
         _assets_cache.clear()
     _assets_cache[tag] = (time.monotonic(), assets)
@@ -465,22 +472,36 @@ async def _fetch_releases_network() -> dict[str, Any]:
     headers = {"Accept": "application/vnd.github+json", "User-Agent": USER_AGENT}
     async with httpx.AsyncClient(timeout=30, headers=headers,
                                  follow_redirects=True) as client:
-        latest = (await client.get(f"{API_BASE}/releases/latest")).json()
+        # raise_for_status on the API calls: a rate-limit 403 / 5xx body is
+        # valid JSON without the fields read below, so it used to produce an
+        # all-empty result that fetch_releases() then CACHED for 30 min — a
+        # background refresh during a rate limit replaced good release data
+        # with "no builds known". Raising keeps the previous cache instead
+        # (callers already handle httpx.HTTPError / ValueError).
+        resp = await client.get(f"{API_BASE}/releases/latest")
+        resp.raise_for_status()
+        latest = resp.json()
+        if not isinstance(latest, dict):
+            raise ValueError("unexpected GitHub response for releases/latest")
         stable_tag = latest.get("tag_name") or ""
         pinned: Optional[str] = None
-        for a in latest.get("assets", []):
-            if a["name"] == "nightly-tag.txt":
-                txt = (await client.get(a["browser_download_url"])).text.strip()
+        for a in latest.get("assets") or []:
+            if isinstance(a, dict) and a.get("name") == "nightly-tag.txt":
+                txt_resp = await client.get(a["browser_download_url"])
+                txt = txt_resp.text.strip() if txt_resp.status_code == 200 else ""
                 if _BTAG_RE.match(txt):
                     pinned = txt
-        rels = (await client.get(
-            f"{API_BASE}/releases", params={"per_page": 15})).json()
+        resp = await client.get(f"{API_BASE}/releases", params={"per_page": 15})
+        resp.raise_for_status()
+        rels = resp.json()
         nightly: Optional[str] = None
         if isinstance(rels, list):
             # seed the asset cache for every release we already have in hand
             if len(_assets_cache) >= 8:
                 _assets_cache.clear()
             for r in rels:
+                if not isinstance(r, dict):
+                    continue
                 t = r.get("tag_name") or ""
                 if _BTAG_RE.match(t):
                     _assets_cache[t] = (time.monotonic(), r.get("assets") or [])
@@ -493,10 +514,11 @@ async def _fetch_releases_network() -> dict[str, Any]:
         # release-cache refresh (30 min TTL), never per request.
         if pinned and pinned not in _assets_cache:
             try:
-                rel_p = (await client.get(f"{API_BASE}/releases/tags/{pinned}")).json()
-                if isinstance(rel_p, dict) and not rel_p.get("message"):
-                    _assets_cache[pinned] = (time.monotonic(), rel_p.get("assets") or [])
-            except httpx.HTTPError:
+                resp_p = await client.get(f"{API_BASE}/releases/tags/{pinned}")
+                rel_p = resp_p.json() if resp_p.status_code == 200 else None
+                if isinstance(rel_p, dict) and isinstance(rel_p.get("assets"), list):
+                    _assets_cache[pinned] = (time.monotonic(), rel_p["assets"])
+            except (httpx.HTTPError, ValueError):
                 pass
     return {
         "stable_tag": stable_tag,

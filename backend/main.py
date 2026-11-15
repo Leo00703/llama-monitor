@@ -312,6 +312,8 @@ def _model_from_args(args: list[str]) -> str:
 
 
 SLOW_REQUEST_SECONDS = 5.0
+# wait between scheduled llama.cpp release checks after a failed one (be_loop)
+BE_CHECK_RETRY_SECONDS = 900.0
 
 
 class SlowRequestLogger(BaseHTTPMiddleware):
@@ -835,7 +837,7 @@ def create_app() -> FastAPI:
             async with httpx.AsyncClient(timeout=30, headers=headers,
                                          follow_redirects=True) as client:
                 await backend_update.release_assets(client, target)
-        except httpx.HTTPError:
+        except (httpx.HTTPError, OSError, ValueError):
             pass
         res["variants"] = backend_update.cached_variants(target)
         if not current["official"]:
@@ -1156,15 +1158,26 @@ def create_app() -> FastAPI:
     def be_loop(loop: asyncio.AbstractEventLoop) -> None:
         """Twice-daily (00:00 / 12:00 local) build check + startup catch-up."""
         time.sleep(25.0)  # don't slow down startup with a network call
+        # A failed check never updates last_check, so check_due() stays true
+        # and the loop used to retry every 60 s — while offline that is noise,
+        # while GitHub is rate-limiting (60 unauthenticated calls/h) it keeps
+        # the limit exhausted. Back off between failed attempts instead.
+        retry_at = 0.0
         while not _updater_stop.wait(60.0):
             try:
+                if time.monotonic() < retry_at:
+                    continue
                 if backend_update.check_due(config.llama_backend):
                     fut = asyncio.run_coroutine_threadsafe(
                         be_run_check(manual=False), loop)
                     try:
-                        fut.result(timeout=180)
+                        res = fut.result(timeout=180)
+                        failed = not (isinstance(res, dict) and res.get("ok"))
                     except Exception:
                         log.exception("scheduled backend check failed")
+                        failed = True
+                    if failed:
+                        retry_at = time.monotonic() + BE_CHECK_RETRY_SECONDS
             except Exception:
                 log.exception("backend check loop error")
 
