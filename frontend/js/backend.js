@@ -224,7 +224,7 @@ const Backend = {
     const downloadedTags = new Set((d.local || []).map((b) => b.tag));
     pick.innerHTML = `<span class="be-pick-main">
         <span class="be-pick-title">Version</span>
-        <span class="muted small">${cur.official ? UI.esc(cur.tag || "unknown") : (cur.version || "unknown")}</span>
+        <span class="muted small">${UI.esc(cur.official ? (cur.tag || "unknown") : (cur.version || "unknown"))}</span>
       </span>${chev}`;
     // picker items: the channel target (when different from current) first,
     // then the latest nightly in stable mode (so it can be grabbed without
