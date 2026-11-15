@@ -20,6 +20,10 @@ from .config import server_client_host
 log = logging.getLogger("llama-monitor.proxy")
 
 PROPS_TTL = 60.0
+# After a failed /props read, don't retry for this long: every proxied
+# generation calls server_params(), and without a negative TTL each request
+# to a server that is loading a model / hung waited out the 5 s timeout.
+PROPS_RETRY = 5.0
 
 # paths where generation defaults are injected
 INJECT_PATHS = {"completion", "v1/chat/completions"}
@@ -64,6 +68,7 @@ class ServerProxy:
         self._get_launch = get_launch
         self._params: Optional[dict[str, Any]] = None
         self._params_at: float = 0.0
+        self._params_failed_at: float = 0.0
 
     # ------------------------------------------------------------------
     # live server params (for the defaults UI + injection allow-list)
@@ -98,6 +103,8 @@ class ServerProxy:
         now = time.monotonic()
         if self._params is not None and now - self._params_at < PROPS_TTL:
             return self._params
+        if self._params_failed_at and now - self._params_failed_at < PROPS_RETRY:
+            return self._params
         try:
             async with httpx.AsyncClient(timeout=PROPS_TIMEOUT) as client:
                 resp = await client.get(f"{base}/props", headers=self.auth_header())
@@ -106,14 +113,17 @@ class ServerProxy:
             params = data.get("default_generation_settings", {}).get("params")
             self._params = params if isinstance(params, dict) else None
             self._params_at = now
+            self._params_failed_at = 0.0
             return self._params
         except Exception:
             # keep serving stale params while the server is unreachable
+            self._params_failed_at = now
             return self._params
 
     def invalidate_props_cache(self) -> None:
         self._params = None
         self._params_at = 0.0
+        self._params_failed_at = 0.0
 
     # ------------------------------------------------------------------
     # request plumbing
