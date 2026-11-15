@@ -34,6 +34,10 @@ PROXY_SKIP_REQUEST_HEADERS = {
     "host", "content-length", "connection", "accept-encoding", "keep-alive",
     "upgrade", "transfer-encoding", "te", "trailer", "proxy-authorization",
     "proxy-authenticate", "authorization", "content-type",
+    # the panel's own credential authenticates the caller to the PANEL — it
+    # must never travel on to llama-server (a different trust domain: an
+    # external / NIC-bound server, or one logging request headers)
+    "x-panel-token",
 }
 
 PROXY_SKIP_RESPONSE_HEADERS = {
