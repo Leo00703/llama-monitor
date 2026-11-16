@@ -9,8 +9,9 @@ line.
 [![License](https://img.shields.io/github/license/Leo00703/llama-monitor)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](#requirements)
 [![Windows / Linux / macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)](#requirements)
+[![Release](https://img.shields.io/github/v/release/Leo00703/llama-monitor?label=release)](https://github.com/Leo00703/llama-monitor/releases)
 [![Build tray exe](https://img.shields.io/github/actions/workflow/status/Leo00703/llama-monitor/build-exe.yml?branch=main&label=tray%20exe)](https://github.com/Leo00703/llama-monitor/actions/workflows/build-exe.yml)
-<!-- a latest-release badge can be added once the repo ships GitHub Releases (#90) -->
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-f65e00)](CONTRIBUTING.md)
 
 ![Dashboard](docs/llama-monitor-desktop.png)
 
@@ -56,7 +57,9 @@ cd llama-monitor
 ```
 
 Then double-click `llama-monitor.exe` (or run `.\llama-monitor.exe` from
-PowerShell in that folder).
+PowerShell in that folder). **Or, without cloning** — download the latest
+`llama-monitor.exe` from [Releases](https://github.com/Leo00703/llama-monitor/releases/latest)
+and run it directly.
 
 The exe is self-contained (no Python install needed): a tray icon appears —
 open `http://127.0.0.1:8000` in a browser, or use the tray menu's **Open
@@ -88,10 +91,9 @@ Then open `http://127.0.0.1:8000` and, under **Settings**, point
 - [Tray launcher (Windows .exe)](#tray-launcher-windows-exe)
 - [Project layout](#project-layout)
 - [Contributing](#contributing)
-  - [Bug reports](#bug-reports)
-  - [Feature requests](#feature-requests)
-  - [Pull requests](#pull-requests)
-  - [Repository ground rules](#repository-ground-rules)
+- [Security](#security)
+- [Changelog](#changelog)
+- [License](#license)
 
 ## Features
 
@@ -329,11 +331,12 @@ force-kill budget. The panel is embedded in
 the same process (uvicorn in a daemon thread) on the configured
 `panel.host:panel.port`, so OpenAI-compatible proxying works exactly as above.
 
-- **Get it** — `llama-monitor.exe` at the repo root is the latest CI build:
-  `git clone` (or `git pull` / the in-app **Update now**) and run it. A fresh
-  build is also uploaded as an artifact by the `Build Windows tray exe`
-  GitHub Actions workflow on every push to `main` (or run the workflow
-  manually).
+- **Get it** — the fastest way is the latest `llama-monitor.exe` from
+  [Releases](https://github.com/Leo00703/llama-monitor/releases/latest). It is
+  also tracked at the repo root (the latest CI build): `git clone` (or
+  `git pull` / the in-app **Update now**) and run it. A fresh build is also
+  uploaded as an artifact by the `Build Windows tray exe` GitHub Actions
+  workflow on every push to `main` (or run the workflow manually).
 - **Build locally** — `build_exe.bat` (creates/updates `.venv`, installs deps,
   runs a headless smoke test, then PyInstaller) produces
   `dist\llama-monitor.exe`.
@@ -406,10 +409,16 @@ requirements.lock.txt   hash-pinned lock (uv, windows/cp312) — the CI build en
                         installs it with --require-hashes
 assets/tray/     tray mark (PNG) + exe icon (ICO)
 docs/            README screenshots
+LICENSE          MIT
+README.md / SECURITY.md / CONTRIBUTING.md / CODE_OF_CONDUCT.md / CHANGELOG.md
+                 product, trust model, contribution guide, conduct, versioned log
+.github/ISSUE_TEMPLATE/  bug.yml, feature.yml, config.yml (blank issues off,
+                       support/security links)
+.github/dependabot.yml   version updates for requirements*.txt + workflow actions
 .github/workflows/build-exe.yml   CI: smoke test + PyInstaller + artifact upload +
                      commit the refreshed exe back to the repo root
-                      (actions SHA-pinned, hash-locked deps, write perms
-                      scoped to the exe-refresh job)
+                       (actions SHA-pinned, hash-locked deps, write perms
+                       scoped to the exe-refresh job)
 ```
 
 Persistent data lives outside the repo (see Configure): config.json,
@@ -418,63 +427,43 @@ presets/, analytics.db under `%APPDATA%\llama-monitor` (Windows) or
 
 ## Contributing
 
-The project has a single maintainer; work is triaged from the GitHub Issues
-queue in order. The fastest ways to help, in order of value per unit of effort:
+The project has a single maintainer and is developed *with* AI agents; work is
+triaged from the GitHub Issues queue in order. The fastest ways to help, in
+order of value per unit of effort:
 
-1. **File a precise issue** — a bug with the checklist below, or an idea in
-   the goal/scope shape. A good issue is worth more than a quick PR.
-2. **Send a small PR** — bug fixes are very welcome; for larger features,
-   open an issue first and align on the goal.
+1. **File a precise issue** — a bug with the triage checklist, or an idea in the
+   goal/scope shape. A good issue is worth more than a quick PR.
+2. **Send a small PR** — bug fixes are very welcome; for a larger feature, open
+   an issue first and align on the goal.
 3. **Improve the docs** — stale-claim fixes, screenshots, missing config keys.
 
-### Bug reports
+Issue and PR templates live in [`.github/ISSUE_TEMPLATE`](.github/ISSUE_TEMPLATE),
+and the full guide — triage checklist, commit style (`Fix:` / `Feat:` / `Docs:`),
+the verification bar (no test framework, by design), and the deliberate-choices
+list — lives in [`CONTRIBUTING.md`](CONTRIBUTING.md). The single source of truth
+for layout, commands, conventions and hard-won gotchas is [`AGENTS.md`](AGENTS.md);
+read it before a PR. For setup and "how do I…" questions, use
+[Discussions](https://github.com/Leo00703/llama-monitor/discussions).
 
-Issue templates are in [`.github/ISSUE_TEMPLATE`](.github/ISSUE_TEMPLATE).
-A triage-ready report has all of these:
+## Security
 
-| Field | Where to find it |
-| --- | --- |
-| Panel version | Settings → **Current version** (commit sha + date), or `GET /api/update/check` |
-| llama-server build | Topbar version label, or `llama-server --version` (e.g. `b10621`) |
-| OS | Windows 11 / Ubuntu 24.04 / macOS (Apple Silicon) / … |
-| Steps to reproduce | Exact clicks and settings; naming the preset (or listing its fields) is ideal |
-| Log excerpt | Copy from the panel log pane — the `[panel] starting: …` line already contains the full launch command; trim to the failure and scrub secrets, personal paths and hostnames (see `AGENTS.md` → Privacy) |
-| Expected vs actual | One sentence each |
+llama-monitor is a **single-user control panel for a `llama-server` on a machine
+(or private network) you own** — it is local by default (`127.0.0.1`), can be
+opt-in exposed over the LAN / Tailscale behind an optional panel **token**, and
+checks Host / Origin headers even without one. It is **not** a public
+multi-tenant service. The full trust model, supported versions, and the private
+reporting path are in [`SECURITY.md`](SECURITY.md); please report vulnerabilities
+privately via [GitHub Security Advisories](https://github.com/Leo00703/llama-monitor/security/advisories/new),
+not as a public issue.
 
-### Feature requests
+## Changelog
 
-Keep the same shape as the project's own locked specs:
+Notable changes are recorded in [`CHANGELOG.md`](CHANGELOG.md)
+([Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+[semver](https://semver.org/)). The current release is
+[v0.1.0](https://github.com/Leo00703/llama-monitor/releases/tag/v0.1.0).
 
-- **Goal** — one sentence, what the user gets
-- **Scope** — what's in, what's explicitly out
-- **Open questions** — the decisions to make before coding starts
+## License
 
-### Pull requests
-
-- **Small and single-purpose** — one fix or one feature per PR.
-- **Read [`AGENTS.md`](AGENTS.md) first** — it is the single source of truth
-  for repo layout, commands, conventions, and hard-won gotchas, and it is
-  written for both humans and AI agents. Don't duplicate its rules in PR
-  comments; follow them.
-- **Commit style** — `Fix: …` / `Feat: …` / `Docs: …`; docs changes in
-  separate commits, never mixed with code.
-- **Verify before opening** — there is no test framework (by design), so the
-  PR description must say what was run and what was seen:
-  - UI: headless Chrome at 390 / 720 / 900 / 1024 / 1440 px — set the viewport
-    with CDP `Emulation.setDeviceMetricsOverride` (Chrome clamps window width
-    to ~500px) and check `document.documentElement.scrollWidth <= <width>` on
-    every page (hard rule: no horizontal scroll on mobile)
-  - backend: ad-hoc inline Python with synthetic data
-  - live E2E: start the panel, exercise the API, run a real generation
-  - frozen builds: `python tray.py --smoke`
-- **By submitting a PR you agree that your contribution is licensed under the
-  [MIT](LICENSE) license.**
-
-### Repository ground rules
-
-Some things in this repo are deliberate and should not be "improved" — the
-no-test-framework / vanilla-frontend / fixed-theme / no-new-deps list lives in
-[`AGENTS.md`](AGENTS.md), together with everything else the maintainer (and the
-AI agents this project is developed with) follows. Read it before a PR; the
-bar for agent-written contributions is the same as for human ones: cite what
-you verified, and how.
+Released under the [MIT](LICENSE) license. By submitting a pull request you agree
+that your contribution is licensed under MIT.
