@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions & support
+    url: https://github.com/Leo00703/llama-monitor/discussions
+    about: Setup, "how do I…", and "does it support X" questions belong here — keep the issue queue for bugs and features.
+  - name: Security vulnerability (private)
+    url: https://github.com/Leo00703/llama-monitor/security/advisories/new
+    about: Please report security issues privately via a GitHub Security Advisory, not as a public issue. See SECURITY.md.
