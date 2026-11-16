@@ -1,0 +1,26 @@
+# Dependabot version updates. This adds no dependency and runs no code in the
+# panel — it only opens PRs when a pinned dependency or a workflow action is
+# out of date, so a visitor sees an active supply-chain signal.
+#
+# Maintainer notes (AGENTS.md):
+# - After merging a pip bump, regenerate requirements.lock.txt with the exact
+#   uv command in AGENTS.md (CI installs it with --require-hashes).
+# - Workflow actions are SHA-pinned by policy; when accepting an actions bump,
+#   keep the full commit SHA and its `# vX` comment.
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "Fix"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "Fix"
